@@ -85,8 +85,9 @@ namespace
         double outerRadius,
         bool genTexCoords)
     {
-        //double hae = outerRadius - ellipsoid.getRadiusEquator();
-        double hae = outerRadius - ellipsoid.getRadiusPolar();
+        double hae = outerRadius - std::max(
+            ellipsoid.getRadiusEquator(),
+            ellipsoid.getRadiusPolar());
 
         osg::Geometry* geom = new osg::Geometry();
         geom->setUseVertexBufferObjects(true);
@@ -216,6 +217,10 @@ SimpleSkyNode::construct()
     // protect us from the ShaderGenerator.
     ShaderGenerator::setIgnoreHint(this, true);
 
+    // containers for sky elements. DO NOT add children directly to 
+    // the skynode; uswe the cullContainer instead!
+    _cullContainer = new osg::Group();
+
     osg::Vec3f lightPos(0.0f, 1.0f, 0.0f);
 
     _light = new LightGL3( 0 );
@@ -228,7 +233,7 @@ SimpleSkyNode::construct()
     osg::LightSource* lightSource = new osg::LightSource();
     lightSource->setLight(_light.get());
     lightSource->setCullingActive(false);
-    this->addChild( lightSource );
+    _cullContainer->addChild( lightSource );
     lightSource->addCullCallback(new LightSourceGL3UniformGenerator());
 
     if ( _options.ambient().isSet() )
@@ -243,9 +248,6 @@ SimpleSkyNode::construct()
         OE_WARN << LC << "Found an ephemeris reference point, but SimpleSky does not support projected maps" << std::endl;
         return;
     }
-
-    // containers for sky elements.
-    _cullContainer = new osg::Group();
     
     // set up the astronomical parameters:
     osg::ref_ptr<const SpatialReference> wgs84 = SpatialReference::get("wgs84");
@@ -254,7 +256,7 @@ SimpleSkyNode::construct()
         _ellipsoid.getRadiusPolar(),
         _ellipsoid.getRadiusEquator() );
 
-    _outerRadius = _innerRadius + 60000.0;
+    _outerRadius = _innerRadius * 1.025; // +60000.0;
 
     CelestialBody sun = getEphemeris()->getSunPosition(DateTime());
     _sunDistance = sun.altitude.as(Units::METERS);
@@ -381,42 +383,34 @@ SimpleSkyNode::traverse( osg::NodeVisitor& nv )
         // If the Bruneton compute shaders are finished, set up the rendering statesets.
         if (_useBruneton &&
             !_eb_initialized &&
-            _eb_drawable.valid() && 
-            static_cast<Bruneton::ComputeDrawable*>(_eb_drawable.get())->isReady())
+            _eb_drawable.valid())
         {
-            TerrainEngineNode* terrain = findTopMostNodeOfType<TerrainEngineNode>(this);
-            if (terrain)
+            auto eb = static_cast<Bruneton::ComputeDrawable*>(_eb_drawable.get());
+            if (eb->isReady())
             {
-                for (int i = 0; i < 4; ++i)
+                TerrainEngineNode* terrain = osgEarth::findTopMostNodeOfType<TerrainEngineNode>(this);
+                if (terrain)
                 {
-                    if (!terrain->getResources()->reserveTextureImageUnit(_eb_res[i], "SimpleSkyNode"))
+                    osg::StateSet* groundStateSet =
+                        _options.atmosphericLighting() == true ?
+                        getOrCreateStateSet() : nullptr;
+
+                    bool ok = eb->populateRenderingStateSets(
+                        groundStateSet,
+                        _atmosphere->getOrCreateStateSet(),
+                        terrain->getResources());
+
+                    _eb_initialized = true;
+
+                    if (!ok)
                     {
-                        OE_WARN << LC << "Failed to reverse texture image units" << std::endl;
+                        OE_WARN << LC << "Bruneton lighting failed to initialize" << std::endl;
+                        _eb_drawable = nullptr;
                     }
                 }
+
+                ADJUST_UPDATE_TRAV_COUNT(this, -1);
             }
-
-            auto eb = static_cast<Bruneton::ComputeDrawable*>(_eb_drawable.get());
-
-            eb->populateRenderingStateSet(
-                getOrCreateStateSet(),
-                true, // is_ground
-                _eb_res[0].unit(),
-                _eb_res[1].unit(),
-                _eb_res[2].unit(),
-                _eb_res[3].unit());
-
-            eb->populateRenderingStateSet(
-                _atmosphere->getOrCreateStateSet(),
-                false, // sky
-                _eb_res[0].unit(),
-                _eb_res[1].unit(),
-                _eb_res[2].unit(),
-                _eb_res[3].unit());
-
-            _eb_initialized = true;
-
-            ADJUST_UPDATE_TRAV_COUNT(this, -1);
         }
     }
 
@@ -567,6 +561,9 @@ SimpleSkyNode::makeSceneLighting()
     VirtualProgram* vp = VirtualProgram::getOrCreate( stateset );
     vp->setName( "SimpleSky Scene Lighting" );
 
+    stateset->getOrCreateUniform("atmos_fInnerRadius", osg::Uniform::FLOAT)->set(_innerRadius);
+    stateset->getOrCreateUniform("atmos_fOuterRadius", osg::Uniform::FLOAT)->set(_outerRadius);
+
     if (_options.atmosphericLighting() == true)
     {
         Shaders pkg;
@@ -578,6 +575,10 @@ SimpleSkyNode::makeSceneLighting()
             else
                 OE_INFO << LC << "Using Bruneton per-fragment lighting" << std::endl;
             // nothing to do here since we have to run precomputation first
+
+            //TODO: api
+            stateset->getOrCreateUniform("atmos_haze_cutoff", osg::Uniform::FLOAT)->set(0.0f);
+            stateset->getOrCreateUniform("atmos_haze_strength", osg::Uniform::FLOAT)->set(1.0f);
         }
         else if (_useONeil)
         {
@@ -593,9 +594,6 @@ SimpleSkyNode::makeSceneLighting()
                 OE_INFO << LC << "Using O'Neil lighting" << std::endl;
                 pkg.load(vp, pkg.Ground_ONeil_Frag);
             }
-
-            stateset->getOrCreateUniform("atmos_fInnerRadius", osg::Uniform::FLOAT)->set(_innerRadius);
-            stateset->getOrCreateUniform("atmos_fOuterRadius", osg::Uniform::FLOAT)->set(_outerRadius);
             stateset->getOrCreateUniform("oe_sky_ambientBoostFactor", osg::Uniform::FLOAT)->set(_options.daytimeAmbientBoost().get());
         }
     }
@@ -615,7 +613,20 @@ void
 SimpleSkyNode::makeAtmosphere(const Ellipsoid& em)
 {
     // create some skeleton geometry to shade:
+#if 1
     osg::Geometry* drawable = s_makeEllipsoidGeometry( em, _outerRadius, false );
+    drawable->setName("Atmosphere Drawable");
+#else
+    // TEST!
+    osg::Geometry* drawable = new osg::Geometry();
+    drawable->setCullingActive(false);
+    drawable->setName("Atmosphere Drawable");
+    drawable->setUseVertexBufferObjects(true);
+    osg::Vec3Array* verts = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4);
+    drawable->setVertexArray(verts);
+    const unsigned short elements[6] = { 0,2,1,2,0,3 };
+    drawable->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 6, elements));
+#endif
     
     // disable wireframe/point rendering on the atmosphere, since it is distracting.
     if ( _options.allowWireframe() == false )
@@ -628,7 +639,7 @@ SimpleSkyNode::makeAtmosphere(const Ellipsoid& em)
     // configure the state set:
     osg::StateSet* atmosSet = drawable->getOrCreateStateSet();
     GLUtils::setLighting(atmosSet, osg::StateAttribute::OFF);
-    atmosSet->setAttributeAndModes( new osg::CullFace(osg::CullFace::FRONT), osg::StateAttribute::ON );
+    atmosSet->setAttributeAndModes( new osg::CullFace(osg::CullFace::FRONT), osg::StateAttribute::ON | osg::StateAttribute::PROTECTED);
     atmosSet->setAttributeAndModes( new osg::Depth( osg::Depth::LESS, 0, 1, false ) ); // no depth write
     atmosSet->setAttributeAndModes( new osg::Depth(osg::Depth::ALWAYS, 0, 1, false) ); // no zbuffer
     atmosSet->setAttributeAndModes( new osg::BlendFunc( GL_ONE, GL_ONE ), osg::StateAttribute::ON );
@@ -648,6 +659,7 @@ SimpleSkyNode::makeAtmosphere(const Ellipsoid& em)
     // A nested camera isolates the projection matrix calculations so the node won't 
     // affect the clip planes in the rest of the scene.
     osg::Camera* cam = new osg::Camera();
+    cam->setName("Atmosphere Cam");
     cam->getOrCreateStateSet()->setRenderBinDetails( BIN_ATMOSPHERE, "RenderBin" );
     cam->setRenderOrder( osg::Camera::NESTED_RENDER );
     cam->setComputeNearFarMode( osg::CullSettings::COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES );
@@ -662,6 +674,7 @@ void
 SimpleSkyNode::makeSun()
 {
     osg::Billboard* sun = new osg::Billboard();
+    sun->setName("Sun billboard");
     sun->setMode( osg::Billboard::POINT_ROT_EYE );
     sun->setNormal( osg::Vec3(0, 0, 1) );
 
@@ -694,6 +707,7 @@ SimpleSkyNode::makeSun()
     // A nested camera isolates the projection matrix calculations so the node won't 
     // affect the clip planes in the rest of the scene.
     osg::Camera* cam = new osg::Camera();
+    cam->setName("Sun cam");
     cam->getOrCreateStateSet()->setRenderBinDetails( BIN_SUN, "RenderBin" );
     cam->setRenderOrder( osg::Camera::NESTED_RENDER );
     cam->setComputeNearFarMode( osg::CullSettings::COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES );
@@ -703,6 +717,7 @@ SimpleSkyNode::makeSun()
 
     // make the sun's transform:
     _sunXform = new osg::MatrixTransform();
+    _sunXform->setName("Sun xform");
     _sunXform->setMatrix( osg::Matrix::translate( 
         _sunDistance * _light->getPosition().x(),
         _sunDistance * _light->getPosition().y(),
@@ -717,7 +732,8 @@ SimpleSkyNode::makeMoon()
 {
     Ellipsoid em(1738140.0, 1735970.0);
     
-    osg::Geometry* moonDrawable = s_makeEllipsoidGeometry( em, em.getRadiusEquator()*_options.moonScale().get(), true );    
+    osg::Geometry* moonDrawable = s_makeEllipsoidGeometry( em, em.getRadiusEquator()*_options.moonScale().get(), true );
+    moonDrawable->setName("Moon drawable");
     osg::StateSet* stateSet = moonDrawable->getOrCreateStateSet();
 
     osg::ref_ptr<osg::Image> image = _options.moonImageURI()->getImage();
@@ -776,6 +792,7 @@ SimpleSkyNode::makeMoon()
     // A nested camera isolates the projection matrix calculations so the node won't 
     // affect the clip planes in the rest of the scene.
     osg::Camera* cam = new osg::Camera();
+    cam->setName("Moon cam");
     cam->getOrCreateStateSet()->setRenderBinDetails( BIN_MOON, "RenderBin" );
     cam->setRenderOrder( osg::Camera::NESTED_RENDER );
     cam->setComputeNearFarMode( osg::CullSettings::COMPUTE_NEAR_FAR_USING_BOUNDING_VOLUMES );
@@ -786,7 +803,8 @@ SimpleSkyNode::makeMoon()
     // make the moon's transform:
     CelestialBody moon = getEphemeris()->getMoonPosition(getDateTime());
 
-    _moonXform = new osg::MatrixTransform();   
+    _moonXform = new osg::MatrixTransform();
+    _moonXform->setName("Moon xform");
     _moonXform->setMatrix( osg::Matrix::translate( moon.geocentric ) ); 
     _moonXform->addChild( _moon.get() );
 
@@ -847,9 +865,11 @@ SimpleSkyNode::makeStars()
     }
 
     _stars = buildStarGeometry(stars);
+    _stars->setName("Stars drawable");
 
     // make the stars' transform:
     _starsXform = new osg::MatrixTransform();
+    _starsXform->setName("Stars xform");
     _starsXform->addChild( _stars.get() );
 
     _cullContainer->addChild( _starsXform.get() );
@@ -905,6 +925,7 @@ SimpleSkyNode::buildStarGeometry(const std::vector<StarData>& stars)
 
     // A separate camera isolates the projection matrix calculations.
     osg::Camera* cam = new osg::Camera();
+    cam->setName("Stars cam");
     cam->getOrCreateStateSet()->setRenderBinDetails( BIN_STARS, "RenderBin" );
     cam->setRenderOrder( osg::Camera::NESTED_RENDER );
 

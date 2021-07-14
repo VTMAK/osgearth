@@ -247,6 +247,9 @@ out vec3 atmos_transmittance;
 out vec3 atmos_scatter;
 out vec3 atmos_ambient;
 
+uniform float atmos_haze_cutoff;
+uniform float atmos_haze_strength;
+
 void atmos_eb_ground_render_vert(inout vec4 vertex_view)
 {
 #ifdef OE_LIGHTING
@@ -263,8 +266,11 @@ void atmos_eb_ground_render_vert(inout vec4 vertex_view)
 	vec3 transmittance;
 	vec3 in_scatter = GetSkyRadianceToPoint(center_to_camera, atmos_center_to_vert, 4.0, atmos_light_dir, transmittance);
 
+    float vert_unitz = clamp((length(atmos_center_to_vert)-bottom_radius)/(top_radius-bottom_radius), 0, 1);
+    float atmos_haze = vert_unitz < atmos_haze_cutoff ? mix(atmos_haze_strength, 1, vert_unitz/atmos_haze_cutoff) : 1.0;
+
     atmos_transmittance = transmittance;
-    atmos_scatter = in_scatter;
+    atmos_scatter = in_scatter * atmos_haze;
 #endif
 }
 
@@ -284,8 +290,6 @@ in vec3 vp_Normal;
 
 uniform float oe_sky_exposure;
 const vec3 white_point = vec3(1,1,1);
-
-uniform float shmoo;
 
 #define USE_PBR 1
 
@@ -359,11 +363,8 @@ in vec3 atmos_view_dir;
 in vec3 atmos_light_dir;
 in vec3 atmos_center_to_camera;
 const vec3 white_point=vec3(1,1,1);
-uniform mat4 osg_ViewMatrix;
 uniform float oe_sky_exposure;
-uniform vec2 sun_size;
-
-uniform float shmoo;
+//uniform vec2 sun_size;
 
 void atmos_eb_sky_render_frag(inout vec4 OUT_COLOR)
 {
@@ -371,8 +372,9 @@ void atmos_eb_sky_render_frag(inout vec4 OUT_COLOR)
 	vec3 radiance = GetSkyRadiance(atmos_center_to_camera, atmos_view_dir, 0.0, atmos_light_dir, transmittance);
 
 	// If the view ray intersects the Sun, add the Sun radiance.
-	if (dot(atmos_view_dir, atmos_light_dir) > sun_size.y) 
-		radiance = radiance + transmittance * GetSolarRadiance();
+    // GW: don't need this.
+	//if (dot(atmos_view_dir, atmos_light_dir) > sun_size.y) 
+	//    radiance = radiance + transmittance * GetSolarRadiance();
 
 	radiance = pow(vec3(1,1,1) - exp(-radiance / white_point * oe_sky_exposure*1e-4), vec3(1.0 / 2.2));
 

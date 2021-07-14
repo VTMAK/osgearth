@@ -58,6 +58,7 @@ AtmosphereModel::~AtmosphereModel()
 
     m_absorption_density.clear();
 
+#if 0 // GW - cannot do this here. Need to make a releaseGLObjects adapter
     DW_SAFE_DELETE(m_mie_density);
     DW_SAFE_DELETE(m_rayleigh_density);
 
@@ -80,6 +81,7 @@ AtmosphereModel::~AtmosphereModel()
     DW_SAFE_DELETE(m_single_scattering_shader);
 
     DW_SAFE_DELETE(m_texture_buffer);
+#endif
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------
@@ -94,8 +96,12 @@ void AtmosphereModel::initialize(int num_scattering_orders)
     if (m_combine_scattering_textures)
         defines.push_back("COMBINED_SCATTERING_TEXTURES");
 
-    //defines.push_back("LOCAL_SIZE 1");
-#if 0
+    if (m_half_precision)
+        defines.push_back("INTERNAL_FORMAT rgba16f");
+    else
+        defines.push_back("INTERNAL_FORMAT rgba32f");
+
+#if 0 // original code for reference
     if (!dw::utility::create_compute_program("shader/clear_2d_cs.glsl", &m_clear_2d_shader, &m_clear_2d_program))
         DW_LOG_ERROR("Failed to load shaders");
 
@@ -212,10 +218,6 @@ void AtmosphereModel::initialize(int num_scattering_orders)
         m_optional_single_mie_scattering_texture = buffer->m_optional_single_mie_scattering_array[READ];
 
     m_texture_buffer = buffer;
-
-    //m_transmittance_texture->bind(25);
-    //m_scattering_texture->bind(6);
-    //m_irradiance_texture->bind(27);
 }
 
 // -----------------------------------------------------------------------------------------------------------------------------------
