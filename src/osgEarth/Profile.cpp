@@ -151,7 +151,7 @@ Profile::create(const SpatialReference* srs,
                 unsigned int numTilesWideAtLod0,
                 unsigned int numTilesHighAtLod0)
 {
-    OE_SOFT_ASSERT_AND_RETURN(srs!=nullptr, __func__, nullptr);
+    OE_SOFT_ASSERT_AND_RETURN(srs!=nullptr, nullptr);
 
     return new Profile(
         srs,
@@ -163,7 +163,7 @@ Profile::create(const SpatialReference* srs,
 const Profile*
 Profile::create(const SpatialReference* srs)
 {
-    OE_SOFT_ASSERT_AND_RETURN(srs != nullptr, __func__, nullptr);
+    OE_SOFT_ASSERT_AND_RETURN(srs != nullptr, nullptr);
 
     Bounds bounds;
     if (srs->getBounds(bounds))
@@ -200,7 +200,7 @@ Profile::create(const SpatialReference* srs,
                 unsigned int numTilesWideAtLod0,
                 unsigned int numTilesHighAtLod0)
 {
-    OE_SOFT_ASSERT_AND_RETURN(srs!=nullptr, __func__, nullptr);
+    OE_SOFT_ASSERT_AND_RETURN(srs!=nullptr, nullptr);
 
     return new Profile(
         srs,
@@ -381,7 +381,7 @@ Profile::Profile(const SpatialReference* srs,
 
     _extent(srs, xmin, ymin, xmax, ymax)
 {
-    OE_SOFT_ASSERT(srs!=nullptr, __func__);
+    OE_SOFT_ASSERT(srs!=nullptr);
 
     _numTilesWideAtLod0 = numTilesWideAtLod0 != 0? numTilesWideAtLod0 : srs->isGeographic()? 2 : 1;
     _numTilesHighAtLod0 = numTilesHighAtLod0 != 0? numTilesHighAtLod0 : 1;
@@ -409,7 +409,7 @@ Profile::Profile(const SpatialReference* srs,
 
     _extent(srs, xmin, ymin, xmax, ymax)
 {
-    OE_SOFT_ASSERT(srs!=nullptr, __func__);
+    OE_SOFT_ASSERT(srs!=nullptr);
 
     _numTilesWideAtLod0 = numTilesWideAtLod0 != 0? numTilesWideAtLod0 : srs->isGeographic()? 2 : 1;
     _numTilesHighAtLod0 = numTilesHighAtLod0 != 0? numTilesHighAtLod0 : 1;
@@ -730,20 +730,32 @@ Profile::addIntersectingTiles(const GeoExtent& key_ext, unsigned localLOD, std::
     double destTileWidth, destTileHeight;
     getTileDimensions(localLOD, destTileWidth, destTileHeight);
 
-    //OE_DEBUG << std::fixed << "  Source Tile: " << key.getLevelOfDetail() << " (" << keyWidth << ", " << keyHeight << ")" << std::endl;
-    //OE_DEBUG << std::fixed << "  Dest Size: " << destLOD << " (" << destTileWidth << ", " << destTileHeight << ")" << std::endl;
-
+    double west = key_ext.xMin() - _extent.xMin();
     double east = key_ext.xMax() - _extent.xMin();
-    bool xMaxOnTileBoundary = fmod(east, destTileWidth) == 0.0;
-
     double south = _extent.yMax() - key_ext.yMin();
-    bool yMaxOnTileBoundary = fmod(south, destTileHeight) == 0.0;
+    double north = _extent.yMax() - key_ext.yMax();
 
-    tileMinX = (int)((key_ext.xMin() - _extent.xMin()) / destTileWidth);
-    tileMaxX = (int)(east / destTileWidth) - (xMaxOnTileBoundary ? 1 : 0);
+    tileMinX = (int)(west / destTileWidth);
+    tileMaxX = (int)(east / destTileWidth);
 
-    tileMinY = (int)((_extent.yMax() - key_ext.yMax()) / destTileHeight); 
-    tileMaxY = (int)(south / destTileHeight) - (yMaxOnTileBoundary ? 1 : 0);
+    tileMinY = (int)(north / destTileHeight);
+    tileMaxY = (int)(south / destTileHeight);
+
+    // If the east or west border fell right on a tile boundary
+    // but doesn't actually use that tile, detect that and eliminate
+    // the extranous tiles. (This happens commonly when mapping
+    // geodetic to mercator for example)
+
+    double quantized_west = destTileWidth * (double)tileMinX;
+    double quantized_east = destTileWidth * (double)(tileMaxX + 1);
+
+    if (osg::equivalent(west - quantized_west, destTileWidth))
+        ++tileMinX;
+    if (osg::equivalent(quantized_east - east, destTileWidth))
+        --tileMaxX;
+
+    if (tileMaxX < tileMinX)
+        tileMaxX = tileMinX;
 
     unsigned int numWide, numHigh;
     getNumTiles(localLOD, numWide, numHigh);
@@ -829,7 +841,7 @@ Profile::getIntersectingTiles(const GeoExtent& extent, unsigned localLOD, std::v
 unsigned
 Profile::getEquivalentLOD( const Profile* rhsProfile, unsigned rhsLOD ) const
 {
-    OE_SOFT_ASSERT_AND_RETURN(rhsProfile!=nullptr, __func__, rhsLOD);
+    OE_SOFT_ASSERT_AND_RETURN(rhsProfile!=nullptr, rhsLOD);
 
     //If the profiles are equivalent, just use the incoming lod
     if (rhsProfile->isHorizEquivalentTo( this ) ) 

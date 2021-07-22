@@ -282,13 +282,8 @@ RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
     _liveTiles->setNotifyNeighbors(options().normalizeEdges() == true);
     _liveTiles->setFirstLOD(options().firstLOD().get());
 
-    // A resource releaser that will call releaseGLObjects() on expired objects.
-    _releaser = new ResourceReleaser();
-    this->addChild(_releaser.get());
-
     // A shared geometry pool.
     _geometryPool = new GeometryPool();
-    _geometryPool->setReleaser( _releaser.get());
     this->addChild( _geometryPool.get() );
 
     // Geometry compiler/merger
@@ -551,7 +546,7 @@ RexTerrainEngineNode::dirtyTerrain()
     // clear out the tile registry:
     if ( _liveTiles.valid() )
     {
-        _liveTiles->releaseAll(_releaser.get());
+        _liveTiles->releaseAll(nullptr);
     }
 
     // scrub the geometry pool:
@@ -718,10 +713,6 @@ RexTerrainEngineNode::cull_traverse(osg::NodeVisitor& nv)
                 }
             }
 
-            // perform any pre-draw finalization
-            layerDrawable->finalize();
-
-
             if (layerDrawable->_layer)
             {
                 layerDrawable->_layer->apply(layerDrawable.get(), cv);
@@ -775,7 +766,6 @@ RexTerrainEngineNode::cull_traverse(osg::NodeVisitor& nv)
     _geometryPool->accept(nv);
     _merger->accept(nv);
     _unloader->accept(nv);
-    _releaser->accept(nv);
 }
 
 void
@@ -825,6 +815,9 @@ RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
         if (layer->isOpen())
             layer->update(nv);
     }
+
+    // Call update on the tile registry
+    _liveTiles->update(nv);
 }
 
 void
@@ -995,7 +988,7 @@ RexTerrainEngineNode::onMapModelChanged( const MapModelChange& change )
 void
 RexTerrainEngineNode::cacheLayerExtentInMapSRS(Layer* layer)
 {
-    OE_SOFT_ASSERT_AND_RETURN(layer != nullptr, __func__,);
+    OE_SOFT_ASSERT_AND_RETURN(layer != nullptr, void());
 
     // Store the layer's extent in the map's SRS:
     LayerExtent& le = _cachedLayerExtents[layer->getUID()];

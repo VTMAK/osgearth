@@ -993,7 +993,7 @@ GroundCoverLayer::Renderer::visitTile(osg::RenderInfo& ri, const TileState* tile
     osg::ref_ptr<LegacyInstanceCloud>& instancer = ds._instancers[sa->_obj];
     const osg::Program::PerContextProgram* pcp = ri.getState()->getLastAppliedProgramObject();
 
-    OE_SOFT_ASSERT_AND_RETURN(pcp != nullptr, __func__, );
+    OE_SOFT_ASSERT_AND_RETURN(pcp != nullptr, void());
 
     UniformState& u = ds._uniforms[pcp];
 
@@ -1443,7 +1443,7 @@ GroundCoverLayer::createLUTShader() const
     lutbuf <<
         "bool oe_gc_getLandCoverGroup(in int zone, in int code, out oe_gc_LandCoverGroup result) { \n";
 
-    UnorderedSet<std::string> exprs;
+    std::unordered_set<std::string> exprs;
     std::stringstream exprBuf;
 
     for(int a=0; a<_liveAssets.size(); ++a)

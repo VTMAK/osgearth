@@ -1754,51 +1754,44 @@ _maxLevel( 19u )
 GeoImage GeoImage::INVALID( 0L, GeoExtent::INVALID );
 
 GeoImage::GeoImage() :
-    _myimage(0L),
+    _myimage(nullptr),
     _extent(GeoExtent::INVALID),
-    _status(Status::GeneralError)
+    _status()
 {
     //nop
 }
 
 GeoImage::GeoImage(const Status& status) :
-    _myimage(0L),
+    _myimage(nullptr),
     _extent(GeoExtent::INVALID),
     _status(status)
 {
-    if (_status.isOK())
-        _status = Status::GeneralError;
+    //nop
 }
 
 GeoImage::GeoImage(const osg::Image* image, const GeoExtent& extent) :
     _myimage(image),
     _extent(extent)
 {
-    if (_myimage.valid() && extent.isInvalid())
+    if (extent.isInvalid())
     {
-        OE_WARN << LC << "ILLEGAL: created a GeoImage with a valid image and an invalid extent" << std::endl;
-        _status = Status::GeneralError;
-    }
-    else if (!_myimage.valid())
-    {
-        _status = Status::GeneralError;
+        _status.set(Status::AssertionFailure, "Invalid geoextent");
     }
 }
 
 GeoImage::GeoImage(Threading::Future<osg::ref_ptr<osg::Image>> fimage, const GeoExtent& extent) :
-    _myimage(0L),
+    _myimage(nullptr),
     _extent(extent)
 {
     _future = fimage;
 
     if (_future->isAbandoned())
     {
-        _status = Status::ResourceUnavailable;
+        _status.set(Status::ResourceUnavailable, "Async request canceled");
     }
     else if (extent.isInvalid())
     {
-        OE_WARN << LC << "ILLEGAL: created a GeoImage with a valid image and an invalid extent" << std::endl;
-        _status = Status::GeneralError;
+        _status.set(Status::GeneralError, "Invalid geoextent");
     }
 }
 
@@ -2191,8 +2184,7 @@ GeoHeightField::init()
 {
     if ( _heightField.valid() && _extent.isInvalid() )
     {
-        OE_WARN << LC << "Created with a valid heightfield AND INVALID extent" << std::endl;
-        _status = Status::GeneralError;
+        _status.set(Status::GeneralError, "invalid heightfield or geoextent");
     }
 
     else if ( _heightField.valid() )
@@ -2227,7 +2219,7 @@ GeoHeightField::init()
 
     else if (!_heightField.valid())
     {
-        _status = Status::GeneralError;
+        _status.set(Status::GeneralError, "invalid heightfield");
     }
 }
 
@@ -2386,7 +2378,7 @@ GeoNode GeoNode::INVALID;
 
 GeoNode::GeoNode() :
     _extent( GeoExtent::INVALID ),
-    _status( Status::GeneralError )
+    _status()
 {
     //nop
 }
@@ -2395,8 +2387,7 @@ GeoNode::GeoNode(const Status& status) :
     _extent(GeoExtent::INVALID),
     _status(status)
 {
-    if (_status.isOK())
-        _status = Status::GeneralError;
+    //nop
 }
 
 GeoNode::GeoNode(const osg::Node* node, const GeoExtent& extent) :
@@ -2406,10 +2397,6 @@ GeoNode::GeoNode(const osg::Node* node, const GeoExtent& extent) :
     if (_node.valid() && extent.isInvalid())
     {
         _status = Status(Status::GeneralError, "ILLEGAL: created a GeoImage with a valid image and an invalid extent");
-    }
-    else if (!_node.valid())
-    {
-        _status = Status::GeneralError;
     }
 }
 
