@@ -26,13 +26,15 @@
 #include <osg/Geode>
 #include <osg/Matrix>
 #include <osg/TextureBuffer>
-#include <osgEarth/Containers>
 #include <osgEarth/Progress>
 #include <osgEarth/Session>
 #include <osgEarth/FeatureIndex>
 #include <osgEarth/ModelResource>
 #include <osgEarth/ResourceCache>
 #include <osgEarth/StateSetCache>
+
+#include <map>
+#include <unordered_map>
 
 namespace osg
 {
@@ -164,11 +166,11 @@ namespace osgEarth { namespace Buildings
         osg::Matrix _local2world, _world2local;
 
         osg::ref_ptr<osg::Geode> _defaultGeode;
-        typedef UnorderedMap<std::string, osg::ref_ptr<osg::Geode> > TaggedGeodes;
+        using TaggedGeodes = std::unordered_map<std::string, osg::ref_ptr<osg::Geode>>;
         TaggedGeodes _geodes;
         
-        typedef std::vector<osg::Matrix> MatrixVector;
-        typedef std::map< osg::ref_ptr<ModelResource>, MatrixVector > InstanceMap;
+        using MatrixVector = std::vector<osg::Matrix>;
+        using InstanceMap = std::map<osg::ref_ptr<ModelResource>, MatrixVector>;
         InstanceMap _instances;
         
         osg::ref_ptr<osg::Group> _externalModelsGroup;
@@ -187,7 +189,7 @@ namespace osgEarth { namespace Buildings
         TileKey _key;
         std::string _name;
 
-        typedef UnorderedMap<std::string, osg::ref_ptr<osg::StateSet> > SkinStateSetCache;
+        using SkinStateSetCache = std::unordered_map<std::string, osg::ref_ptr<osg::StateSet>>;
         SkinStateSetCache _skinStateSetCache;
 
         osg::ref_ptr<TextureCache> _texCache;
