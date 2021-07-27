@@ -150,6 +150,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
     //}
 
     float roofZ = 0.0f;
+    osg::Vec4 roofColor = roof ? roof->getColor() : osg::Vec4(1, 1, 1, 1);
 
     // Create a series of line loops that the tessellator can reorganize into polygons.
     unsigned vertptr = 0;
@@ -170,7 +171,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
 
                 if ( colors )
                 {
-                    colors->push_back( roof->getColor() );
+                    colors->push_back(roofColor);
                 }
 
                 if ( texCoords )
