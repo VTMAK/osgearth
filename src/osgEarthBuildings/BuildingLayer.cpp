@@ -25,6 +25,8 @@
 #include <osgEarth/Registry>
 #include <osgEarth/FeatureSourceIndexNode>
 
+#include <cstdlib>
+
 using namespace osgEarth;
 using namespace osgEarth::Buildings;
 
@@ -170,7 +172,8 @@ BuildingLayer::createSceneGraph()
     pager->setClusterCullingEnabled(options().clusterCulling().get());
     pager->setSceneGraphCallbacks(getSceneGraphCallbacks());
 
-    if (options().verboseWarnings().isSetTo(true))
+    if (options().verboseWarnings().isSetTo(true) ||
+        ::getenv("OSGEARTH_BUILDINGS_VERBOSE_WARNINGS") != nullptr)
     {
         pager->setVerboseWarnings(true);
     }
