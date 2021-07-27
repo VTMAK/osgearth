@@ -254,7 +254,9 @@ BuildingCatalog::parseBuildings(const Config& conf, ProgressCallback* progress)
         building->setMinArea( b->value("min_area", 0.0f) );
         building->setMaxArea( b->value("max_area", FLT_MAX) );
 
-        if ( b->value("instanced", false) == true )
+        building->setInstanced(b->value("instanced", false));
+
+        if (building->getInstanced())
         {
             ModelSymbol* ms = new ModelSymbol();
             ms->addTags( "instanced" );
