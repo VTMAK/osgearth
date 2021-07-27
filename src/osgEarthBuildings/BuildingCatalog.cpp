@@ -143,11 +143,11 @@ BuildingCatalog::createBuildings(Feature*              feature,
         }
     }
 
-    else if (progress)
-    {
-        progress->message() += Stringify()
-            << "Feature " << feature->getFID() << " has an invalid or non-polygon geometry\n";
-    }
+    //else if (progress)
+    //{
+    //    progress->message() += Stringify()
+    //        << "Feature " << feature->getFID() << " has an invalid or non-polygon geometry\n";
+    //}
 
     //else if (messageStream)
     //{
