@@ -142,8 +142,8 @@ BuildingCompiler::addElevations(CompilerOutput&        output,
 
    // Iterator over each Elevation in this building:
    for (ElevationVector::const_iterator e = elevations.begin();
-      e != elevations.end();
-      ++e)
+       e != elevations.end();
+       ++e)
    {
       const Elevation* elevation = e->get();
 
@@ -159,6 +159,16 @@ BuildingCompiler::addElevations(CompilerOutput&        output,
          addElevations(output, building, elevation->getElevations(), world2local, readOptions);
       }
 
+      // if this is an instanced model but without a model resource, we are
+      // falling back on the parametric template. In this case, if there is no
+      // roof defined, add a flat one by default.
+      if (building->getInstanced() &&
+          building->getInstancedModelResource() == nullptr &&
+          elevation->getRoof() == nullptr)
+      {
+          addRoof(output, building, elevation, world2local, readOptions);
+      }
+
    } // elevations loop
 
 
@@ -172,21 +182,23 @@ BuildingCompiler::addRoof(CompilerOutput&       output,
                           const osg::Matrix&    world2local, 
                           const osgDB::Options* readOptions) const
 {
-    if ( elevation && elevation->getRoof() )
+    if (elevation)
     {
-        if ( elevation->getRoof()->getType() == Roof::TYPE_GABLE )
+        Roof* roof = elevation->getRoof();
+
+        if (roof && roof->getType() == Roof::TYPE_GABLE)
         {
-           return _gableRoofCompiler->compile(output, building, elevation, world2local, readOptions);
+            return _gableRoofCompiler->compile(output, building, elevation, world2local, readOptions);
         }
-        else if ( elevation->getRoof()->getType() == Roof::TYPE_INSTANCED )
+        else if (roof && roof->getType() == Roof::TYPE_INSTANCED)
         {
-           //osg::Matrixd _worldToLocal = (_filterUsage == FILTER_USAGE_NORMAL) ? world2local : osg::Matrixd::identity();
-           return _instancedRoofCompiler->compile(output, building, elevation, world2local, readOptions);
+            return _instancedRoofCompiler->compile(output, building, elevation, world2local, readOptions);
         }
-        else
+        else // flat roof.
         {
             return _flatRoofCompiler->compile(output, building, elevation, world2local, readOptions);
         }
     }
+
     return false;
 }

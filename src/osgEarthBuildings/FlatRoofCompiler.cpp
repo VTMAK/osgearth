@@ -88,8 +88,8 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
 {
     if ( !building ) return false;
     if ( !elevation ) return false;
-    if ( !elevation->getRoof() ) return false;
 
+    // Could be null, and that's OK.
     const Roof* roof = elevation->getRoof();
 
     // precalculate the frame transformation; combining these will
@@ -99,7 +99,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
     bool genColors = true; //false;   // TODO
 
     // find a texture:
-    SkinResource* skin = roof->getSkinResource();
+    SkinResource* skin = roof ? roof->getSkinResource() : nullptr;
     osg::ref_ptr<osg::StateSet> stateSet;
     if ( skin )
     {
@@ -242,66 +242,69 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
     for(osg::Vec3Array::iterator v = verts->begin(); v != verts->end(); ++v)
         (*v) = (*v) * frame;
 
-    output.addDrawable( geom.get(), roof->getTag() );
+    output.addDrawable(geom.get(), roof ? roof->getTag() : elevation->getTag());
     
     // Load models:
-    ModelResource* model = roof->getModelResource();
-    if ( model && roof->hasModelBox() )
+    if (roof)
     {
-        const osg::Vec3d* modelBox = roof->getModelBox();
-        osg::Vec3d rbox[4];
-        osg::BoundingBox space;
-        for(int i=0; i<4; ++i)
-        { 
-            rbox[i] = modelBox[i];
-            roof->getParent()->rotate(rbox[i]);
-            space.expandBy(rbox[i]);
-        }
-
-        // calculate the size of the model box:            
-        float spaceWidth = space.xMax() - space.xMin();
-        float spaceHeight = space.yMax() - space.yMin();
-
-        const osg::BoundingBox& bbox = model->getBoundingBox(0L);
-        float modelWidth  = bbox.xMax() - bbox.xMin();
-        float modelHeight = bbox.yMax() - bbox.yMin();
-            
-        // only place a model is there is enough room:
-        if ( modelWidth < spaceWidth && modelHeight < spaceHeight )
+        ModelResource* model = roof->getModelResource();
+        if (model && roof->hasModelBox())
         {
-            // generate a pseudo-random position inside the model box:
-            Random prng(building->getUID());
-            float x = prng.next();
-            float y = prng.next();
-
-            float max_dx = spaceWidth - modelWidth;
-            float max_dy = spaceHeight - modelHeight;
-
-            float dx = prng.next()*max_dx - bbox.xMin();
-            float dy = prng.next()*max_dy - bbox.yMin();
-
-            osg::Vec3d p = osg::Vec3d(space.xMin()+dx, space.yMin()+dy, 0.0);
-            roof->getParent()->unrotate( p );
-
-            // offset to the bottom of the model's bounding box:
-            p.z() = roofZ - bbox.zMin();
-
-            if (_filterUsage==FILTER_USAGE_NORMAL)
+            const osg::Vec3d* modelBox = roof->getModelBox();
+            osg::Vec3d rbox[4];
+            osg::BoundingBox space;
+            for (int i = 0; i < 4; ++i)
             {
-               osg::Matrix placement(roof->getParent()->getRotation() * frame * osg::Matrix::translate(p));
-               output.addInstance(model, placement);
+                rbox[i] = modelBox[i];
+                roof->getParent()->rotate(rbox[i]);
+                space.expandBy(rbox[i]);
             }
-            else
-            {
-               osg::Matrix placement(roof->getParent()->getRotation() * osg::Matrix::translate(p));
-               output.addInstance(model, placement * building->getReferenceFrame());
-            }
-        }
 
-        // draw the model box for debugging purposes.
-        if ( s_debug )
-        {
-               output.getDebugGroup()->addChild( createModelBoxGeom(modelBox, frame, roofZ) );
+            // calculate the size of the model box:            
+            float spaceWidth = space.xMax() - space.xMin();
+            float spaceHeight = space.yMax() - space.yMin();
+
+            const osg::BoundingBox& bbox = model->getBoundingBox(0L);
+            float modelWidth = bbox.xMax() - bbox.xMin();
+            float modelHeight = bbox.yMax() - bbox.yMin();
+
+            // only place a model is there is enough room:
+            if (modelWidth < spaceWidth && modelHeight < spaceHeight)
+            {
+                // generate a pseudo-random position inside the model box:
+                Random prng(building->getUID());
+                float x = prng.next();
+                float y = prng.next();
+
+                float max_dx = spaceWidth - modelWidth;
+                float max_dy = spaceHeight - modelHeight;
+
+                float dx = prng.next()*max_dx - bbox.xMin();
+                float dy = prng.next()*max_dy - bbox.yMin();
+
+                osg::Vec3d p = osg::Vec3d(space.xMin() + dx, space.yMin() + dy, 0.0);
+                roof->getParent()->unrotate(p);
+
+                // offset to the bottom of the model's bounding box:
+                p.z() = roofZ - bbox.zMin();
+
+                if (_filterUsage == FILTER_USAGE_NORMAL)
+                {
+                    osg::Matrix placement(roof->getParent()->getRotation() * frame * osg::Matrix::translate(p));
+                    output.addInstance(model, placement);
+                }
+                else
+                {
+                    osg::Matrix placement(roof->getParent()->getRotation() * osg::Matrix::translate(p));
+                    output.addInstance(model, placement * building->getReferenceFrame());
+                }
+            }
+
+            // draw the model box for debugging purposes.
+            if (s_debug)
+            {
+                output.getDebugGroup()->addChild(createModelBoxGeom(modelBox, frame, roofZ));
+            }
         }
     }
 
