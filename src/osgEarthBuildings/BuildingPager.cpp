@@ -23,6 +23,9 @@
 #include <osgEarth/Query>
 #include <osgEarth/StyleSheet>
 #include <osgEarth/Metrics>
+#include <osgEarth/Utils>
+#include <osgEarth/NodeUtils>
+
 #include <osgUtil/Optimizer>
 #include <osgUtil/Statistics>
 #include <osg/Version>
@@ -49,44 +52,23 @@ using namespace osgEarth;
 
 namespace
 {
-
-    // Callback that culls unused stuff from the ObjectCache.
-    // Unfortunately we cannot use this in OSG < 3.5.1 because of an OSG threading bug;
-    // https://github.com/openscenegraph/OpenSceneGraph/commit/5b17e3bc2a0c02cf84d891bfdccf14f170ee0ec8 
-    struct TendArtCacheCallback : public osg::NodeCallback
-    {
-        TendArtCacheCallback(osgDB::ObjectCache* cache) : _cache(cache) { }
-
-        void operator()(osg::Node* node, osg::NodeVisitor* nv)
-        {
-            if (nv->getFrameStamp())
-            {
-                _cache->updateTimeStampOfObjectsInCacheWithExternalReferences(nv->getFrameStamp()->getReferenceTime());
-                _cache->removeExpiredObjectsInCache(10.0);
-            }
-            traverse(node, nv);
-        }        
-        
-        osg::ref_ptr<osgDB::ObjectCache> _cache;
-    };
-
     struct ArtCache : public osgDB::ObjectCache
     {
         unsigned size() const { return this->_objectCache.size(); }
     };
 }
 
-
-BuildingPager::BuildingPager(const Profile* profile) :
-SimplePager( profile ),
-_index     ( 0L ),
-_filterUsage(FILTER_USAGE_NORMAL),
-_verboseWarnings(false)
+BuildingPager::CacheManager::CacheManager() :
+    osg::Group(),
+    _renderLeaves(0),
+    _cullCompleted(false),
+    _renderLeavesDetected(false)
 {
-    _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != 0L;
+    setCullingActive(false);
+    ADJUST_UPDATE_TRAV_COUNT(this, +1);
 
     // An object cache for shared resources like textures, atlases, and instanced models.
-    _artCache = new ArtCache(); //osgDB::ObjectCache();
+    _artCache = new ArtCache();
 
     // Texture object cache
     _texCache = new TextureCache();
@@ -94,17 +76,113 @@ _verboseWarnings(false)
     // Shared stateset cache for shader generation
     _stateSetCache = new StateSetCache();
     _stateSetCache->setMaxSize(~0);
+}
 
-#if OSG_VERSION_GREATER_OR_EQUAL(3,5,1)
-    // Read this to see why the version check exists:
-    // https://github.com/openscenegraph/OpenSceneGraph/commit/5b17e3bc2a0c02cf84d891bfdccf14f170ee0ec8
+void
+BuildingPager::CacheManager::releaseGLObjects(osg::State* state) const
+{
+    if (_artCache.valid())
+    {
+        _artCache->releaseGLObjects(state);
+        _artCache->clear();
+    }
 
-    // This callack expires unused items from the art cache periodically
-    this->addCullCallback(new TendArtCacheCallback(_artCache.get()));
-#endif
+    if (_texCache.valid())
+    {
+        _texCache->releaseGLObjects(state);
+        _texCache->clear();
+    }
 
+    if (_stateSetCache.valid())
+    {
+        _stateSetCache->releaseGLObjects(state);
+        _stateSetCache->clear();
+    }
+    
+    OE_INFO << LC << "Cleared all internal caches" << std::endl;
+}
+
+void
+BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
+{
+    if (nv.getVisitorType() == nv.CULL_VISITOR)
+    {
+        if (nv.getFrameStamp())
+        {
+            _artCache->updateTimeStampOfObjectsInCacheWithExternalReferences(
+                nv.getFrameStamp()->getReferenceTime());
+
+            _artCache->removeExpiredObjectsInCache(10.0);
+        }
+
+        osgUtil::CullVisitor* cv = dynamic_cast<osgUtil::CullVisitor*>(&nv);
+        int before = RenderBinUtils::getTotalNumRenderLeaves(cv->getCurrentRenderBin());
+
+        osg::Group::traverse(nv);
+
+        int after = RenderBinUtils::getTotalNumRenderLeaves(cv->getCurrentRenderBin());
+
+        int newLeaves = after - before;
+        if (newLeaves > 0)
+        {
+            _renderLeaves.fetch_add(newLeaves);
+            _renderLeavesDetected.exchange(true);
+        }
+
+        _cullCompleted.exchange(true);
+    }
+
+    else if (nv.getVisitorType() == nv.UPDATE_VISITOR)
+    {
+        // if nothing was culled, clear out the caches and release their memory.
+        // _cullCompleted = so it will work if update is called more than once
+        //                  between culls
+        if (_cullCompleted.exchange(false) && 
+            _renderLeavesDetected && 
+            _renderLeaves == 0)
+        {
+            releaseGLObjects(nullptr);
+            _renderLeavesDetected = false;
+        }
+
+        _renderLeaves = 0;
+
+        osg::Group::traverse(nv);
+    }
+
+    else
+    {
+        osg::Group::traverse(nv);
+    }
+}
+
+
+
+//...................................................................
+
+
+BuildingPager::BuildingPager(const Profile* profile) :
+SimplePager( profile ),
+_index     ( nullptr ),
+_filterUsage(FILTER_USAGE_NORMAL),
+_verboseWarnings(false)
+{
+    _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != nullptr;
+
+    _caches = new CacheManager();
+    _caches->setName("BuildingPager Cache Manager");
+
+    // Disable backface culling?
     this->getOrCreateStateSet()->setAttributeAndModes(
         new osg::CullFace(), osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
+}
+
+void
+BuildingPager::build()
+{
+    _caches = new CacheManager();
+    _caches->addChild(buildRootNode());
+    addChild(_caches.get());
 }
 
 void
@@ -233,7 +311,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     unsigned numFeatures = 0;
     
     std::string activityName("Load building tile " + tileKey.str());
-    Registry::instance()->startActivity(activityName);
+    //Registry::instance()->startActivity(activityName);
 
     osg::CVMarkerSeries series("PagingThread");
     osg::CVSpan UpdateTick(series, 4, activityName.c_str());
@@ -247,22 +325,22 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     // shared throughout the creation process. This is critical for sharing 
     // textures and especially for texture atlas usage.
     osg::ref_ptr<osgDB::Options> readOptions = Registry::cloneOrCreateOptions(_session->getDBOptions());
-    readOptions->setObjectCache(_artCache.get());
+    readOptions->setObjectCache(_caches->_artCache.get());
     readOptions->setObjectCacheHint(osgDB::Options::CACHE_IMAGES);
 
     // TESTING:
-    Registry::instance()->startActivity("Bld art cache", Stringify()<<((ArtCache*)(_artCache.get()))->size());
-    Registry::instance()->startActivity("Bld tex cache", Stringify() << _texCache->_cache.size());
-    Registry::instance()->startActivity("RCache skins", Stringify() << _session->getResourceCache()->getSkinStats()._entries);
-    Registry::instance()->startActivity("RCache insts", Stringify() << _session->getResourceCache()->getInstanceStats()._entries);
+    //Registry::instance()->startActivity("Bld art cache", Stringify()<<((ArtCache*)(_artCache.get()))->size());
+    //Registry::instance()->startActivity("Bld tex cache", Stringify() << _texCache->_cache.size());
+    //Registry::instance()->startActivity("RCache skins", Stringify() << _session->getResourceCache()->getSkinStats()._entries);
+    //Registry::instance()->startActivity("RCache insts", Stringify() << _session->getResourceCache()->getInstanceStats()._entries);
 
     // Holds all the final output.
     CompilerOutput output;
     output.setName(tileKey.str());
     output.setTileKey(tileKey);
     output.setIndex(_index);
-    output.setTextureCache(_texCache.get());
-    output.setStateSetCache(_stateSetCache.get());
+    output.setTextureCache(_caches->_texCache.get());
+    output.setStateSetCache(_caches->_stateSetCache.get());
     output.setFilterUsage(_filterUsage);
     
     bool canceled = false;
@@ -285,7 +363,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     {
         // fetch the style for this LOD:
         std::string styleName = Stringify() << tileKey.getLOD();
-        const Style* style = _session->styles() ? _session->styles()->getStyle(styleName) : 0L;
+        const Style* style = _session->styles() ? _session->styles()->getStyle(styleName) : nullptr;
 
         // Create a cursor to iterator over the feature data:
         Query query;
@@ -422,11 +500,10 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     if (canceled)
     {
         OE_DEBUG << LC << "Building tile " << tileKey.str() << " - canceled" << std::endl;
-        return 0L;
+        return nullptr;
     }
     else
     {
-
         return node;
     }
 }
