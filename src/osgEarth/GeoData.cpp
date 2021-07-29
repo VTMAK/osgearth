@@ -24,6 +24,7 @@
 #include <osgEarth/Terrain>
 #include <osgEarth/GDAL>
 #include <osgEarth/Metrics>
+#include <osg/BoundingBox>
 
 using namespace osgEarth;
 
@@ -130,13 +131,13 @@ _altMode( ALTMODE_ABSOLUTE )
     if ( conf.hasValue("lat") && (!_srs.valid() || _srs->isGeographic()) )
     {
         conf.get( "lat", _p.y() );
-        if ( !_srs.valid() ) 
+        if ( !_srs.valid() )
             _srs = SpatialReference::create("wgs84");
     }
     if ( conf.hasValue("long") && (!_srs.valid() || _srs->isGeographic()) )
     {
         conf.get("long", _p.x());
-        if ( !_srs.valid() ) 
+        if ( !_srs.valid() )
             _srs = SpatialReference::create("wgs84");
     }
 
@@ -221,7 +222,7 @@ GeoPoint::getXYUnits() const
     return getSRS() ? getSRS()->getUnits() : Units::DEGREES;
 }
 
-bool 
+bool
 GeoPoint::operator == (const GeoPoint& rhs) const
 {
     return
@@ -256,7 +257,7 @@ GeoPoint::transform(const SpatialReference* outSRS) const
 }
 
 bool
-GeoPoint::transformInPlace(const SpatialReference* srs) 
+GeoPoint::transformInPlace(const SpatialReference* srs)
 {
     if ( isValid() && srs )
     {
@@ -283,7 +284,7 @@ GeoPoint::transformInPlace(const SpatialReference* srs)
 }
 
 bool
-GeoPoint::transformZ(const AltitudeMode& altMode, const TerrainResolver* terrain ) 
+GeoPoint::transformZ(const AltitudeMode& altMode, const TerrainResolver* terrain )
 {
     double z;
     if ( transformZ(altMode, terrain, z) )
@@ -300,9 +301,9 @@ GeoPoint::transformZ(const AltitudeMode& altMode, const TerrainResolver* terrain
 {
     if ( !isValid() )
         return false;
-    
+
     // already in the target mode? just return z.
-    if ( _altMode == altMode ) 
+    if ( _altMode == altMode )
     {
         out_z = z();
         return true;
@@ -409,7 +410,7 @@ GeoPoint::toWorld( osg::Vec3d& out_world, const TerrainResolver* terrain ) const
         GeoPoint absPoint = *this;
         if (!absPoint.makeAbsolute( terrain ))
         {
-            return false;            
+            return false;
         }
         return absPoint.toWorld( out_world );
     }
@@ -525,7 +526,7 @@ GeoPoint::interpolate(const GeoPoint& rhs, double t) const
             w1.x() + (w2.x()-w1.x())*t,
             w1.y() + (w2.y()-w1.y())*t,
             w1.z() + (w2.z()-w1.z())*t);
-        
+
         result.fromWorld(getSRS(), r);
     }
 
@@ -544,7 +545,7 @@ GeoPoint::interpolate(const GeoPoint& rhs, double t) const
 
         osg::Vec3d ellipToUnit = osg::componentDivide(
             osg::Vec3d(1,1,1), unitToEllip);
-        
+
         osg::Vec3d w1;
         toWorld(w1);
         w1 = osg::componentMultiply(w1, ellipToUnit);
@@ -620,10 +621,10 @@ GeoPoint::distanceTo(const GeoPoint& rhs) const
 
         double G = acos(sin(B1)*sin(B2) + cos(B1)*cos(B2)*cos(fabs(lon2-lon1)));
 
-        double 
-            sinG = sin(G), 
-            sinP = sin(P), sinQ = sin(Q), 
-            cosP = cos(P), cosQ = cos(Q), 
+        double
+            sinG = sin(G),
+            sinP = sin(P), sinQ = sin(Q),
+            cosP = cos(P), cosQ = cos(Q),
             sinG2 = sin(G/2.0), cosG2 = cos(G/2.0);
 
         double X = (G-sinG)*((sinP*sinP*cosQ*cosQ)/(cosG2*cosG2));
@@ -682,8 +683,8 @@ _radius( radius )
 bool
 GeoCircle::operator == ( const GeoCircle& rhs ) const
 {
-    return 
-        _center == rhs._center && 
+    return
+        _center == rhs._center &&
         osg::equivalent(_radius, rhs._radius);
 }
 
@@ -705,7 +706,7 @@ GeoCircle::transform( const SpatialReference* srs, GeoCircle& output ) const
 }
 
 
-bool 
+bool
 GeoCircle::intersects( const GeoCircle& rhs ) const
 {
     if ( !isValid() || !rhs.isValid() )
@@ -979,7 +980,7 @@ GeoExtent::splitAcrossAntimeridian(GeoExtent& out_west, GeoExtent& out_east) con
 }
 
 GeoExtent
-GeoExtent::transform(const SpatialReference* to_srs) const 
+GeoExtent::transform(const SpatialReference* to_srs) const
 {
     // check for NULL
     if (isInvalid() || !to_srs)
@@ -995,7 +996,7 @@ GeoExtent::transform(const SpatialReference* to_srs) const
         // do not normalize the X values here.
         double xmin = west(), ymin = south();
         double xmax = west() + width(), ymax = south() + height();
-        
+
         if ( _srs->transformExtentToMBR(to_srs, xmin, ymin, xmax, ymax) )
         {
             return GeoExtent( to_srs, xmin, ymin, xmax, ymax );
@@ -1070,7 +1071,7 @@ GeoExtent::contains(double x, double y, const SpatialReference* srs) const
 
     // Bring the X coordinate into normal range:
     localx = normalizeX(localx);
-    
+
     // Quantize the X coordinate to account for tiny rounding errors:
     if (fabs(lwest - localx) < epsilon)
        localx = lwest;
@@ -1172,7 +1173,7 @@ GeoExtent::computeBoundingGeoCircle() const
     {
         circle.setRadius( -1.0 );
     }
-    else 
+    else
     {
         GeoPoint centroid = getCentroid();
 
@@ -1190,7 +1191,7 @@ GeoExtent::computeBoundingGeoCircle() const
             GeoPoint(getSRS(), east(), south(), 0, ALTMODE_ABSOLUTE).toWorld(se);
             GeoPoint(getSRS(), east(), north(), 0, ALTMODE_ABSOLUTE).toWorld(ne);
             GeoPoint(getSRS(), west(), north(), 0, ALTMODE_ABSOLUTE).toWorld(nw);
-            
+
             double radius2 = (center-sw).length2();
             radius2 = osg::maximum(radius2, (center-se).length2());
             radius2 = osg::maximum(radius2, (center-ne).length2());
@@ -1313,7 +1314,7 @@ GeoExtent::expandToInclude(const GeoExtent& rhs)
     }
 
     else
-    {        
+    {
         if (area() <= 0.0)
         {
             *this = rhs;
@@ -1326,7 +1327,7 @@ GeoExtent::expandToInclude(const GeoExtent& rhs)
             _south = rhs.south();
         }
         _height = h;
-        
+
         // non-wrap-around new width:
         double w0 = osg::maximum(xMax(), rhs.xMax()) - osg::minimum(xMin(), rhs.xMin());
 
@@ -1422,7 +1423,7 @@ GeoExtent::intersectionSameSRS(const GeoExtent& rhs) const
                     iw = i;
             }
 
-            // iterate from there, finding the LAST west coord and stopping on the 
+            // iterate from there, finding the LAST west coord and stopping on the
             // FIRST east coord found.
             int q = iw+4;
             int ie = -1;
@@ -1457,7 +1458,7 @@ GeoExtent::intersectionSameSRS(const GeoExtent& rhs) const
 
     result.clamp();
 
-    OE_DEBUG << "Intersection of " << this->toString() << " and " << rhs.toString() << " is: " 
+    OE_DEBUG << "Intersection of " << this->toString() << " and " << rhs.toString() << " is: "
         << result.toString()
         << std::endl;
 
@@ -1473,7 +1474,7 @@ GeoExtent::scale(double x_scale, double y_scale)
     double cx = _west + 0.5*_width;
 
     double cy = _south + 0.5*_height;
-     
+
     setOriginAndSize(
         normalizeX(cx - 0.5*_width*x_scale),
         cy - 0.5*_height*y_scale,
@@ -1543,7 +1544,7 @@ GeoExtent::clamp()
         }
         else if (north() > 90.0)
         {
-            _height -= (north()-90.0);            
+            _height -= (north()-90.0);
         }
     }
 }
@@ -1570,7 +1571,7 @@ GeoExtent::normalizeX(double x) const
             if (x < 0.0)
                 x += 360.0;
         }
-        
+
         if (x > 180.0)
         {
             x -= 360.0;
@@ -1652,18 +1653,53 @@ GeoExtent::createWorldBoundingSphere(double minElev, double maxElev) const
         GeoPoint(getSRS(), xMin(), yMin(), minElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
         GeoPoint(getSRS(), xMax(), yMax(), maxElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
     }
-
     else // geocentric
     {
-        osg::Vec3d w;
-        GeoPoint(getSRS(), xMin(), yMin(), minElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMax(), yMin(), minElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMax(), yMax(), minElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMin(), yMax(), minElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMin(), yMin(), maxElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMax(), yMin(), maxElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMax(), yMax(), maxElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
-        GeoPoint(getSRS(), xMin(), yMax(), maxElev, ALTMODE_ABSOLUTE).toWorld(w); bs.expandBy(w);
+        // Sample points along the extent
+        std::vector< osg::Vec3d > samplePoints;
+
+        int samples = 7;
+
+        double xSample = width() / (double)(samples - 1);
+        double ySample = height() / (double)(samples - 1);
+
+        for (int c = 0; c < samples; c++)
+        {
+            double x = xMin() + (double)c * xSample;
+            for (int r = 0; r < samples; r++)
+            {
+                double y = yMin() + (double)r * ySample;
+
+                osg::Vec3d world;
+                GeoPoint(getSRS(), x, y, minElev, ALTMODE_ABSOLUTE).toWorld(world);
+                samplePoints.push_back(world);
+                GeoPoint(getSRS(), x, y, maxElev, ALTMODE_ABSOLUTE).toWorld(world);
+                samplePoints.push_back(world);
+            }
+        }
+
+        // Compute the bounding box of the sample points
+        osg::BoundingBoxd bb;
+        for (auto& p : samplePoints)
+        {
+            bb.expandBy(p);
+        }
+
+        // The center of the bounding sphere is the center of the bounding box
+        bs.center() = bb.center();
+
+        // Compute the max radius based on the distance from the bounding boxes center.
+        double maxRadius = -DBL_MAX;
+
+        for (auto& p : samplePoints)
+        {
+            double r = (p - bs.center()).length();
+            if (r > maxRadius) maxRadius = r;
+        }
+
+        bs.radius() = maxRadius;
+
+        return bs;
     }
 
     return bs;
@@ -1671,7 +1707,7 @@ GeoExtent::createWorldBoundingSphere(double minElev, double maxElev) const
 
 bool
 GeoExtent::createScaleBias(const GeoExtent& rhs, osg::Matrixf& output) const
-{    
+{
     double scalex = width() / rhs.width();
     double scaley = height() / rhs.height();
     double biasx  = (west()-rhs.west()) / rhs.width();
@@ -1687,7 +1723,7 @@ GeoExtent::createScaleBias(const GeoExtent& rhs, osg::Matrixf& output) const
 
 bool
 GeoExtent::createScaleBias(const GeoExtent& rhs, osg::Matrixd& output) const
-{    
+{
     double scalex = width() / rhs.width();
     double scaley = height() / rhs.height();
     double biasx  = (west()-rhs.west()) / rhs.width();
@@ -1814,7 +1850,7 @@ GeoImage::GeoImage(Threading::Future<osg::ref_ptr<osg::Image>> fimage, const Geo
 }
 
 bool
-GeoImage::valid() const 
+GeoImage::valid() const
 {
     if (!_extent.isValid())
         return false;
@@ -1936,11 +1972,11 @@ GeoImage::crop( const GeoExtent& extent, bool exact, unsigned int width, unsigne
 namespace
 {
     osg::Image* manualReproject(
-        const osg::Image* image, 
-        const GeoExtent&  src_extent, 
+        const osg::Image* image,
+        const GeoExtent&  src_extent,
         const GeoExtent&  dest_extent,
         bool              interpolate,
-        unsigned int      width = 0, 
+        unsigned int      width = 0,
         unsigned int      height = 0)
     {
         OE_PROFILING_ZONE;
@@ -2100,7 +2136,7 @@ namespace
 
 GeoImage
 GeoImage::reproject(const SpatialReference* to_srs, const GeoExtent* to_extent, unsigned int width, unsigned int height, bool useBilinearInterpolation) const
-{  
+{
     GeoExtent destExtent;
     if (to_extent)
     {
@@ -2108,7 +2144,7 @@ GeoImage::reproject(const SpatialReference* to_srs, const GeoExtent* to_extent, 
     }
     else
     {
-        destExtent = getExtent().transform(to_srs);    
+        destExtent = getExtent().transform(to_srs);
     }
 
     osg::Image* resultImage = 0L;
@@ -2128,7 +2164,7 @@ GeoImage::reproject(const SpatialReference* to_srs, const GeoExtent* to_extent, 
             to_srs->getWKT(),
             destExtent.xMin(), destExtent.yMin(), destExtent.xMax(), destExtent.yMax(),
             width, height, useBilinearInterpolation);
-    }   
+    }
     return GeoImage(resultImage, destExtent);
 }
 
@@ -2263,9 +2299,9 @@ GeoHeightField::getElevation(double x, double y) const
 }
 
 bool
-GeoHeightField::getElevation(const SpatialReference* inputSRS, 
-                             double                  x, 
-                             double                  y, 
+GeoHeightField::getElevation(const SpatialReference* inputSRS,
+                             double                  x,
+                             double                  y,
                              RasterInterpolation  interp,
                              const SpatialReference* outputSRS,
                              float&                  out_elevation) const
@@ -2291,15 +2327,15 @@ GeoHeightField::getElevation(const SpatialReference* inputSRS,
         // sample the heightfield at the input coordinates:
         // (note: since it's sampling the HF, it will return an MSL height if applicable)
         out_elevation = HeightFieldUtils::getHeightAtLocation(
-            _heightField.get(), 
+            _heightField.get(),
             local.x(), local.y(),
-            _extent.xMin(), _extent.yMin(), 
-            xInterval, yInterval, 
+            _extent.xMin(), _extent.yMin(),
+            xInterval, yInterval,
             interp);
 
         // if the vertical datums don't match, do a conversion:
-        if (out_elevation != NO_DATA_VALUE && 
-            outputSRS && 
+        if (out_elevation != NO_DATA_VALUE &&
+            outputSRS &&
             !extentSRS->isVertEquivalentTo(outputSRS) )
         {
             // if the caller provided a custom output SRS, perform the appropriate
@@ -2334,7 +2370,7 @@ GeoHeightField::createSubSample( const GeoExtent& destEx, unsigned int width, un
         return GeoHeightField::INVALID;
 
     double dx = destEx.width()/(double)(width-1);
-    double dy = destEx.height()/(double)(height-1);    
+    double dy = destEx.height()/(double)(height-1);
 
     osg::HeightField* dest = new osg::HeightField();
     dest->allocate( width, height );
@@ -2349,7 +2385,7 @@ GeoHeightField::createSubSample( const GeoExtent& destEx, unsigned int width, un
 
     double xstep = div / (double)(width-1);
     double ystep = div / (double)(height-1);
-    
+
     for( x = x0, col = 0; col < (int)width; x += xstep, col++ )
     {
         for( y = y0, row = 0; row < (int)height; y += ystep, row++ )
@@ -2378,7 +2414,7 @@ GeoHeightField::getHeightField() const
 double
 GeoHeightField::getXInterval() const
 {
-    return _extent.width()  / (double)(_heightField->getNumColumns()-1);        
+    return _extent.width()  / (double)(_heightField->getNumColumns()-1);
 }
 
 double
@@ -2425,7 +2461,7 @@ GeoNode::GeoNode(const osg::Node* node, const GeoExtent& extent) :
 }
 
 bool
-GeoNode::valid() const 
+GeoNode::valid() const
 {
     return _node.valid() && _extent.isValid();
 }
