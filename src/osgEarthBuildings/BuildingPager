@@ -33,10 +33,12 @@
 
 #include <osgDB/ObjectCache>
 
+#include <atomic>
 
 namespace osgEarth { namespace Buildings
 {
     using namespace osgEarth;
+
 
     class OSGEARTHBUILDINGS_EXPORT BuildingPager : public osgEarth::Util::SimplePager
     {
@@ -70,6 +72,9 @@ namespace osgEarth { namespace Buildings
 
     public: // SimplePager
 
+        //! Override this so we can install a cache manager
+        virtual void build() override;
+
         osg::ref_ptr<osg::Node> createNode(const TileKey& key, ProgressCallback* progress) override;
 
     protected:
@@ -77,6 +82,19 @@ namespace osgEarth { namespace Buildings
         virtual ~BuildingPager() { }
 
     private:
+
+        struct CacheManager : osg::Group
+        {
+            CacheManager();
+            osg::ref_ptr<osgDB::ObjectCache> _artCache;
+            osg::ref_ptr<TextureCache> _texCache;
+            osg::ref_ptr<StateSetCache> _stateSetCache;
+            std::atomic_int _renderLeaves;
+            std::atomic_bool _cullCompleted;
+            std::atomic_bool _renderLeavesDetected;
+            void traverse(osg::NodeVisitor& nv) override;
+            void releaseGLObjects(osg::State*) const override;
+        };
 
         osg::ref_ptr<Session>             _session;
         osg::ref_ptr<FeatureSource>       _features;
@@ -86,9 +104,7 @@ namespace osgEarth { namespace Buildings
         FeatureIndexBuilder*              _index;
         osg::observer_ptr<ElevationPool>  _elevationPool;
         bool                              _profile;
-        osg::ref_ptr<osgDB::ObjectCache>  _artCache;
-        osg::ref_ptr<TextureCache>        _texCache;
-        osg::ref_ptr<StateSetCache>       _stateSetCache;
+        osg::ref_ptr<CacheManager> _caches;
         FilterUsage _filterUsage;
         bool _verboseWarnings;
 

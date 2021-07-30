@@ -81,6 +81,20 @@ namespace osgEarth { namespace Buildings
             return result;
         }
 
+        void releaseGLObjects(osg::State* state)
+        {
+            ScopedMutexLock lock(_mutex);
+            for (auto iter : _cache) {
+                iter.second->releaseGLObjects(state);
+            }
+        }
+
+        void clear()
+        {
+            ScopedMutexLock lock(_mutex);
+            _cache.clear();
+        }
+
         // todo: consider changing this to an observer_ptr -gw
         std::unordered_map<std::string, osg::ref_ptr<osg::Texture> > _cache;
     };
