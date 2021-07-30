@@ -76,7 +76,7 @@ osg::BoundingSphered SimplePager::getBounds(const TileKey& key) const
 
 osg::ref_ptr<osg::Node> SimplePager::buildRootNode()
 {
-    osg::ref_ptr<osg::Group> root = new osg::Group();
+    osg::ref_ptr<osg::Group> root = new PagingManager();
 
     std::vector<TileKey> keys;
     _profile->getRootKeys( keys );
