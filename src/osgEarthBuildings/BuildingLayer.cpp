@@ -139,7 +139,7 @@ BuildingLayer::createSceneGraph()
     // reinitialize the graph:
     _root->removeChildren(0, _root->getNumChildren());
 
-    OE_SOFT_ASSERT_AND_RETURN(_session.valid(), void());
+    OE_SOFT_ASSERT_AND_RETURN(_session.valid(), __func__, );
 
     // resolve observer reference:
     osg::ref_ptr<const Map> map = _session->getMap();
