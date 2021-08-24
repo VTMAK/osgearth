@@ -583,18 +583,15 @@ SimpleSkyNode::makeSceneLighting()
         else if (_useONeil)
         {
             pkg.load(vp, pkg.Ground_ONeil_Vert);
-
-            if (_usePBR)
-            {
-                OE_INFO << LC << "Using O'Neil + PBR lighting" << std::endl;
-                pkg.load(vp, pkg.Ground_PBR_Frag);
-            }
-            else
-            {
-                OE_INFO << LC << "Using O'Neil lighting" << std::endl;
-                pkg.load(vp, pkg.Ground_ONeil_Frag);
-            }
+            OE_INFO << LC << "Using O'Neil lighting" << std::endl;
+            pkg.load(vp, pkg.Ground_ONeil_Frag);
             stateset->getOrCreateUniform("oe_sky_ambientBoostFactor", osg::Uniform::FLOAT)->set(_options.daytimeAmbientBoost().get());
+        }
+        else if (_usePhong)
+        {
+            _phong = new PhongLightingEffect();
+            _phong->attach(stateset);
+            OE_INFO << LC << "Using Phong lighting" << std::endl;
         }
     }
 
