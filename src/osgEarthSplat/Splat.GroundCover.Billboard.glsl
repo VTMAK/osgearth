@@ -40,14 +40,6 @@ uniform vec3 oe_VisibleLayer_ranges;
 
 uniform vec3 oe_Camera; // (vp width, vp height, lodscale)
 
-// VRV: use a custom LOD scale uniform
-#pragma import_defines(VRV_OSG_LOD_SCALE)
-#ifdef VRV_OSG_LOD_SCALE
-uniform float VRV_OSG_LOD_SCALE;
-#else
-#define VRV_OSG_LOD_SCALE oe_Camera.z
-#endif
-
 uniform float osg_FrameTime; // Frame time (seconds) used for wind animation
 uniform mat4 osg_ViewMatrix;
 
@@ -115,7 +107,7 @@ void oe_GroundCover_VS(inout vec4 vertex_view)
     oe_UpVectorView = gl_NormalMatrix * vp_Normal;
 
     // Calculate the normalized camera range (oe_Camera.z = LOD Scale)
-    float maxRange = oe_VisibleLayer_ranges[1] / VRV_OSG_LOD_SCALE;
+    float maxRange = oe_VisibleLayer_ranges[1] / oe_Camera.z;
     float nRange = clamp(-vertex_view.z / maxRange, 0.0, 1.0);
 
     // cull verts that are out of range. Sadly we can't do this in COMPUTE.

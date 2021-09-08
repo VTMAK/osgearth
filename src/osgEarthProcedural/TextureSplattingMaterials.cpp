@@ -87,6 +87,7 @@ namespace
                     readColor(temp, iter.s(), iter.t());
                     if (height.valid())
                     {
+                        readHeight(temp2, iter.u(), iter.v());
                         readHeight(temp2, iter.s(), iter.t());
                         temp.a() = temp2[height_channel];
                     }
