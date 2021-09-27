@@ -312,6 +312,10 @@ VegetationLayer::update(osg::NodeVisitor& nv)
             releaseGLObjects(nullptr);
             _renderer->_lastVisit.setReferenceTime(DBL_MAX);
             _renderer->_cameraState.clear();
+            _renderer->_geomClouds.clear();
+
+            if (getBiomeLayer())
+                getBiomeLayer()->getBiomeManager().reset();
         }
     }
 }
@@ -491,7 +495,7 @@ VegetationLayer::prepareForRendering(TerrainEngine* engine)
 
                 OE_INFO << LC 
                     << "Rendering asset group" << s_assetGroupName[g] 
-                    << " at terrian level " << bestLOD <<  std::endl;
+                    << " at terrain level " << bestLOD <<  std::endl;
             }
         }
 
@@ -930,93 +934,58 @@ VegetationLayer::Renderer::~Renderer()
     releaseGLObjects(nullptr);
 }
 
+void
+VegetationLayer::Renderer::compileClouds(
+    osg::RenderInfo& ri)
+{
+    for (auto iter : _geomClouds)
+    {
+        GeometryCloud* cloud = iter.second.get();
+        cloud->getGeometry()->compileGLObjects(ri);
+        cloud->getGeometry()->getStateSet()->compileGLObjects(*ri.getState());
+    }
+}
+
 bool
 VegetationLayer::Renderer::isNewGeometryCloudAvailable(
     osg::RenderInfo& ri)
 {
     BiomeManager& biomeMan = _layer->getBiomeLayer()->getBiomeManager();
 
-#if 0 // SYNC version
     if (_biomeRevision.exchange(biomeMan.getRevision()) != biomeMan.getRevision())
     {
-        OE_INFO << LC << "Biomes changed (rev=" << _biomeRevision << ")...building new geom clouds" << std::endl;
+        // revision changed; start a new asset load.
 
-        GeometryCloudCollection result;
-
-        BiomeManager& biomeMan = _layer->getBiomeLayer()->getBiomeManager();
-
-        std::set<AssetGroup::Type> groups;
-
-        biomeMan.updateResidency(
-            [&](AssetGroup::Type group, std::vector<osg::Texture*>& textures) {
-                return _layer->createParametricGeometry(group, textures); },
-            _layer->getReadOptions(),
-            groups);
-
-        for (auto group : groups)
-        {
-            osg::ref_ptr<GeometryCloud> cloud = biomeMan.createGeometryCloud(
-                group,
-                nullptr);
-
-            if (cloud.valid())
-            {
-                // Very important that we compile this now so there aren't any
-                // texture conflicts later on.
-                // Strange that osg::Geometry doesn't also compile its StateSet
-                // so we have to do it manually...
-                cloud->getGeometry()->compileGLObjects(ri);
-                cloud->getGeometry()->getStateSet()->compileGLObjects(*ri.getState());
-
-                result[group] = cloud;
-            }
-        }
-
-        _geomClouds = result;
-        return true;
-    }
-    return false;
-
-#else
-    
-    if (_biomeRevision.exchange(biomeMan.getRevision()) != biomeMan.getRevision())
-    {
         OE_DEBUG << LC << "Biomes changed (rev="<< _biomeRevision<<")...building new geom clouds" << std::endl;
 
-        // revision changed; start a new asset load.
-        osg::ref_ptr<VegetationLayer> layer(_layer.get());
+        osg::observer_ptr<VegetationLayer> layer_weakptr(_layer.get());
 
-        _geomCloudsInProgress = Job().dispatch<GeometryCloudCollection>(
-            [layer](Cancelable* c)
+        auto buildGeometry = [layer_weakptr](Cancelable* c) -> GeometryCloudCollection
+        {
+            GeometryCloudCollection result;
+            osg::ref_ptr<VegetationLayer> layer;
+            if (layer_weakptr.lock(layer))
             {
-                GeometryCloudCollection result;
-
                 BiomeManager& biomeMan = layer->getBiomeLayer()->getBiomeManager();
-                
+
                 std::set<AssetGroup::Type> groups;
 
-                biomeMan.updateResidency(
-                    [&](AssetGroup::Type group, std::vector<osg::Texture*>& textures) {
+                result = biomeMan.updateResidency(
+                    [&](AssetGroup::Type group, std::vector<osg::Texture*>& textures)
+                    {
                         return layer->createParametricGeometry(group, textures);
                     },
-                    layer->getReadOptions(),
-                    groups);
-
-                for (auto group : groups)
-                {
-                    osg::ref_ptr<GeometryCloud> cloud = biomeMan.createGeometryCloud(
-                        group,
-                        nullptr);
-
-                    if (cloud.valid())
-                    {
-                        result[group] = cloud;
-                    }
-                }
-
-                return result;
+                    layer->getReadOptions());
             }
-        );
+            return result;
+        };
+
+#if 1 // async
+        _geomCloudsInProgress = Job().dispatch<GeometryCloudCollection>(buildGeometry);
+#else // sync
+        _geomClouds = buildGeometry(nullptr);
+        compileClouds();
+#endif
     }
 
     else if (_geomCloudsInProgress.isAvailable())
@@ -1027,18 +996,11 @@ VegetationLayer::Renderer::isNewGeometryCloudAvailable(
         // texture conflicts later on.
         // Strange that osg::Geometry doesn't also compile its StateSet
         // so we have to do it manually...
-        for (auto iter : _geomClouds)
-        {
-            GeometryCloud* cloud = iter.second.get();
-            cloud->getGeometry()->compileGLObjects(ri);
-            cloud->getGeometry()->getStateSet()->compileGLObjects(*ri.getState());
-        }
-
+        compileClouds(ri);
         return true;
     }
 
     return false;
-#endif
 }
 
 VegetationLayer::Renderer::PCPUniforms*
@@ -1563,7 +1525,7 @@ VegetationLayer::Renderer::draw(
         {
             if (newGeometryAvailable)
             {
-                OE_INFO << LC << "New geometry available, but collection is empty" << std::endl;
+                OE_DEBUG << LC << "New geometry available, but collection is empty" << std::endl;
             }
             return;
         }
@@ -1599,7 +1561,21 @@ VegetationLayer::Renderer::draw(
 void
 VegetationLayer::Renderer::resizeGLObjectBuffers(unsigned maxSize)
 {
-    //?
+    for (auto cs_iter : _cameraState)
+    {
+        for (auto cloud_iter : _geomClouds)
+        {
+            cloud_iter.second->resizeGLObjectBuffers(maxSize);
+        }
+
+        //for (auto& gs : cs_iter.second._groups)
+        //{
+        //    if (gs._instancer.valid())
+        //    {
+        //        gs._instancer->resizeGLObjectBuffers(maxSize);
+        //    }
+        //}
+    }
 }
 
 void
