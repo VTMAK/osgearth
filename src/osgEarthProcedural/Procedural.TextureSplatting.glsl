@@ -5,9 +5,10 @@
 
 #pragma import_defines(OE_SPLAT_TWEAKS)
 
-#define NUM_LEVELS 2
+#define NUM_LEVELS 1
 const int levels[2] = int[](14, 19);
-out vec2 splatCoords[2];
+flat out vec2 splat_tilexy[2];
+out vec2 splat_uv[2];
 
 // from REX SDK:
 vec4 oe_terrain_getNormalAndCurvature();
@@ -28,8 +29,9 @@ float oe_terrain_getElevation();
 tweakable float oe_splat_blend_start = 2500.0;
 tweakable float oe_splat_blend_end = 500.0;
 
+uniform vec4 oe_tile_key;
 
-float mapToNormalizedRange(in float value, in float lo, in float hi)
+float mapTo01(in float value, in float lo, in float hi)
 {
     return clamp((value - lo) / (hi - lo), 0.0, 1.0);
 }
@@ -40,9 +42,12 @@ void oe_splat_View(inout vec4 vertex_view)
     for (int i = 0; i < NUM_LEVELS; ++i)
     {
         vec2 uv = ((i & 1) == 0) ? oe_layer_tilec.st : oe_layer_tilec.ts;
-        splatCoords[i] = oe_terrain_scaleCoordsToRefLOD(uv, levels[i]);
+        
+        splat_uv[i] = oe_terrain_scaleCoordsToRefLOD(uv, levels[i]);
+
+        splat_tilexy[i] = floor(oe_tile_key.xy / exp2(oe_tile_key.z - levels[i]));
     }
-    splatLevelBlend = mapToNormalizedRange(-vertex_view.z, oe_splat_blend_start, oe_splat_blend_end);
+    splatLevelBlend = mapTo01(-vertex_view.z, oe_splat_blend_start, oe_splat_blend_end);
 
     oe_elev = oe_terrain_getElevation();
 }
@@ -75,13 +80,16 @@ uniform mat4 OE_COLOR_LAYER_MAT;
 layout(binding = 5, std430) buffer TextureLUT {
     uint64_t texHandle[];
 };
+layout(binding = 6, std430) buffer RenderParamsLUT {
+    vec2 texScale[];
+};
 
 #define RUGGED 0
 #define DENSE 1
 #define LUSH 2
 #define SPECIAL 3
 
-float mapToNormalizedRange(in float value, in float lo, in float hi)
+float mapTo01(in float value, in float lo, in float hi)
 {
     return clamp((value - lo) / (hi - lo), 0.0, 1.0);
 }
@@ -93,8 +101,9 @@ float oe_ao;
 in float splatLevelBlend;
 in vec4 oe_layer_tilec;
 
-#define NUM_LEVELS 2
-in vec2 splatCoords[2];
+#define NUM_LEVELS 1
+flat in vec2 splat_tilexy[2];
+in vec2 splat_uv[2];
 
 flat in int maxLevel;
 in float oe_elev;
@@ -137,14 +146,29 @@ vec3 unpackNormal(in vec4 p)
     return normalize(n);
 }
 
-vec4 get_rgbh(in int index, in int level)
+
+// testing code for scale
+uniform float tex_size_scale = 1.0;
+
+// compute the splatting texture coordinate by combining the macro (tile_xy)
+// and micro (local xy) components. Cannot do this in the VS because it will
+// overflow the interpolator and pause pixel jitter
+vec2 get_coord(in int index, in int level)
 {
-    return texture(sampler2D(texHandle[index]), splatCoords[level]);
+    vec2 scale = texScale[index*(level+1)] * tex_size_scale;
+    vec2 a = fract(splat_tilexy[level] * scale);
+    vec2 b = splat_uv[level] * scale;
+    return a + b;
 }
 
-vec4 get_material(in int index, in int level)
+vec4 get_rgbh(in int index, in vec2 coord)
 {
-    return texture(sampler2D(texHandle[index+1]), splatCoords[level]);
+    return texture(sampler2D(texHandle[index*2]), coord);
+}
+
+vec4 get_material(in int index, in vec2 coord)
+{
+    return texture(sampler2D(texHandle[index*2 + 1]), coord);
 }
 
 float contrastify(in float v, in float c)
@@ -208,6 +232,7 @@ void resolveColumn(out Pixel pixel, int level, int x, float yvar)
     vec4 rgbh[2];
     vec4 material[2];
     vec3 normal[2];
+    vec2 coord;
 
     // calulate row mixture
     float yf = yvar * (float(OE_TEX_DIM_Y) - 1.0);
@@ -216,15 +241,19 @@ void resolveColumn(out Pixel pixel, int level, int x, float yvar)
     float y_mix = yf - yf_floor;
 
     // the "*2" is because each material is a pair of samplers (rgbh, nnsa)
-    int i = (y*OE_TEX_DIM_X + x) * 2;
-    rgbh[0] = get_rgbh(i, level);
-    material[0] = get_material(i, level);
+    int i = (y*OE_TEX_DIM_X + x); // *2;
+    coord = get_coord(i, level);
+    rgbh[0] = get_rgbh(i, coord);
+    material[0] = get_material(i, coord);
     normal[0] = unpackNormal(material[0]);
 
-    if (y < OE_TEX_DIM_Y - 1)
-        i += (OE_TEX_DIM_X * 2); // advance to next row
-    rgbh[1] = get_rgbh(i, level);
-    material[1] = get_material(i, level);
+    if (y < OE_TEX_DIM_Y - 1) {
+        i += (OE_TEX_DIM_X); // *2); // advance to next row
+        coord = get_coord(i, level);
+    }
+
+    rgbh[1] = get_rgbh(i, coord);
+    material[1] = get_material(i, coord);
     normal[1] = unpackNormal(material[1]);
 
     // blend with working image using both heightmap and effect:
@@ -301,27 +330,9 @@ void oe_splat_Frag(inout vec4 quad)
     rugged = modify(rugged, rugged_power);
 
     Pixel pixel;
-
-#if 0
-    ivec2 xy = ivec2(uv * 255.0);
-    vec4 iquad = texelFetch(OE_LIFEMAP_TEX, xy, 0);
-    int special = int(iquad[SPECIAL] * 255.0);
-    if (dense == 0.0 && lush == 0.0 && rugged == 0.0 && special > 0)
+    for (int i = 0; i < NUM_LEVELS; ++i)
     {
-        int index = (OE_TEX_DIM_X * OE_TEX_DIM_Y + special - 1) * 2;
-        pixel.rgbh = get_rgbh(index, 0);
-        vec4 material = get_material(index, 0);
-        pixel.normal = unpackNormal(material);
-        pixel.roughness = material[2];
-        pixel.ao = material[3];
-    }
-    else
-#endif
-    {
-        for (int i = 0; i < NUM_LEVELS; ++i)
-        {
-            resolveLevel(pixel, i, rugged, lush);
-        }
+        resolveLevel(pixel, i, rugged, lush);
     }
 
     pixel.normal.xy = decel(pixel.normal.xy, normal_power);
@@ -340,7 +351,7 @@ void oe_splat_Frag(inout vec4 quad)
 
 #if 1
     // perma-snow caps:
-    float coldness = mapToNormalizedRange(oe_elev, oe_snow_min_elev, oe_snow_max_elev);
+    float coldness = mapTo01(oe_elev, oe_snow_min_elev, oe_snow_max_elev);
     float min_snow_cos_angle = 1.0 - soften(oe_snow*coldness);
     const float snow_buf = 0.01;
     float b = min(min_snow_cos_angle + snow_buf, 1.0);
