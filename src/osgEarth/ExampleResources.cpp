@@ -330,7 +330,7 @@ namespace
     };
 }
 
-osg::Group*
+osg::ref_ptr<osg::Node>
 MapNodeHelper::loadWithoutControls(
     osg::ArgumentParser&   args,
     osgViewer::ViewerBase* viewer) const
@@ -352,7 +352,7 @@ MapNodeHelper::loadWithoutControls(
     }
 
     // read in the Earth file:
-    osg::ref_ptr<osg::Node> node = osgDB::readNodeFiles(args, myReadOptions.get());
+    osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFiles(args, myReadOptions.get());
 
     // fallback in case none is specified:
     if (!node.valid())
