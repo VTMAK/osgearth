@@ -99,7 +99,7 @@ BuildingPager::CacheManager::releaseGLObjects(osg::State* state) const
         _stateSetCache->clear();
     }
     
-    OE_INFO << LC << "Cleared all internal caches" << std::endl;
+    OE_DEBUG << LC << "Cleared all internal caches" << std::endl;
 }
 
 void

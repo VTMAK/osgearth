@@ -52,32 +52,49 @@ namespace osgEarth { namespace Buildings
         TextureCache() :
             _mutex("OE.Buildings.TextureCache") { }
 
-        osg::Texture* get(SkinResource* skin, const osgDB::Options* readOptions) {
-            _mutex.lock();
-            osg::ref_ptr<osg::Texture>& t = _cache[skin->imageURI()->full()];
-            if (!t.valid()) {
-                t = skin->createTexture(readOptions);
+        osg::ref_ptr<osg::Texture> getOrCreate(SkinResource* skin, const osgDB::Options* readOptions)
+        {
+            ScopedMutexLock lock(_mutex);
+
+            osg::ref_ptr<osg::Texture> tex;
+
+            auto iter = _cache.find(skin->imageURI()->full());
+            if (iter != _cache.end())
+            {
+                tex = iter->second;
             }
-            _mutex.unlock();
-            return t.get();
+
+            if (!tex.valid())
+            {
+                tex = skin->createTexture(readOptions);
+                if (tex.valid())
+                {
+                    _cache[skin->imageURI()->full()] = tex;
+                }
+            }
+
+            return tex;
         }
 
-        osg::Texture* getOrInsert(osg::Texture* tex)
+        osg::ref_ptr<osg::Texture> getOrInsert(osg::Texture* tex)
         {
-            osg::Texture* result = tex;
+            osg::ref_ptr<osg::Texture> result = tex;
 
-            if (tex && 
-                tex->getNumImages() > 0 &&                      
+            if (tex &&
+                tex->getNumImages() > 0 &&
                 tex->getImage(0) &&
                 !tex->getImage(0)->getFileName().empty() &&     // has a valid filename
                 dynamic_cast<osg::TextureBuffer*>(tex) == 0L)   // isn't an instance data texture
             {
-                _mutex.lock();
+                ScopedMutexLock lock(_mutex);
+
                 osg::ref_ptr<osg::Texture>& t = _cache[tex->getImage(0)->getFileName()];
                 if (!t.valid())
+                {
                     t = tex;
-                _mutex.unlock();
-                result = t.get();
+                }
+
+                result = t;
             }
 
             return result;
@@ -86,8 +103,13 @@ namespace osgEarth { namespace Buildings
         void releaseGLObjects(osg::State* state)
         {
             ScopedMutexLock lock(_mutex);
-            for (auto iter : _cache) {
-                iter.second->releaseGLObjects(state);
+            for (auto iter : _cache)
+            {
+                osg::ref_ptr<osg::Texture>& tex = iter.second;
+                if (tex.valid())
+                {
+                    tex->releaseGLObjects(state);
+                }
             }
         }
 
@@ -172,7 +194,7 @@ namespace osgEarth { namespace Buildings
         osg::StateSet* getSkinStateSet(SkinResource* skin, const osgDB::Options* readOptions);
 
         osg::Texture* getTexture(SkinResource* skin, const osgDB::Options* readOptions) {
-            return _texCache->get(skin, readOptions);
+            return _texCache->getOrCreate(skin, readOptions);
         }
 
     protected:
