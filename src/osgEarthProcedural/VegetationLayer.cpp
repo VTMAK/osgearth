@@ -283,6 +283,18 @@ VegetationLayer::openImplementation()
         return Status(Status::ResourceUnavailable, "Requires GL 4.6+");
     }
 
+    // Clamp the layer's max visible range the maximum range of the farthest
+    // asset group. This will minimize the number of tiles sent to the
+    // renderer and improve performance. Doing this here (in open) so the
+    // user can close a layer, adjust parameters, and re-open if desired
+    float max_range = 0.0f;
+    for (auto& group : options().groups())
+    {
+        max_range = std::max(max_range, group.maxRange().get());
+    }
+    max_range = std::min(max_range, getMaxVisibleRange());
+    setMaxVisibleRange(max_range);
+
     return PatchLayer::openImplementation();
 }
 
@@ -308,14 +320,14 @@ VegetationLayer::update(osg::NodeVisitor& nv)
 
         if (dt > 5.0 && df > 60)
         {
-            OE_INFO << LC << "timed out for inactivity" << std::endl;
             releaseGLObjects(nullptr);
-            _renderer->_lastVisit.setReferenceTime(DBL_MAX);
-            _renderer->_cameraState.clear();
-            _renderer->_geomClouds.clear();
+
+            _renderer->reset();
 
             if (getBiomeLayer())
                 getBiomeLayer()->getBiomeManager().reset();
+
+            OE_INFO << LC << "timed out for inactivity." << std::endl;
         }
     }
 }
@@ -760,6 +772,12 @@ VegetationLayer::releaseGLObjects(osg::State* state) const
     PatchLayer::releaseGLObjects(state);
 }
 
+unsigned
+VegetationLayer::getNumTilesRendered() const
+{
+    return _renderer ? _renderer->_lastTileBatchSize : 0u;
+}
+
 namespace
 {
     osg::Node* makeBBox(const osg::BoundingBox& bbox, const TileKey& key)
@@ -916,9 +934,8 @@ VegetationLayer::Renderer::PCPUniforms::PCPUniforms()
 VegetationLayer::Renderer::Renderer(VegetationLayer* layer)
 {
     _layer = layer;
-    _biomeRevision = -1;
-    _lastVisit.setReferenceTime(DBL_MAX);
-    _lastVisit.setFrameNumber(~0U);
+
+    reset();
 
     // create uniform IDs for each of our uniforms
     //_isMSUName = osg::Uniform::getNameID("oe_veg_isMultisampled");
@@ -942,6 +959,23 @@ VegetationLayer::Renderer::Renderer(VegetationLayer* layer)
     // make a 4-channel noise texture to use
     NoiseTextureFactory noise;
     _noiseTex = noise.create(256u, 4u);
+}
+
+void
+VegetationLayer::Renderer::reset()
+{
+    _lastVisit.setReferenceTime(DBL_MAX);
+    _lastVisit.setFrameNumber(~0U);
+    _lastTileBatchSize = 0u;
+    _uniforms.clear();
+    _cameraState.clear();
+    _geomClouds.clear();
+    _geomCloudsInProgress.abandon();
+
+    OE_SOFT_ASSERT_AND_RETURN(_layer.valid() && _layer->getBiomeLayer(), void());
+
+    BiomeManager& biomeMan = _layer->getBiomeLayer()->getBiomeManager();
+    _biomeRevision = biomeMan.getRevision();
 }
 
 VegetationLayer::Renderer::~Renderer()
@@ -971,7 +1005,10 @@ VegetationLayer::Renderer::isNewGeometryCloudAvailable(
     {
         // revision changed; start a new asset load.
 
-        OE_DEBUG << LC << "Biomes changed (rev="<< _biomeRevision<<")...building new geom clouds" << std::endl;
+        OE_INFO << LC 
+            << "Biomes changed (rev="<< _biomeRevision
+            <<" fr=" << ri.getState()->getFrameStamp()->getFrameNumber() 
+            <<")...building new veg clouds" << std::endl;
 
         osg::observer_ptr<VegetationLayer> layer_weakptr(_layer.get());
 
@@ -1007,11 +1044,23 @@ VegetationLayer::Renderer::isNewGeometryCloudAvailable(
     {
         _geomClouds = _geomCloudsInProgress.release();
 
-        // Very important that we compile this now so there aren't any
-        // texture conflicts later on.
-        // Strange that osg::Geometry doesn't also compile its StateSet
-        // so we have to do it manually...
-        compileClouds(ri);
+        if (!_geomClouds.empty())
+        {
+            OE_INFO << LC << "New geom clouds are ready (fr="
+                << ri.getState()->getFrameStamp()->getFrameNumber() << ")"
+                << std::endl;
+
+            // Very important that we compile this now so there aren't any
+            // texture conflicts later on.
+            // Strange that osg::Geometry doesn't also compile its StateSet
+            // so we have to do it manually...
+            compileClouds(ri);
+
+            //OE_INFO << LC << "New geom clouds finished compiling (fr="
+            //    << ri.getState()->getFrameStamp()->getFrameNumber() << ")"
+            //    << std::endl;
+        }
+
         return true;
     }
 
@@ -1524,6 +1573,7 @@ VegetationLayer::Renderer::draw(
     OE_PROFILING_ZONE_NAMED("VegetationLayer::draw");
 
     _lastVisit = *ri.getState()->getFrameStamp();
+    _lastTileBatchSize = batch.tiles().size();
 
     // state associated with the current camera
     CameraState& this_cs = _cameraState[ri.getCurrentCamera()];
@@ -1540,7 +1590,7 @@ VegetationLayer::Renderer::draw(
         {
             if (newGeometryAvailable)
             {
-                OE_DEBUG << LC << "New geometry available, but collection is empty" << std::endl;
+                OE_INFO << LC << "New geometry available, but collection is empty" << std::endl;
             }
             return;
         }
