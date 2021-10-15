@@ -538,13 +538,7 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
     // I am leaving this commented out
     //tree->setStoreObjectsInLeavesOnly(true);
 
-#ifdef USE_PAGING_MANAGER
-    PagingManager* pm = new PagingManager();
-    this->addChild(pm);
-    pm->addChild(tree);
-#else
     this->addChild(tree);
-#endif
 
     OE_INFO << LC << "Seeding aerodromes from boundaries." << std::endl;
 
