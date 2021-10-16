@@ -1,26 +1,6 @@
 #version $GLSL_VERSION_STR
 $GLSL_DEFAULT_PRECISION_FLOAT
 
-#pragma vp_function atmos_frag_main_init, fragment, first
-
-// frag stage global PBR parameters
-float oe_roughness, oe_ao, oe_metal, oe_brightness, oe_contrast;
-
-void atmos_frag_main_init(inout vec4 ignore)
-{
-    oe_roughness = 1.0;
-    oe_ao = 1.0;
-    oe_metal = 0.0;
-    oe_brightness = 1.0;
-    oe_contrast = 1.0;
-}
-
-
-
-[break]
-#version $GLSL_VERSION_STR
-$GLSL_DEFAULT_PRECISION_FLOAT
-
 #pragma vp_entryPoint atmos_fragment_main
 #pragma vp_location   fragment_lighting
 #pragma vp_order      0.8
@@ -42,8 +22,17 @@ in vec3 atmos_vert;
 
 vec3 vp_Normal; // surface normal (from osgEarth)
 
-// frag stage global PBR parameters (see atmos_fragment_main_init)
-float oe_roughness, oe_ao, oe_metal, oe_brightness, oe_contrast;
+// frag stage global PBR parameters
+#ifdef OE_USE_PBR
+// fragment stage global PBR parameters.
+struct PBR {
+    float roughness;
+    float ao;
+    float metal;
+    float brightness;
+    float contrast;
+} oe_pbr;
+#endif
 
 // Parameters of each light:
 struct osg_LightSourceParameters
@@ -120,6 +109,7 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(max(1.0 - cosTheta, 0.0), 5.0);
 }
 
+#ifdef OE_USE_PBR
 void atmos_fragment_main_pbr(inout vec4 color)
 {
 #ifndef OE_LIGHTING
@@ -132,7 +122,7 @@ void atmos_fragment_main_pbr(inout vec4 color)
     vec3 V = normalize(-atmos_vert);
 
     vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo, vec3(oe_metal));
+    F0 = mix(F0, albedo, vec3(oe_pbr.metal));
 
     vec3 Lo = vec3(0.0);
 
@@ -148,13 +138,13 @@ void atmos_fragment_main_pbr(inout vec4 color)
         radiance *= atmos_atten;
 
         // cook-torrance BRDF:
-        float NDF = DistributionGGX(N, H, oe_roughness);
-        float G = GeometrySmith(N, V, L, oe_roughness);
+        float NDF = DistributionGGX(N, H, oe_pbr.roughness);
+        float G = GeometrySmith(N, V, L, oe_pbr.roughness);
         vec3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
 
         vec3 kS = F;
         vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - oe_metal;
+        kD *= 1.0 - oe_pbr.metal;
 
         float NdotL = max(dot(N, L), 0.0);
 
@@ -165,7 +155,7 @@ void atmos_fragment_main_pbr(inout vec4 color)
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    vec3 ambient = osg_LightSource[0].ambient.rgb * albedo * oe_ao;
+    vec3 ambient = osg_LightSource[0].ambient.rgb * albedo * oe_pbr.ao;
 
     color.rgb = ambient + Lo;
 
@@ -182,8 +172,10 @@ void atmos_fragment_main_pbr(inout vec4 color)
     color.rgb = 1.0 - exp(-oe_sky_exposure*0.33 * color.rgb);
 
     // brightness and contrast
-    color.rgb = ((color.rgb - 0.5)*oe_contrast*oe_sky_contrast + 0.5) * oe_brightness;
+    color.rgb = ((color.rgb - 0.5)*oe_pbr.contrast*oe_sky_contrast + 0.5) * oe_pbr.brightness;
 }
+
+#else
 
 void atmos_fragment_material(inout vec4 color)
 {
@@ -306,8 +298,10 @@ void atmos_fragment_material(inout vec4 color)
         totalSpecular; // * osg_FrontMaterial.specular.rgb;
 
     // Simulate HDR by applying an exposure factor (1.0 is none, 2-3 are reasonable)
-    color.rgb = 1.0 - exp(-oe_sky_exposure * color.rgb);
+    color.rgb = 1.0 - exp(-oe_sky_exposure * 0.33 * color.rgb);
 }
+
+#endif
 
 
 void atmos_fragment_main(inout vec4 color)
