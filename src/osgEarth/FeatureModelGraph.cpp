@@ -942,7 +942,7 @@ FeatureModelGraph::setupPaging()
     osg::ref_ptr<osg::Node> node;
 
 
-    topNode = new osg::Group();
+    topNode = new PagingManager;
     topNode->setName("Top Node");
 
     if (_options.layout()->paged() == true)
