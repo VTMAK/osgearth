@@ -72,7 +72,7 @@ _ignoreAlt             ( false ),
 _shaderPolicy          ( SHADERPOLICY_GENERATE ),
 _geoInterp             ( GEOINTERP_GREAT_CIRCLE ),
 _optimizeStateSharing  ( true ),
-_optimize              ( true ),
+_optimize              ( false ),
 _optimizeVertexOrdering( true ),
 _validate              ( false ),
 _maxPolyTilingAngle    ( 45.0f ),
@@ -548,6 +548,7 @@ GeometryCompiler::compile(FeatureList&          workingSet,
         if ( trackHistory ) history.push_back( "share state" );
     }
 
+#if 0 // never do this, let the filters do it.
     if ( _options.optimize() == true )
     {
         OE_DEBUG << LC << "optimize begin" << std::endl;
@@ -574,7 +575,7 @@ GeometryCompiler::compile(FeatureList&          workingSet,
 
         if ( trackHistory ) history.push_back( "optimize" );
     }
-
+#endif
 
     //test: dump the tile to disk
     //OE_WARN << "Writing GC node file to out.osgt..." << std::endl;
