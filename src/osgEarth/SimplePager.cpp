@@ -27,7 +27,6 @@ _done(false),
 _clusterCullingEnabled(true),
 _mutex("SimplePager(OE)")
 {
-    // temporary fix. Assume a map profile of geobal-geodetic.
     _mapProfile = Profile::create(Profile::GLOBAL_GEODETIC);
 }
 
