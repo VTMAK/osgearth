@@ -422,8 +422,8 @@ GeometryCompiler::compile(FeatureList&          workingSet,
 
         if (_options.mergeGeometry().isSet())
             extrude.setMergeGeometry(*_options.mergeGeometry());
-        else if (_options.optimize() == true)
-            extrude.setMergeGeometry(false);
+        //else if (_options.optimize() == true)
+        //    extrude.setMergeGeometry(false);
             
 
         if ( _options.filterUsage().isSet() )
