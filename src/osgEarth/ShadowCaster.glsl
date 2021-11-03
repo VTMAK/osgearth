@@ -45,10 +45,14 @@ in vec3 vp_Normal; // stage global
 in vec4 oe_shadow_coord[$OE_SHADOW_NUM_SLICES];
 in float oe_shadow_rf;
 
-// stage global PBR params
-struct PBR {
-    float roughness, ao, metal, brightness, contrast;
-} pbr;
+// fragment stage global PBR parameters.
+struct OE_PBR {
+    float roughness;
+    float ao;
+    float metal;
+    float brightness;
+    float contrast;
+} oe_pbr;
 
 // Parameters of each light:
 struct osg_LightSourceParameters 
@@ -142,8 +146,7 @@ void oe_shadow_fragment(inout vec4 color)
         }
     }
 
-    pbr.roughness = mix(1.0, pbr.roughness, factor);
-
-    float b = mix(pbr.brightness*oe_shadow_color, pbr.brightness, factor);
-    pbr.brightness = mix(b, pbr.brightness, oe_shadow_rf);
+    oe_pbr.roughness = clamp(mix(oe_pbr.roughness*1.5, oe_pbr.roughness, factor), 0, 1);
+    float b = mix(oe_pbr.brightness*oe_shadow_color, oe_pbr.brightness, factor);
+    oe_pbr.brightness = mix(b, oe_pbr.brightness, oe_shadow_rf);
 }

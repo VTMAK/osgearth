@@ -420,8 +420,11 @@ GeometryCompiler::compile(FeatureList&          workingSet,
         if ( _options.featureName().isSet() )
             extrude.setFeatureNameExpr( *_options.featureName() );
 
-        if ( _options.mergeGeometry().isSet() )
-            extrude.setMergeGeometry( *_options.mergeGeometry() );
+        if (_options.mergeGeometry().isSet())
+            extrude.setMergeGeometry(*_options.mergeGeometry());
+        //else if (_options.optimize() == true)
+        //    extrude.setMergeGeometry(false);
+            
 
         if ( _options.filterUsage().isSet() )
             extrude.setFilterUsage(*_options.filterUsage());
@@ -545,6 +548,7 @@ GeometryCompiler::compile(FeatureList&          workingSet,
         if ( trackHistory ) history.push_back( "share state" );
     }
 
+#if 0 // never do this, let the filters do it.
     if ( _options.optimize() == true )
     {
         OE_DEBUG << LC << "optimize begin" << std::endl;
@@ -564,14 +568,14 @@ GeometryCompiler::compile(FeatureList&          workingSet,
         opt.optimize(resultGroup.get(), optimizations);
 
         osgUtil::Optimizer::MergeGeometryVisitor mg;
-        mg.setTargetMaximumNumberOfVertices(65536);
+        mg.setTargetMaximumNumberOfVertices(Registry::instance()->getMaxNumberOfVertsPerDrawable());
         resultGroup->accept(mg);
 
         OE_DEBUG << LC << "optimize complete" << std::endl;
 
         if ( trackHistory ) history.push_back( "optimize" );
     }
-
+#endif
 
     //test: dump the tile to disk
     //OE_WARN << "Writing GC node file to out.osgt..." << std::endl;
