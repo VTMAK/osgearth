@@ -161,8 +161,8 @@ BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
 //...................................................................
 
 
-BuildingPager::BuildingPager(const Profile* profile) :
-SimplePager( profile ),
+BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
+SimplePager( map, profile ),
 _index     ( nullptr ),
 _filterUsage(FILTER_USAGE_NORMAL),
 _verboseWarnings(false)

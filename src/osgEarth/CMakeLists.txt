@@ -116,6 +116,7 @@ SET(LIB_PUBLIC_HEADERS
     Composite
     Config
     Containers
+    CoverageLayer
     Cube
     CullingUtils
     DateTime
@@ -150,6 +151,7 @@ SET(LIB_PUBLIC_HEADERS
     GeoMath
     GeoTransform
     GeometryClamper
+    GeometryCloud
     GLSLChunker
     GLUtils
     HeightFieldUtils
@@ -237,6 +239,7 @@ SET(LIB_PUBLIC_HEADERS
     Status
     StringUtils
     TDTiles
+    TimeSeriesImage
     Terrain
     TerrainEffect
     TerrainOptions
@@ -543,6 +546,7 @@ set(TARGET_SRC
     ColorFilter.cpp
     Composite.cpp
     Config.cpp
+    CoverageLayer.cpp
     Cube.cpp
     CullingUtils.cpp
     DateTime.cpp
@@ -573,6 +577,7 @@ set(TARGET_SRC
     GeoMath.cpp
     GeoTransform.cpp
     GeometryClamper.cpp
+    GeometryCloud.cpp
     GLSLChunker.cpp
     GLUtils.cpp
     HeightFieldUtils.cpp
@@ -644,6 +649,7 @@ set(TARGET_SRC
     Status.cpp
     StringUtils.cpp
     TDTiles.cpp
+    TimeSeriesImage.cpp
     Terrain.cpp
     TerrainOptions.cpp
     TerrainEngineNode.cpp

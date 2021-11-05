@@ -162,7 +162,7 @@ BuildingLayer::createSceneGraph()
     }
 
     // Set up the scene graph
-    BuildingPager* pager = new BuildingPager( profile );
+    BuildingPager* pager = new BuildingPager(map.get(), profile);
     pager->setName("BuildingPager");
     pager->setAdditive        ( options().additiveLODs().get() );
     pager->setElevationPool   ( map->getElevationPool() );

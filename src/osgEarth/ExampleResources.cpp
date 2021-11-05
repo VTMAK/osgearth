@@ -298,22 +298,6 @@ Control* AttributionControlFactory::create(MapNode* mapNode) const
 
 //------------------------------------------------------------------------
 
-//VRV PATCH - custom ICO.
-// The makOSG ICO is modified so you have to call run() manually;
-// i.e. it will not work as a normal graphics operation. This breaks --ico
-// for command line osgEarth apps. This patch "undoes" that to provide
-// a working ICO for command line apps.
-namespace
-{
-    struct OECommandLineICO : public osgUtil::IncrementalCompileOperation
-    {
-        void operator () (osg::GraphicsContext* context)
-        {
-            run(context);
-        }
-    };
-}
-
 #undef  LC
 #define LC "[MapNodeHelper] "
 
@@ -330,7 +314,7 @@ namespace
     };
 }
 
-osg::ref_ptr<osg::Node>
+osg::Group*
 MapNodeHelper::loadWithoutControls(
     osg::ArgumentParser&   args,
     osgViewer::ViewerBase* viewer) const
@@ -352,7 +336,7 @@ MapNodeHelper::loadWithoutControls(
     }
 
     // read in the Earth file:
-    osg::ref_ptr<osg::Node> node = osgDB::readRefNodeFiles(args, myReadOptions.get());
+    osg::ref_ptr<osg::Node> node = osgDB::readNodeFiles(args, myReadOptions.get());
 
     // fallback in case none is specified:
     if (!node.valid())
@@ -567,13 +551,6 @@ MapNodeHelper::load(osg::ArgumentParser&   args,
         op->_ops.push_back(rop);
 
         viewer->setRealizeOperation(op);
-    }
-
-    //VRV PATCH - Install an ICO that will run normally.
-    // See OECommandLineICO definition above for details.
-    if (viewer && viewer->getIncrementalCompileOperation())
-    {
-        viewer->setIncrementalCompileOperation(new OECommandLineICO());
     }
 
     return root;

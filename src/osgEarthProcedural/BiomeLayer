@@ -28,6 +28,8 @@
 #include <osgEarth/ImageLayer>
 #include <osgEarth/LayerReference>
 #include <osgEarth/FeatureSource>
+//#include <osgEarth/LandCoverLayer>
+#include <osgEarth/CoverageLayer>
 
 namespace osgEarth
 {
@@ -35,14 +37,60 @@ namespace osgEarth
     {
         using namespace osgEarth;
 
-        class OSGEARTHPROCEDURAL_EXPORT BiomeLayer : public ImageLayer, public osg::Observer
+        struct LandCoverSample
+        {
+            OE_OPTION(std::string, biomeid);
+            OE_OPTION(std::string, traits);
+            OE_OPTION(float, dense);
+            OE_OPTION(float, lush);
+            OE_OPTION(float, rugged);
+
+            LandCoverSample() { }
+
+            LandCoverSample(const Config& conf)
+            {
+                conf.get("biome_id", biomeid());
+                conf.get("traits", traits());
+                conf.get("dense", dense());
+                conf.get("lush", lush());
+                conf.get("rugged", rugged());
+            }
+
+            bool valid() const {
+                return
+                    (biomeid().isSet() && !biomeid()->empty()) ||
+                    traits().isSet() ||
+                    dense().isSet() ||
+                    lush().isSet() ||
+                    rugged().isSet();
+            }
+        };
+
+
+        /**
+         * BiomeLayer creates rasters that encode Biome indices. 
+         *
+         * Each Biome has an associated integer index, corresponding to the order
+         * in which it appears in the biome catalog. (NB: This index is totally
+         * transparent to the user, and has no relationship to the Biome ID.)
+         * For a given TileKey, this layer will create a raster for which each 
+         * pixel holds an index corresponding to a specific Biome.
+         *
+         * At runtime this object will scan each raster, determine which Biomes
+         * are currently visible, and tell the BiomeManager to load the corresponding
+         * assets.
+         */
+        class OSGEARTHPROCEDURAL_EXPORT BiomeLayer : 
+            public ImageLayer, 
+            public osg::Observer
         {
         public:
             class OSGEARTHPROCEDURAL_EXPORT Options : public ImageLayer::Options
             {
             public:
                 META_LayerOptions(osgEarth, Options, ImageLayer::Options);
-                OE_OPTION_LAYER(FeatureSource, controlVectors);
+                OE_OPTION_LAYER(FeatureSource, vectorLayer);
+                OE_OPTION_LAYER(CoverageLayer, coverageLayer);
                 OE_OPTION_SHAREDPTR(BiomeCatalog, biomeCatalog);
                 OE_OPTION(float, blendRadius);
                 OE_OPTION(std::string, biomeidField);
@@ -53,21 +101,25 @@ namespace osgEarth
 
         public:
             META_Layer(osgEarthProcedural, BiomeLayer, Options, ImageLayer, Biomes);
-                
-            //! Get the biome at index "index"
-            const Biome* getBiomeByIndex(int index) const;
 
             //! The catalog holding all biome information
             std::shared_ptr<const BiomeCatalog> getBiomeCatalog() const;
 
-            //! Manager that paged biome data in and out
+            //! Manager that pages biome assets in and out
             BiomeManager& getBiomeManager() { return _biomeMan; }
+
+            //! Vector layer that deliniates the base biomes
+            FeatureSource* getVectorLayer() const;
+
+            //! Optional coverage layer that can modify the biome selection
+            CoverageLayer* getCoverageLayer() const;
 
             //! Whether to automatically load and unload biomes, or to 
             //! allow the user to manually do so with the setBiome() call.
             //! Default is true, meaning that as the user navigates the map,
             //! the manager will automatically load and unload biomes 
             //! according to location.
+            //! NB: This is for debugging only -- not necessarily robust!
             void setAutoBiomeManagement(bool value);
             bool getAutoBiomeManagement() const;
 
@@ -75,13 +127,17 @@ namespace osgEarth
 
             virtual void addedToMap(const Map*) override;
 
-        protected:
+            virtual void removedFromMap(const Map*) override;
+
+        protected: // Layer
 
             virtual void init() override;
 
             virtual Status openImplementation() override;
 
             virtual Status closeImplementation() override;
+
+        protected: // ImageLayer
 
             virtual GeoImage createImageImplementation(
                 const TileKey& key, 
@@ -92,11 +148,7 @@ namespace osgEarth
                 const TileKey& key,
                 ProgressCallback* progress) const override;
 
-        protected:
-
-            FeatureSource* getControlSet() const;
-
-            virtual ~BiomeLayer() { }
+        private:
 
             // control features for biome selection
             FeatureList _features;
@@ -124,6 +176,9 @@ namespace osgEarth
             void loadPointControlSet();
 
             void loadPolygonControlSet();
+
+        protected:
+            virtual ~BiomeLayer() { }
         };
 
     }

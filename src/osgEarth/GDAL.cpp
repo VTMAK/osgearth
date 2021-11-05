@@ -26,6 +26,7 @@
 #include <osgEarth/Progress>
 #include <osgEarth/LandCover>
 #include <osgEarth/Metrics>
+#include <osgEarth/Color>
 
 #include <osgDB/FileNameUtils>
 #include <osgDB/FileUtils>
@@ -1077,23 +1078,15 @@ GDAL::Driver::createImage(const TileKey& key,
     // so the intersection bounds are adjusted here if necessary so that the values line up with the georeferencing.
     if (_extents.getSRS()->isGeographic())
     {
-        // Shift the bounds to the right.
-        if (east < _bounds.xMin())
+        while (west < _bounds.xMin())
         {
-            while (east < _bounds.xMin())
-            {
-                west += 360.0;
-                east += 360.0;
-            }
+            west += 360.0;
+            east = west + intersection.width();
         }
-        // Shift the bounds to the left.
-        else if (west > _bounds.xMax())
+        while (west > _bounds.xMax())
         {
-            while (west > _bounds.xMax())
-            {
-                west -= 360.0;
-                east -= 360.0;
-            }
+            west -= 360.0;
+            east = west + intersection.width();
         }
     }
 
@@ -1117,6 +1110,14 @@ GDAL::Driver::createImage(const TileKey& key,
 
     int rasterWidth = _warpedDS->GetRasterXSize();
     int rasterHeight = _warpedDS->GetRasterYSize();
+
+    // clamp the rasterio bounds so they don't go out of bounds
+    if (off_x + width > rasterWidth)
+        width = rasterWidth - off_x;
+
+    if (off_y + height > rasterHeight)
+        height = rasterHeight - off_x;
+
     if (off_x + width > rasterWidth || off_y + height > rasterHeight)
     {
         OE_WARN << LC << "Read window outside of bounds of dataset.  Source Dimensions=" << rasterWidth << "x" << rasterHeight << " Read Window=" << off_x << ", " << off_y << " " << width << "x" << height << std::endl;
@@ -1269,7 +1270,7 @@ GDAL::Driver::createImage(const TileKey& key,
             ImageUtils::PixelWriter write(image.get());
 
             // initialize all coverage texels to NODATA. -gw
-            write.assign(Color::all(NO_DATA_VALUE));
+            write.assign(Color(NO_DATA_VALUE));
 
             // coverage data; one channel data that is not subject to interpolated values
             unsigned char* data = new unsigned char[target_width * target_height * gdalSampleSize];
@@ -1376,7 +1377,7 @@ GDAL::Driver::createImage(const TileKey& key,
 
             // initialize all coverage texels to NODATA. -gw
             ImageUtils::PixelWriter write(image.get());
-            write.assign(Color::all(NO_DATA_VALUE));
+            write.assign(Color(NO_DATA_VALUE));
         }
         else
         {

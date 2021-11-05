@@ -45,7 +45,7 @@ namespace osgEarth { namespace Buildings
     public:
 
         /** Constructs the pager with a target profile */
-        BuildingPager(const Profile* profile);
+        BuildingPager(const Map* map, const Profile* profile);
 
         /** Session under which to load buildings */
         void setSession(Session* session);
