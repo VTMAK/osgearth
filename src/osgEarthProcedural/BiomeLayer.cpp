@@ -120,6 +120,8 @@ BiomeLayer::init()
 
     _autoBiomeManagement = true;
 
+    _tracker.setName("BiomeLayer.tracker(OE)");
+
     setProfile(Profile::create(Profile::GLOBAL_GEODETIC));
 }
 
@@ -354,6 +356,11 @@ BiomeLayer::createImageImplementation(
     const TileKey& key,
     ProgressCallback* progress) const
 {
+    if (getBiomeCatalog() == nullptr || (_polygonIndex == nullptr && getCoverageLayer() == nullptr))
+    {
+        return GeoImage::INVALID;
+    }
+
     PolygonSpatialIndex* polygonIndex = static_cast<PolygonSpatialIndex*>(_polygonIndex);
     if (polygonIndex)
     {
@@ -394,7 +401,7 @@ BiomeLayer::createImageImplementation(
                     return getCoverageLayer()->createCoverage<LandCoverSample>(key, p);
                 });
 
-            landcover.setCenterTileKey(key);
+            landcover.setCenterTileKey(key, progress);
         }
 
         iter.forEachPixelOnCenter([&]()

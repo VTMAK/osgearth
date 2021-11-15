@@ -872,8 +872,8 @@ GeoExtent::width(const Units& units) const
     else {
         Distance d(width(), getSRS()->getUnits());
         double m_per_deg = 2.0 * getSRS()->getEllipsoid().getRadiusEquator() * osg::PI / 360.0;
-        double d0 = m_per_deg * cos(yMin()) * width();
-        double d1 = m_per_deg * cos(yMax()) * height();
+        double d0 = m_per_deg * fabs(cos(yMin())) * width();
+        double d1 = m_per_deg * fabs(cos(yMax())) * height();
         return Distance(std::max(d0, d1), Units::METERS).as(units);
     }
 }
@@ -1802,6 +1802,11 @@ GeoImage::GeoImage(const osg::Image* image, const GeoExtent& extent) :
     if (extent.isInvalid())
     {
         _status.set(Status::AssertionFailure, "Invalid geoextent");
+    }
+
+    if (image)
+    {
+        _read.setImage(image);
     }
 }
 

@@ -116,6 +116,7 @@ SET(LIB_PUBLIC_HEADERS
     Composite
     Config
     Containers
+    Coverage
     CoverageLayer
     Cube
     CullingUtils
@@ -612,7 +613,6 @@ set(TARGET_SRC
     MetaTile.cpp
     Metrics.cpp
     MBTiles.cpp
-    MimeTypes.cpp
     ModelLayer.cpp
     ModelSource.cpp
     NetworkMonitor.cpp
