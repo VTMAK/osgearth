@@ -78,12 +78,6 @@ using namespace osgEarth::Aerodrome;
     (NODE).getOrCreateStateSet()->setRenderBinDetails( (NUMBER)+_baseRenderBinNum, "RenderBin" ); \
     (NODE).getOrCreateStateSet()->setAttributeAndModes(new osg::PolygonOffset(-1, -1), osg::StateAttribute::ON)
 
-// macro to set a render order and to force a negative polygon offset on ground-co-planar components
-// for use with reverse Z buffer (Vantage style - clip control, znear: 1, far: 0, depth test: greater or gequal)
-#define SET_ORDER_REV(NODE, NUMBER) \
-   (NODE).getOrCreateStateSet()->setRenderBinDetails( (NUMBER)+_baseRenderBinNum, "RenderBin" ); \
-   (NODE).getOrCreateStateSet()->setAttributeAndModes(new osg::PolygonOffset(1, 1), osg::StateAttribute::ON | osg::StateAttribute::PROTECTED)
-
 AerodromeRenderer::AerodromeRenderer()
   : osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
     _baseRenderBinNum(1),
@@ -1189,14 +1183,7 @@ AerodromeRenderer::transformAndLocalize(const osg::Vec3d& input, const SpatialRe
 
 void AerodromeRenderer::setBinAndOffset(AerodromeFeatureNode& node, int bin)
 {
-   if (_useReverseZBuffer)
-   {
-      SET_ORDER_REV(node, bin);
-   }
-   else
-   {
-      SET_ORDER(node, bin);
-   }
+   SET_ORDER(node, bin);
 }
 
 void AerodromeRenderer::setDepthState(osg::ref_ptr<osg::Node> geom)
