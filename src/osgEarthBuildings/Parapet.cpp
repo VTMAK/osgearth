@@ -63,13 +63,12 @@ Parapet::setWidth(float width)
 }
 
 bool
-Parapet::build(const Polygon* footprint, BuildContext& bc)
+Parapet::buildImpl(const Polygon* footprint, BuildContext& bc)
 {
-    if (getWidth() > 0.0f)
+    if (footprint != nullptr && getWidth() > 0.0f)
     {
         // copy the outer ring of the footprint. Ignore any holes.
         osg::ref_ptr<Polygon> copy = dynamic_cast<Polygon*>(footprint->clone());
-        copy->getHoles().clear();
     
         // apply a negative buffer to the outer ring:
         osg::ref_ptr<Geometry> hole;
@@ -82,12 +81,12 @@ Parapet::build(const Polygon* footprint, BuildContext& bc)
                 // rewind the new geometry CW and add it as a hole:
                 ring->rewind(Geometry::ORIENTATION_CW);
                 copy->getHoles().push_back( ring );
-                return Elevation::build( copy.get(), bc );
+                return Elevation::buildImpl(copy.get(), bc);
             }
         }
     }
 
-    return Elevation::build( footprint, bc );
+    return Elevation::buildImpl( footprint, bc );
 }
 
 Config

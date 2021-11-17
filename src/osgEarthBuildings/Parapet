@@ -50,14 +50,14 @@ namespace osgEarth { namespace Buildings
 
     public: // Elevation
 
-        virtual bool build(const Polygon* footprint, BuildContext& bc);
-
         virtual Config getConfig() const;
 
         virtual bool isDetail() const { return true; }
 
     protected:
         virtual ~Parapet() { }
+
+        virtual bool buildImpl(const Polygon* footprint, BuildContext& bc) override;
 
         optional<float> _width;
     };

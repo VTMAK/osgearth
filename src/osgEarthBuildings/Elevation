@@ -156,7 +156,7 @@ namespace osgEarth { namespace Buildings
          * Builds an internal structure for this elevation. If this returns
          * true, you can then call getWalls() to access the structure.
          */
-        virtual bool build(const Polygon* footprint, BuildContext& bc);
+        bool build(const Polygon* footprint, BuildContext& bc);
 
         virtual Config getConfig() const;
 
@@ -286,7 +286,7 @@ namespace osgEarth { namespace Buildings
     protected:
         virtual ~Elevation() { }
 
-        bool buildImpl(const Polygon*, BuildContext& bc);
+        virtual bool buildImpl(const Polygon*, BuildContext& bc);
         
         void resolveSkin(BuildContext& bc);
     };
