@@ -143,7 +143,9 @@ namespace osgEarth
         GLuint name() const { return _name; }
         GLenum target() const { return _target; }
         void release();
-        void storage(GLintptr size, GLvoid* data, GLbitfield flags) const;
+        //! glBufferStorage
+        void allocateStorage(GLintptr size, GLvoid* data, GLbitfield flags) const;
+        //! glBufferSubData
         void subData(GLintptr offset, GLsizeiptr size, GLvoid* data) const;
     protected:
         GLBuffer(GLenum target, osg::State& state, const std::string& label);
@@ -497,7 +499,7 @@ namespace osgEarth
     template<typename RESULT_TYPE>
     Future<RESULT_TYPE> GPUJob<RESULT_TYPE>::dispatch(const Function& function)
     {
-        Promise<RESULT_TYPE> promise("GPUJob(OE)");
+        Promise<RESULT_TYPE> promise;
         Future<RESULT_TYPE> future = promise.getFuture();
 
         std::function<void(osg::State*)> delegate = [function, promise](osg::State* state) mutable
