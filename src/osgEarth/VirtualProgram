@@ -575,6 +575,7 @@ namespace osgEarth
             ProgramKey        programKey;
             AttribBindingList accumAttribBindings;
             AttribAliasMap    accumAttribAliases;
+            ExtensionsSet     accumExtensions;
         };
         mutable osg::buffered_object<ApplyVars> _apply;
 
@@ -630,6 +631,7 @@ namespace osgEarth
             ShaderMap&         accumShaderMap,
             AttribBindingList& accumAttribBindings,
             AttribAliasMap&    accumAttribAliases,
+            ExtensionsSet&     accumExtensions,
             bool&              acceptCallbacksPresent);
 
         bool checkSharing();

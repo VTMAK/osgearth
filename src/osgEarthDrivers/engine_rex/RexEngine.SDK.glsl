@@ -1,67 +1,42 @@
 #version $GLSL_VERSION_STR
-$GLSL_DEFAULT_PRECISION_FLOAT
 
 #pragma vp_name Rex Terrain SDK
 
-/**
- * SDK functions for the Rex engine.
- * Declare and call these from any shader that runs on the terrain.
- */
-
-// uniforms from terrain engine
 uniform sampler2D oe_tile_elevationTex;
 uniform mat4 oe_tile_elevationTexMatrix;
-uniform vec2 oe_tile_elevTexelCoeff;
-
 uniform sampler2D oe_tile_normalTex;
 uniform mat4 oe_tile_normalTexMatrix;
 
-uniform vec4 oe_tile_key;
+// SDK functions for the Rex engine.
+// Declare and call these from any shader that runs on the terrain.
+
+// uniforms from terrain engine
+uniform vec2 oe_tile_elevTexelCoeff;
 
 // Stage global
 vec4 oe_layer_tilec;
+vec4 oe_tile_key;
 
-
-/**
- * Sample the elevation data at a UV tile coordinate.
- */
-float oe_terrain_getElevationUnscaled(in vec2 uv)
-{
-    // Texel-level scale and bias allow us to sample the elevation texture
-    // on texel center instead of edge.
-    vec2 elevc = uv
-        * oe_tile_elevTexelCoeff.x     // scale
-        + oe_tile_elevTexelCoeff.y;
-
-    return texture(oe_tile_elevationTex, elevc).r;
-}
-
-/**
- * Sample the elevation data at a UV tile coordinate.
- */
+// Sample the elevation data at a UV tile coordinate.
 float oe_terrain_getElevation(in vec2 uv)
 {
     // Texel-level scale and bias allow us to sample the elevation texture
     // on texel center instead of edge.
-    vec2 elevc = uv
+    vec2 uv_scaledBiased = uv
         * oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[0][0]     // scale
         + oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[3].st     // bias
         + oe_tile_elevTexelCoeff.y;
 
-    return texture(oe_tile_elevationTex, elevc).r;
+    return texture(oe_tile_elevationTex, uv_scaledBiased).r;
 }
 
-/**
- * Read the elevation at the build-in tile coordinates (convenience)
- */
+// Read the elevation at the build-in tile coordinates (convenience)
 float oe_terrain_getElevation()
 {
     return oe_terrain_getElevation(oe_layer_tilec.st);
 }
 
-/**
- * Read the normal vector and curvature at resolved UV tile coordinates.
- */
+// Read the normal vector and curvature at resolved UV tile coordinates.
 vec4 oe_terrain_getNormalAndCurvature(in vec2 uv_scaledBiased)
 {
     vec4 n = texture(oe_tile_normalTex, uv_scaledBiased);

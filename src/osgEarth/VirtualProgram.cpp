@@ -1524,6 +1524,7 @@ VirtualProgram::apply(osg::State& state) const
         local.accumAttribBindings.clear();
         local.accumAttribAliases.clear();
         local.programKey.clear();
+        local.accumExtensions.clear();
 #else
         ApplyVars local;
 #endif
@@ -1538,10 +1539,11 @@ VirtualProgram::apply(osg::State& state) const
                 local.accumShaderMap,
                 local.accumAttribBindings,
                 local.accumAttribAliases,
+                local.accumExtensions,
                 acceptCallbacksVary);
         }
 
-        // Next, add the shaders from this VP.
+        // Next, add the data from this VP.
         {
             _dataModelMutex.lock();
 
@@ -1560,6 +1562,8 @@ VirtualProgram::apply(osg::State& state) const
             const AttribAliasMap& aliases = this->getAttribAliases();
             local.accumAttribAliases.insert(aliases.begin(), aliases.end());
 #endif
+
+            local.accumExtensions.insert(_globalExtensions.begin(), _globalExtensions.end());
 
             _dataModelMutex.unlock();
         }
@@ -1619,7 +1623,8 @@ VirtualProgram::apply(osg::State& state) const
                 state,
                 accumFunctions,
                 local.accumShaderMap,
-                _globalExtensions,
+                local.accumExtensions,
+                //_globalExtensions,
                 local.accumAttribBindings,
                 local.accumAttribAliases,
                 _template.get(),
@@ -1906,11 +1911,13 @@ VirtualProgram::accumulateFunctions(const osg::State&                state,
 
 
 void
-VirtualProgram::accumulateShaders(const osg::State&  state,
+VirtualProgram::accumulateShaders(
+    const osg::State&  state,
     unsigned           mask,
     ShaderMap&         accumShaderMap,
     AttribBindingList& accumAttribBindings,
     AttribAliasMap&    accumAttribAliases,
+    ExtensionsSet&     accumExtensions,
     bool&              acceptCallbacksVary)
 {
     acceptCallbacksVary = false;
@@ -1967,6 +1974,9 @@ VirtualProgram::accumulateShaders(const osg::State&  state,
                 const AttribAliasMap& aliases = vp->getAttribAliases();
                 accumAttribAliases.insert(aliases.begin(), aliases.end());
 #endif
+
+                const ExtensionsSet& es = vp->_globalExtensions;
+                accumExtensions.insert(es.begin(), es.end());
             }
         }
     }
@@ -1991,16 +2001,18 @@ VirtualProgram::addShadersToAccumulationMap(VirtualProgram::ShaderMap& accumMap,
 }
 
 int
-VirtualProgram::getShaders(const osg::State&                        state,
+VirtualProgram::getShaders(
+    const osg::State& state,
     std::vector<osg::ref_ptr<osg::Shader> >& output)
 {
     ShaderMap         shaders;
     AttribBindingList bindings;
     AttribAliasMap    aliases;
+    ExtensionsSet     extensions;
     bool              acceptCallbacksVary;
 
     // build the collection:
-    accumulateShaders(state, ~0, shaders, bindings, aliases, acceptCallbacksVary);
+    accumulateShaders(state, ~0, shaders, bindings, aliases, extensions, acceptCallbacksVary);
 
     // pre-allocate space:
     output.reserve(shaders.size());
@@ -2016,16 +2028,18 @@ VirtualProgram::getShaders(const osg::State&                        state,
 }
 
 int
-VirtualProgram::getPolyShaders(const osg::State&                       state,
+VirtualProgram::getPolyShaders(
+    const osg::State& state,
     std::vector<osg::ref_ptr<PolyShader> >& output)
 {
     ShaderMap         shaders;
     AttribBindingList bindings;
     AttribAliasMap    aliases;
+    ExtensionsSet     extensions;
     bool              acceptCallbacksVary;
 
     // build the collection:
-    accumulateShaders(state, ~0, shaders, bindings, aliases, acceptCallbacksVary);
+    accumulateShaders(state, ~0, shaders, bindings, aliases, extensions, acceptCallbacksVary);
 
     // pre-allocate space:
     output.reserve(shaders.size());
@@ -2162,7 +2176,7 @@ PolyShader::prepare()
                 _nominalShader->setName(_name);
         }
 
-        ShaderPreProcessor::run(_nominalShader.get());
+        ShaderPreProcessor::runPost(_nominalShader.get());
 
         // for a VERTEX_VIEW or VERTEX_CLIP shader, these might get moved to another stage.
         if (_location == ShaderComp::LOCATION_VERTEX_VIEW || _location == ShaderComp::LOCATION_VERTEX_CLIP)
@@ -2170,12 +2184,12 @@ PolyShader::prepare()
             _geomShader = new osg::Shader(osg::Shader::GEOMETRY, _source);
             if (!_name.empty())
                 _geomShader->setName(_name);
-            ShaderPreProcessor::run(_geomShader.get());
+            ShaderPreProcessor::runPost(_geomShader.get());
 
             _tessevalShader = new osg::Shader(osg::Shader::TESSEVALUATION, _source);
             if (!_name.empty())
                 _tessevalShader->setName(_name);
-            ShaderPreProcessor::run(_tessevalShader.get());
+            ShaderPreProcessor::runPost(_tessevalShader.get());
         }
     }
     _dirty = false;

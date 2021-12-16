@@ -17,8 +17,8 @@ uniform mat4 oe_layer_texParentMatrix;
 void oe_rex_imageLayer_VS(inout vec4 vertexView)
 {
     // calculate the texture coordinates:
-    oe_layer_texc       = (oe_layer_texMatrix * oe_layer_tilec).st;
-	oe_layer_texcParent = (oe_layer_texParentMatrix * oe_layer_tilec).st;
+    oe_layer_texc = (oe_layer_texMatrix * oe_layer_tilec).st;
+    oe_layer_texcParent = (oe_layer_texParentMatrix * oe_layer_tilec).st;
 }
 
 
@@ -55,19 +55,11 @@ in vec2 oe_layer_texc;
 in vec4 oe_layer_tilec;
 in float oe_layer_opacity;
 
-//in float oe_layer_rangeOpacity;
-
-// Vertex Markers:
 // Vertex Markers:
 #define VERTEX_VISIBLE  1
 #define VERTEX_BOUNDARY 2
 #define VERTEX_HAS_ELEVATION 4
 #define VERTEX_SKIRT 8
-//#define VERTEX_MARKER_DISCARD  1
-//#define VERTEX_MARKER_GRID     2
-//#define VERTEX_MARKER_PATCH    4
-//#define VERTEX_MARKER_BOUNDARY 8
-//#define VERTEX_MARKER_SKIRT    16
 flat in int oe_terrain_vertexMarker;
 
 void oe_rex_imageLayer_FS(inout vec4 color)
@@ -124,7 +116,7 @@ void oe_rex_imageLayer_FS(inout vec4 color)
 
         // if the parent texture does not exist, use the current texture with alpha=0 as the parent
         // so we can "fade in" an image layer that starts at LOD > 0:
-        texelParent = mix( vec4(texel.rgb, 0.0), texelParent, oe_layer_texParentExists );
+        texelParent = mix(vec4(texel.rgb, 0.0), texelParent, oe_layer_texParentExists);
 
         // Resolve the final texel color:
         texel = mix(texel, texelParent, oe_rex_morphFactor);
@@ -140,7 +132,7 @@ void oe_rex_imageLayer_FS(inout vec4 color)
     // Otherwise, apply directly and let GL blending do the rest.
     if (isTexelLayer && isFirstLayer)
     {
-        color.rgb = texel.rgb*texel.a + color.rgb*(1.0-texel.a);
+        color.rgb = texel.rgb*texel.a + color.rgb*(1.0 - texel.a);
     }
     else
     {
