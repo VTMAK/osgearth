@@ -6,47 +6,44 @@
 
 #define MAX_TILE_VERTS 417
 
-struct Global {
+struct oe_rex_Global {
     vec2 uvs[MAX_TILE_VERTS];
     float padding[2];
     vec2 morphConstants[19]; // TODO - one per LOD
     float padding2[2];
 };
 
-struct Tile {
+struct oe_rex_Tile {
     vec4 verts[MAX_TILE_VERTS];
     vec4 normals[MAX_TILE_VERTS];
     vec4 tileKey;
     mat4 modelViewMatrix;
     mat4 colorMat;
+    mat4 parentMat;
     mat4 elevMat;
     mat4 normalMat;
-    mat4 parentMat;
-    mat4 landcoverMat; // not used
-    mat4 sharedMat;
+    mat4 sharedMat[4];
     int colorIndex;
+    int parentIndex;
     int elevIndex;
     int normalIndex;
-    int parentIndex;
-    int landcoverIndex; // not used
-    int sharedIndex;
+    int sharedIndex[4];
     int drawOrder;
-    float padding[1];
+    float padding[3];
 };
 
 #undef MAX_TILE_VERTS
 
 layout(binding = 0, std430) readonly buffer TileBuffer {
-    Tile tile[];
+    oe_rex_Tile oe_tile[];
 };
 layout(binding = 1, std430) readonly buffer GlobalBuffer {
-    Global global;
+    oe_rex_Global oe_global;
 };
 layout(binding = 5, std430) readonly buffer TextureArena {
-    uint64_t tex[];
+    uint64_t oe_terrain_tex[];
 };
 
 int oe_tileID; // vertex stage global
-
 
 //#endif // !VP_STAGE_FRAGMENT
