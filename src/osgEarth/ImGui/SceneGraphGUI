@@ -714,7 +714,10 @@ namespace osgEarth
             osg::observer_ptr<MapNode> _mapNode;
             osg::RefNodePath _selectedNodePath;
             bool _propertiesExpanded = true;
+<<<<<<< HEAD
             bool _boundsDirty = false;
+=======
+>>>>>>> f161a1ee0... Updates to SceneGraphGUI
         };
     }
 }
