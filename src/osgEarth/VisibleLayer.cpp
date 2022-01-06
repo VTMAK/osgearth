@@ -189,7 +189,7 @@ VisibleLayer::init()
     if (options().blend() == BLEND_INTERPOLATE)
     {
         VirtualProgram* vp = VirtualProgram::getOrCreate(getOrCreateStateSet());
-        vp->setName("VisibleLayer");
+        vp->setName(className());
         vp->setFunction("oe_VisibleLayer_setOpacity", opacityInterpolateFS, ShaderComp::LOCATION_FRAGMENT_COLORING, 1.1f);
     }
 }
@@ -323,7 +323,7 @@ VisibleLayer::initializeUniforms()
         stateSet->addUniform(_opacityU.get());
 
         VirtualProgram* vp = VirtualProgram::getOrCreate(stateSet);
-        vp->setName("VisibleLayer");
+        vp->setName(className());
 
         vp->setFunction("oe_VisibleLayer_initOpacity", opacityVS, ShaderComp::LOCATION_VERTEX_MODEL);
 
@@ -375,7 +375,7 @@ VisibleLayer::initializeMinMaxRangeShader()
     if (!_minMaxRangeShaderAdded)
     {
         VirtualProgram* vp = VirtualProgram::getOrCreate(getOrCreateStateSet());
-        vp->setName("VisibleLayer");
+        vp->setName(className());
         vp->setFunction("oe_VisibleLayer_applyMinMaxRange", rangeOpacityVS, ShaderComp::LOCATION_VERTEX_VIEW);
         _minMaxRangeShaderAdded = true;
     }

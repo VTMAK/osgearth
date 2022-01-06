@@ -27,6 +27,7 @@
 #include <osgEarth/Containers>
 #include <osgEarth/Metrics>
 #include <osgEarth/Cache>
+#include <osgEarth/GLUtils>
 #include <osg/Shader>
 #include <osg/Program>
 #include <osg/State>
@@ -91,6 +92,8 @@ PolyShader::PolyShaderCache PolyShader::_polyShaderCache;
 
 namespace
 {
+    std::atomic_bool s_debugGroupPushed = false;
+
     /** Locate a function by name in the location map. */
     bool findFunction(const std::string&               name,
         ShaderComp::FunctionLocationMap& flm,
@@ -433,10 +436,10 @@ namespace
 
     bool s_dumpShaders = false;        // debugging
 
-                                       /** A device that lets us do a const search on the State's attribute map. OSG does not yet
-                                       have a const way to do this. It has getAttributeVec() but that is non-const (it creates
-                                       the vector if it doesn't exist); Newer versions have getAttributeMap(), but that does not
-                                       go back to OSG 3.0. */
+    /** A device that lets us do a const search on the State's attribute map. OSG does not yet
+    have a const way to do this. It has getAttributeVec() but that is non-const (it creates
+    the vector if it doesn't exist); Newer versions have getAttributeMap(), but that does not
+    go back to OSG 3.0. */
     struct StateEx : public osg::State
     {
         static const VirtualProgram::AttrStack* getProgramStack(const osg::State& state)
@@ -677,7 +680,8 @@ namespace
     * Assemble a new OSG shader Program from the provided components.
     * Outputs the uniquely-identifying "key vector" and returns the new program.
     */
-    osg::Program* buildProgram(const std::string&                  programName,
+    osg::Program* buildProgram(
+        const std::string&                  programName,
         osg::State&                         state,
         ShaderComp::FunctionLocationMap&    accumFunctions,
         VirtualProgram::ShaderMap&          accumShaderMap,
@@ -780,8 +784,16 @@ namespace
 
 //------------------------------------------------------------------------
 
+bool VirtualProgram::_gldebug = false;
+void VirtualProgram::enableGLDebugging()
+{
+    _gldebug = true;
+}
+
+
 void
-VirtualProgram::AttrStackMemory::remember(const osg::State&                 state,
+VirtualProgram::AttrStackMemory::remember(
+    const osg::State&                 state,
     const VirtualProgram::AttrStack&  rhs,
     osg::Program*                     program)
 {
@@ -1736,7 +1748,17 @@ VirtualProgram::apply(osg::State& state) const
                 if (osg::isNotifyEnabled(osg::INFO))
                     pcp->validateProgram();
 
+                if (_gldebug && s_debugGroupPushed.exchange(true))
+                    OE_GL_POP;
+
                 pcp->useProgram();
+
+                if (_gldebug)
+                {
+                    std::string zone("[VP] " + program->getName());
+                    OE_GL_PUSH(zone.c_str());
+                }
+
                 state.setLastAppliedProgramObject(pcp);
             }
             else
@@ -1800,7 +1822,8 @@ VirtualProgram::getShaderMap(ShaderMap& out) const
 }
 
 void
-VirtualProgram::accumulateFunctions(const osg::State&                state,
+VirtualProgram::accumulateFunctions(
+    const osg::State& state,
     ShaderComp::FunctionLocationMap& result) const
 {
     // This method searches the state's attribute stack and accumulates all 

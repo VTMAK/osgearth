@@ -57,6 +57,53 @@ using namespace osgEarth;
 #define GL_NORMALIZE 0x0BA1
 #endif
 
+namespace
+{
+    struct
+    {
+        typedef void (GL_APIENTRY* DebugProc)(GLenum, GLenum, GLuint, GLenum, GLsizei, const GLchar*, const void*);
+        
+        void (GL_APIENTRY * DebugMessageCallback)(DebugProc, const void*);
+        void (GL_APIENTRY * DebugMessageControl)(GLenum, GLenum, GLenum, GLsizei, const GLuint*, bool);
+        void (GL_APIENTRY * PushDebugGroup)(GLenum, GLuint, GLsizei, const char*);
+        void (GL_APIENTRY * PopDebugGroup)(void);
+
+        inline void init()
+        {
+            if (DebugMessageCallback == nullptr)
+            {
+                osg::setGLExtensionFuncPtr(DebugMessageCallback, "glDebugMessageCallback", "glDebugMessageCallbackKHR");
+                osg::setGLExtensionFuncPtr(DebugMessageControl, "glDebugMessageControl", "glDebugMessageControlKHR");
+                osg::setGLExtensionFuncPtr(PushDebugGroup, "glPushDebugGroup", "glPushDebugGroupKHR");
+                osg::setGLExtensionFuncPtr(PopDebugGroup, "glPopDebugGroup", "glPopDebugGroupKHR");
+            }
+        }
+    } gl;
+}
+
+// static
+bool GLUtils::_gldebugging = false;
+
+void
+GLUtils::enableGLDebugging()
+{
+    _gldebugging = true;
+}
+
+void
+GLUtils::pushDebugGroup(const char* name)
+{
+    gl.init();
+    gl.PushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name);
+}
+
+void
+GLUtils::popDebugGroup()
+{
+    gl.init();
+    gl.PopDebugGroup();
+}
+
 void
 GLUtils::setGlobalDefaults(osg::StateSet* stateSet)
 {
@@ -187,25 +234,10 @@ GLUtils::remove(osg::StateSet* stateSet, GLenum cap)
     }
 }
 
-GLsizei
-GLUtils::getSSBOAlignment(osg::State& state)
-{
-    static GLsizei _ssboAlignment = -1;
-    if (_ssboAlignment < 0)
-        glGetIntegerv(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT, &_ssboAlignment);
-    return _ssboAlignment;
-}
-
 void
 CustomRealizeOperation::setSyncToVBlank(bool value)
 {
     _vsync = value;
-}
-
-void
-CustomRealizeOperation::setEnableGLDebugging(bool value)
-{
-    _gldebug = value;
 }
 
 namespace
@@ -259,6 +291,14 @@ namespace
         }
     }
 
+    template<typename T>
+    T getSSBOAlignment()
+    {
+        static GLsizei _ssboAlignment = -1;
+        if (_ssboAlignment < 0)
+            glGetIntegerv(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT, &_ssboAlignment);
+        return T(_ssboAlignment);
+    }
 }
 
 void
@@ -273,18 +313,24 @@ CustomRealizeOperation::operator()(osg::Object* object)
         }
     }
 
-    if (_gldebug.isSetTo(true))
+    if (GLUtils::isGLDebuggingEnabled())
     {
-        osg::GraphicsContext* gc = static_cast<osg::GraphicsContext*>(object);
-        OE_HARD_ASSERT(gc != nullptr);
+        gl.init();
 
-        OE_INFO << "ENABLING DEBUG GL MESSAGES" << std::endl;
-        glEnable(GL_DEBUG_OUTPUT);
-        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-        GLFunctions& gl = GLFunctions::get(*gc->getState());
-        gl.glDebugMessageCallback(s_oe_gldebugproc, nullptr);
-        gl.glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, nullptr, GL_TRUE);
-        gl.glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr, GL_TRUE);
+        //osg::GraphicsContext* gc = static_cast<osg::GraphicsContext*>(object);
+        //OE_HARD_ASSERT(gc != nullptr);
+
+        if (gl.DebugMessageCallback)
+        {
+            OE_INFO << "ENABLING DEBUG GL MESSAGES" << std::endl;
+
+            glEnable(GL_DEBUG_OUTPUT);
+            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+
+            gl.DebugMessageCallback(s_oe_gldebugproc, nullptr);
+            gl.DebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, nullptr, GL_TRUE);
+            gl.DebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr, GL_TRUE);
+        }
     }
 }
 
@@ -335,7 +381,7 @@ GLBuffer::GLBuffer(GLenum target, osg::State& state, const std::string& label) :
     _target(target),
     _name(~0U),
     _size(0),
-    _layoutIndex(0u)
+    _immutable(false)
 {
     ext()->glGenBuffers(1, &_name);
     if (_name != ~0U)
@@ -371,23 +417,39 @@ GLBuffer::bind(GLenum otherTarget) const
 }
 
 void
-GLBuffer::bufferData(GLintptr size, GLvoid* data, GLbitfield flags) const
+GLBuffer::uploadData(GLintptr datasize, const GLvoid* data, GLbitfield flags) const
 {
+    OE_HARD_ASSERT(_immutable == false);
+
+    if (datasize > size())
+        bufferData(datasize, data, flags);
+    else if (data != nullptr)
+        bufferSubData(0, datasize, data);
+}
+
+void
+GLBuffer::bufferData(GLintptr size, const GLvoid* data, GLbitfield flags) const
+{
+    size = align(size, getSSBOAlignment<GLintptr>());
     ext()->glBufferData(_target, size, data, flags);
     _size = size;
+    _immutable = false;
 }
 
 void
-GLBuffer::bufferStorage(GLintptr size, GLvoid* data, GLbitfield flags) const
+GLBuffer::bufferSubData(GLintptr offset, GLsizeiptr datasize, const GLvoid* data) const
 {
+    OE_SOFT_ASSERT_AND_RETURN(offset + datasize <= size(), void());
+    ext()->glBufferSubData(_target, offset, datasize, data);
+}
+
+void
+GLBuffer::bufferStorage(GLintptr size, const GLvoid* data, GLbitfield flags) const
+{
+    size = align(size, getSSBOAlignment<GLintptr>());
     ext()->glBufferStorage(_target, size, data, flags);
     _size = size;
-}
-
-void
-GLBuffer::bufferSubData(GLintptr offset, GLsizeiptr size, GLvoid* data) const
-{
-    ext()->glBufferSubData(_target, offset, size, data);
+    _immutable = true;
 }
 
 void
@@ -539,29 +601,6 @@ void
 GLTexture::compressedSubImage3D(GLint level, GLint xoff, GLint yoff, GLint zoff, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void* data) const
 {
     ext()->glCompressedTexSubImage3D(_target, level, xoff, yoff, zoff, width, height, depth, format, imageSize, data);
-}
-
-SSBO::SSBO() :
-    _allocatedSize(0),
-    _bindingIndex(-1)
-{
-    //nop
-}
-
-void
-SSBO::release() const
-{
-    _buffer = nullptr; // triggers the releaser
-    _allocatedSize = 0u;
-}
-
-void
-SSBO::bindLayout() const
-{
-    if (_buffer != nullptr && _bindingIndex >= 0)
-    {
-        _buffer->bindBufferBase(_bindingIndex);
-    }
 }
 
 #undef LC
@@ -1064,29 +1103,4 @@ GLObjectsCompiler::compileNow(
         Future<osg::ref_ptr<osg::Node>> result = compileAsync(node, host, progress);
         result.join(progress);
     }
-}
-
-GLFunctions::GLFunctions() :
-    glBufferStorage(NULL)
-{
-    //nop
-}
-GLFunctions GLFunctions::_buf[256];
-
-GLFunctions&
-GLFunctions::get(unsigned contextID)
-{
-    GLFunctions& f = _buf[contextID];
-    if (f.glBufferStorage == NULL)
-    {
-        osg::setGLExtensionFuncPtr(f.glBufferStorage, "glBufferStorage", "glBufferStorageARB");
-        osg::setGLExtensionFuncPtr(f.glClearBufferSubData, "glClearBufferSubData", "glClearBufferSubDataARB");
-        osg::setGLExtensionFuncPtr(f.glDrawElementsIndirect, "glDrawElementsIndirect", "glDrawElementsIndirectARB");
-        osg::setGLExtensionFuncPtr(f.glMultiDrawElementsIndirect, "glMultiDrawElementsIndirect", "glMultiDrawElementsIndirectARB");
-        osg::setGLExtensionFuncPtr(f.glDispatchComputeIndirect, "glDispatchComputeIndirect", "glDispatchComputeIndirectARB");
-        osg::setGLExtensionFuncPtr(f.glTexStorage3D, "glTexStorage3D", "glTexStorage3DARB");
-        osg::setGLExtensionFuncPtr(f.glDebugMessageCallback, "glDebugMessageCallback", "glDebugMessageCallbackKHR");
-        osg::setGLExtensionFuncPtr(f.glDebugMessageControl, "glDebugMessageControl", "glDebugMessageControlKHR");
-    }
-    return f;
 }

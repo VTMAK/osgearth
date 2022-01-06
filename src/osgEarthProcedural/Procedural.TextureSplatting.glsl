@@ -53,17 +53,8 @@ void oe_splat_View(inout vec4 vertex_view)
 #pragma vp_name Texture Splatter FS
 #pragma vp_function oe_splat_Frag, fragment, 0.8
 
-#pragma import_defines(OE_LIFEMAP_TEX)
-#pragma import_defines(OE_LIFEMAP_MAT)
-uniform sampler2D OE_LIFEMAP_TEX;
-uniform mat4 OE_LIFEMAP_MAT;
-
-#pragma import_defines(OE_COLOR_LAYER_TEX)
-#pragma import_defines(OE_COLOR_LAYER_MAT)
-#ifdef OE_COLOR_LAYER_TEX
-uniform sampler2D OE_COLOR_LAYER_TEX;
-uniform mat4 OE_COLOR_LAYER_MAT;
-#endif
+#pragma oe_use_shared_layer(OE_LIFEMAP_TEX, OE_LIFEMAP_MAT)
+//#pragma oe_use_shared_layer(OE_COLOR_LAYER_TEX, OE_COLOR_LAYER_MAT)
 
 #pragma import_defines(OE_TEX_DIM_X)
 #pragma import_defines(OE_TEX_DIM_Y)
@@ -72,12 +63,11 @@ uniform mat4 OE_COLOR_LAYER_MAT;
 #pragma import_defines(OE_LIFEMAP_DIRECT)
 #pragma import_defines(OE_SPLAT_USE_MTL_GLS_AO)
 
-layout(binding = 10, std430) buffer TextureLUT {
+layout(binding = 5, std430) buffer SplatTextureArena {
     uint64_t texHandle[];
 };
-layout(binding = 11, std430) buffer RenderParamsLUT {
-    vec2 texScale[];
-};
+
+uniform float oe_texScale[OE_TEX_DIM_X*OE_TEX_DIM_Y];
 
 #define RUGGED 0
 #define DENSE 1
@@ -168,7 +158,7 @@ struct OE_PBR {
 // overflow the interpolator and pause pixel jitter
 void get_coord(out vec2 coord, in int index, in int level)
 {
-    vec2 scale = texScale[index];
+    vec2 scale = vec2(oe_texScale[index]);
     vec2 a = fract(splat_tilexy[level] * scale);
     vec2 b = splat_uv[level] * scale;
     coord = a + b;

@@ -28,6 +28,8 @@ using namespace osgEarth::REX;
 #undef  LC
 #define LC "[LayerDrawable] "
 
+#define COPY_MAT4F(FROM,TO) ::memcpy((TO), (FROM).ptr(), 16*sizeof(float))
+
 
 LayerDrawable::LayerDrawable() :
 _renderType(Layer::RENDERTYPE_TERRAIN_SURFACE),
@@ -48,6 +50,7 @@ _useIndirectRendering(false)
     // set up an arena with "auto release" which means th textures
     // will automatically get released when all references drop.
     _textures = new TextureArena();
+    _textures->setBindingPoint(29);
     _textures->setAutoRelease(true);
 }
 
@@ -96,28 +99,16 @@ namespace
 void
 LayerDrawable::drawImplementation(osg::RenderInfo& ri) const
 {
+    const char* zone = _layer ? _layer->getName().c_str() : className();
+
     OE_PROFILING_ZONE;
-    if (_layer)
-    {
-        OE_PROFILING_ZONE_TEXT(_layer->getName().c_str());
-    }
+    OE_PROFILING_ZONE_TEXT(zone);
+    OE_GL_SCOPE(zone);
 
-    if (_patchLayer && _patchLayer->getRenderer())
-    {
-        TileBatch batch(_drawState.get());
-        batch._tiles.reserve(_tiles.size());
-        for (auto& tile : _tiles)
-            batch._tiles.push_back(&tile);
-
-        _patchLayer->getRenderer()->draw(ri, batch);
-    }
+    if (_useIndirectRendering)
+        drawImplementationIndirect(ri);
     else
-    {
-        if (_useIndirectRendering)
-            drawImplementationIndirect(ri);
-        else
-            drawImplementationDirect(ri);
-    }
+        drawImplementationDirect(ri);
 
     // If set, dirty all OSG state to prevent any leakage - this is sometimes
     // necessary when doing custom OpenGL within a Drawable.
@@ -152,19 +143,31 @@ LayerDrawable::drawImplementation(osg::RenderInfo& ri) const
 void
 LayerDrawable::drawImplementationDirect(osg::RenderInfo& ri) const
 {
-    ProgramState& pps = _drawState->getProgramState(ri);
-
-    if (pps._layerUidUL >= 0)
+    if (_patchLayer && _patchLayer->getRenderer())
     {
-        osg::GLExtensions* ext = ri.getState()->get<osg::GLExtensions>();
-        GLint uid = _layer ? (GLint)_layer->getUID() : (GLint)-1;
-        ext->glUniform1i(pps._layerUidUL, uid);
+        TileBatch batch(_drawState.get());
+        batch._tiles.reserve(_tiles.size());
+        for (auto& tile : _tiles)
+            batch._tiles.push_back(&tile);
+
+        _patchLayer->getRenderer()->draw(ri, batch);
     }
-
-    for (auto& tile : _tiles)
+    else
     {
-        tile.apply(ri, _drawState.get());
-        tile.draw(ri);
+        ProgramState& pps = _drawState->getProgramState(ri);
+
+        if (pps._layerUidUL >= 0)
+        {
+            osg::GLExtensions* ext = ri.getState()->get<osg::GLExtensions>();
+            GLint uid = _layer ? (GLint)_layer->getUID() : (GLint)-1;
+            ext->glUniform1i(pps._layerUidUL, uid);
+        }
+
+        for (auto& tile : _tiles)
+        {
+            tile.apply(ri, _drawState.get());
+            tile.draw(ri);
+        }
     }
 }
 
@@ -182,9 +185,16 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
             GL_SHADER_STORAGE_BUFFER,
             state,
             "LayerDrawable Tiles");
+
+        osg::setGLExtensionFuncPtr(
+            gs.glDrawElementsIndirect,
+            "glDrawElementsIndirect", "glDrawElementsIndirectARB");
     }
 
-    if (gs.commands == nullptr || !gs.commands->valid())
+    // Do we need DEI commands? Not for patch layers.
+    bool useCommandBuffer = (_patchLayer == nullptr);
+
+    if (useCommandBuffer && (gs.commands == nullptr || !gs.commands->valid()))
     {
         gs.commands = GLBuffer::create(
             GL_DRAW_INDIRECT_BUFFER,
@@ -222,7 +232,7 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
 
             for (auto& tile : _tiles)
             {
-                TileBuffer& buf = cs.tilebuf[tile_num];
+                GL4TileBuffer& buf = cs.tilebuf[tile_num];
 
                 //TODO: pre-build the tile buffer in each TileNode so all we have to do it copy it.
 
@@ -264,14 +274,14 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                     if (color._arena_texture != nullptr)
                     {
                         buf.colorIndex = _textures->add(color._arena_texture);
-                        for (int i = 0; i < 16; ++i) buf.colorMat[i] = color._matrix.ptr()[i];
+                        COPY_MAT4F(color._matrix, buf.colorMat);
                     }
 
                     const Sampler& parent = (*tile._colorSamplers)[SamplerBinding::COLOR_PARENT];
                     if (parent._arena_texture != nullptr)
                     {
                         buf.parentIndex = _textures->add(parent._arena_texture);
-                        for (int i = 0; i < 16; ++i) buf.parentMat[i] = parent._matrix.ptr()[i];
+                        COPY_MAT4F(parent._matrix, buf.parentMat);
                     }
                 }
 
@@ -287,7 +297,7 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                         s._arena_texture->_internalFormat = GL_R32F;
                         s._arena_texture->_maxAnisotropy = 1.0f;
                         buf.elevIndex = _textures->add(s._arena_texture);
-                        for (int i = 0; i < 16; ++i) buf.elevMat[i] = s._matrix.ptr()[i];
+                        COPY_MAT4F(s._matrix, buf.elevMat);
                     }
                 }
 
@@ -302,7 +312,7 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                         s._arena_texture->_mipmap = true;
                         s._arena_texture->_maxAnisotropy = 1.0f;
                         buf.normalIndex = _textures->add(s._arena_texture);
-                        for (int i = 0; i < 16; ++i) buf.normalMat[i] = s._matrix.ptr()[i];
+                        COPY_MAT4F(s._matrix, buf.normalMat);
                     }
                 }
 
@@ -321,7 +331,7 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                                 s._arena_texture->_mipmap = true;
                                 //s._arena_texture->_maxAnisotropy = 4.0f;
                                 buf.sharedIndex[k] = _textures->add(s._arena_texture);
-                                for (int i = 0; i < 16; ++i) buf.sharedMat[k][i] = s._matrix.ptr()[i];
+                                COPY_MAT4F(s._matrix, buf.sharedMat[k]);
                             }
                             else
                             {
@@ -331,11 +341,11 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                     }
                 }
 
-                // First time through any layer? Make the global buffer
+                // First time through any layer? Make the shared buffer
                 // TODO: this might eventually go to the terrain level.
-                if (gs.global == nullptr || !gs.global->valid())
+                if (gs.shared == nullptr || !gs.shared->valid())
                 {
-                    GlobalBuffer buf;
+                    GL4SharedDataBuffer buf;
 
                     // Shared UVs (same for every unconstrained tile)
                     for (unsigned i = 0; i < uvs->size(); ++i)
@@ -356,15 +366,15 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
                         buf.morphConstants[(2*lod)+1] = one_over_end_minus_start;
                     }
 
-                    gs.global = GLBuffer::create(
+                    gs.shared = GLBuffer::create(
                         GL_SHADER_STORAGE_BUFFER,
                         state,
                         "LayerDrawable Global");
 
-                    gs.global->bind();
+                    gs.shared->bind();
 
-                    gs.global->bufferStorage(
-                        align((GLsizei)sizeof(GlobalBuffer), GLUtils::getSSBOAlignment(state)),
+                    gs.shared->bufferStorage(
+                        (GLsizei)sizeof(GL4SharedDataBuffer),
                         &buf,
                         0); // permanent
                 }
@@ -425,97 +435,91 @@ LayerDrawable::drawImplementationIndirect(osg::RenderInfo& ri) const
         }
 
         // Construct the draw command:
-        DrawElementsIndirectCommand& cmd = cs.commands.back();
-        cmd.instanceCount = _tiles.size();
-        cmd.count = num_indices;
+        if (gs.commands != nullptr)
+        {
+            DrawElementsIndirectCommand& cmd = cs.commands.back();
+            cmd.instanceCount = _tiles.size();
+            cmd.count = num_indices;
+        }
 
         // Update the tile render buffer:
-        GLsizei tileBufSize = sizeof(TileBuffer) * _tiles.size();
+        gs.tiles->bind();
 
-        if (tileBufSize > gs.tiles->size())
+        gs.tiles->uploadData(
+            sizeof(GL4TileBuffer) * _tiles.size(),
+            cs.tilebuf.data(),
+            GL_DYNAMIC_DRAW);
+
+        // If we are using a command buffer, upload it.
+        if (gs.commands != nullptr)
         {
-            OE_PROFILING_ZONE_NAMED("Tiles bufferData");
+            // Bind the indirect command buffer.
+            gs.commands->bind();
 
-            //OE_INFO << LC << "Reallocating tiles buffer = " << cs._tilebuf.size() << "(" << tileBufSize << " bytes)" << std::endl;
-            gs.tiles->bind();
-
-            // re-allocate the storage if necessary (check size)
-            gs.tiles->bufferData(
-                tileBufSize,
-                cs.tilebuf.data(),
-                GL_DYNAMIC_DRAW);
-        }
-
-        else
-        {
-            OE_PROFILING_ZONE_NAMED("Tiles bufferSubData");
-
-            gs.tiles->bind();
-
-            // copy the latest tile data to the GPU
-            // TODO: only copy if it changed, or only copy the parts that changed
-            gs.tiles->bufferSubData(
-                0,
-                tileBufSize,
-                cs.tilebuf.data());
-        }
-
-        // Bind the indirect command buffer.
-        gs.commands->bind();
-
-        // Update the command buffer if necessary.
-        GLsizei cmdBufSize = sizeof(DrawElementsIndirectCommand) * cs.commands.size();
-        if (cmdBufSize > gs.commands->size())
-        {
-            OE_PROFILING_ZONE_NAMED("Cmd bufferData");
-
-            // re-allocate the storage if necessary (check size)
-            gs.commands->bufferData(
-                cmdBufSize,
+            gs.commands->uploadData(
+                sizeof(DrawElementsIndirectCommand) * cs.commands.size(),
                 cs.commands.data(),
                 GL_DYNAMIC_DRAW);
-        }
-        else
-        {
-            OE_PROFILING_ZONE_NAMED("Cmd bufferSubData");
-            gs.commands->bufferSubData(
-                0,
-                cmdBufSize,
-                cs.commands.data());
         }
 
         cs._previous_tiles = _tiles;
     }
     else
     {
-        // Bind the indirect command buffer.
-        gs.commands->bind();
+        if (gs.commands != nullptr)
+        {
+            // Bind the indirect command buffer.
+            gs.commands->bind();
+        }
     }
 
     {
         OE_PROFILING_ZONE_NAMED("Draw");
 
-        // we don't care about the MVM but we do need to projection matrix:
-        if (ri.getState()->getUseModelViewAndProjectionUniforms())
-            ri.getState()->applyModelViewAndProjectionUniformsIfRequired();
-
-        // a VAO is required for GL CORE even though we don't really use it:
-        gs.vbo->ext()->glBindVertexArray(gs.vao);
-
-        // bind the shared element buffer object:
-        gs.ebo->bind();
-
         // Bind the layout indices so we can access our tile data from the shader:
-        gs.tiles->bindBufferBase(0);
-        gs.global->bindBufferBase(1);
+        gs.shared->bindBufferBase(30);
+        gs.tiles->bindBufferBase(31);
 
         // Apply the the texture arena:
-        _textures->apply(state);
+        // TODO: try this, untested.
+        if (state.getLastAppliedAttribute(OE_TEXTURE_ARENA_SA_TYPE_ID) != _textures)
+        {
+            _textures->apply(state);
+            state.haveAppliedAttribute(_textures.get());
+        }
 
-        GLFunctions::get(*ri.getState()).glDrawElementsIndirect(
-            GL_TRIANGLES,
-            GL_UNSIGNED_SHORT,
-            nullptr);            // nullptr means data is bound at GL_DRAW_INDIRECT_BUFFER
+        if (_patchLayer)
+        {
+            if (_patchLayer->getRenderer())
+            {
+                // If it's a patch layer, the layer does its own rendering
+                // TODO: pass along the fact that we're using GL4 so that
+                // the patch layer doesn't actually APPLY each DrawTileCommand!
+                TileBatch batch(_drawState.get());
+                batch._tiles.reserve(_tiles.size());
+                for (auto& tile : _tiles)
+                    batch._tiles.push_back(&tile);
+
+                _patchLayer->getRenderer()->draw(ri, batch);
+            }
+        }
+        else
+        {
+            // we don't care about the MVM but we do need to projection matrix:
+            if (ri.getState()->getUseModelViewAndProjectionUniforms())
+                ri.getState()->applyModelViewAndProjectionUniformsIfRequired();
+
+            // a VAO is required for GL CORE even though we don't really use it:
+            gs.vbo->ext()->glBindVertexArray(gs.vao);
+
+            // bind the shared element buffer object:
+            gs.ebo->bind();
+
+            gs.glDrawElementsIndirect(
+                GL_TRIANGLES,
+                GL_UNSIGNED_SHORT,
+                nullptr);            // use GL_DRAW_INDIRECT_BUFFER
+        }
     }
 }
 
@@ -539,9 +543,10 @@ LayerDrawable::releaseGLObjects(osg::State* state) const
         //if (gs.vbo) gs.vbo->release();
         gs.commands = nullptr;
         gs.ebo = nullptr;
-        gs.global = nullptr;
+        gs.shared = nullptr;
         gs.tiles = nullptr;
         gs.vbo = nullptr;
+        gs.glDrawElementsIndirect = nullptr;
     }
     else
     {

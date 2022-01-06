@@ -335,6 +335,15 @@ MapNodeHelper::loadWithoutControls(
         myReadOptions->setOptionString(str);
     }
 
+    // GL4 rendering?
+    if (args.read("--gl4") || args.read("--use-gl4"))
+    {
+        if (!myReadOptions.valid())
+            myReadOptions = new osgDB::Options();
+
+        myReadOptions->setOptionString(myReadOptions->getOptionString() + " OSGEARTH_USE_GL4");
+    }
+
     // read in the Earth file:
     osg::ref_ptr<osg::Node> node = osgDB::readNodeFiles(args, myReadOptions.get());
 
@@ -402,7 +411,20 @@ MapNodeHelper::loadWithoutControls(
     if (args.read("--vsync"))
         vsync = true;
     else if (args.read("--novsync"))
-        vsync = false;
+        vsync = false;   
+
+    // GL debugging stuff
+    if (args.read("--gldebug") || args.read("--gl-debug"))
+    {
+        GLUtils::enableGLDebugging();
+    }
+
+    // VP debugging
+    if (args.read("--vpdebug") || args.read("--vp-debug"))
+    {
+        GLUtils::enableGLDebugging();
+        VirtualProgram::enableGLDebugging();
+    }
 
     if (viewer)
     {
@@ -418,9 +440,6 @@ MapNodeHelper::loadWithoutControls(
 #endif
         if (vsync.isSet())
             rop->setSyncToVBlank(vsync.get());
-
-        if (args.read("--gldebug") || args.read("--gl-debug"))
-            rop->setEnableGLDebugging(true);
 
         op->_ops.push_back(rop);
 
@@ -451,6 +470,12 @@ MapNodeHelper::load(osg::ArgumentParser&   args,
     if (args.read("--osg-options", str) || args.read("-O", str))
     {
         myReadOptions->setOptionString(str);
+    }
+
+    // GL4 rendering?
+    if (args.read("--gl4") || args.read("--use-gl4"))
+    {
+        myReadOptions->setOptionString(myReadOptions->getOptionString() + " OSGEARTH_USE_GL4");
     }
 
     // read in the Earth file:
@@ -532,6 +557,19 @@ MapNodeHelper::load(osg::ArgumentParser&   args,
         vsync = true;
     else if (args.read("--novsync"))
         vsync = false;
+
+    // GL debugging stuff
+    if (args.read("--gldebug") || args.read("--gl-debug"))
+    {
+        GLUtils::enableGLDebugging();
+    }
+
+    // VP debugging
+    if (args.read("--vpdebug") || args.read("--vp-debug"))
+    {
+        GLUtils::enableGLDebugging();
+        VirtualProgram::enableGLDebugging();
+    }
 
     if (viewer)
     {

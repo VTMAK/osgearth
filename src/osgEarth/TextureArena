@@ -88,11 +88,12 @@ namespace osgEarth
      * After that, you can call activate() or deactivate() on individual textures
      * to control their availability on the GPU.
      */
+    #define OE_TEXTURE_ARENA_SA_TYPE_ID (osg::StateAttribute::Type)(osg::StateAttribute::CAPABILITY+8675309)
+
     class OSGEARTH_EXPORT TextureArena : public osg::StateAttribute
     {
     public:
-        META_StateAttribute(osgEarth, TextureArena,
-            (osg::StateAttribute::Type)(osg::StateAttribute::CAPABILITY+8675309));
+        META_StateAttribute(osgEarth, TextureArena, OE_TEXTURE_ARENA_SA_TYPE_ID);
 
         //! Construct an empty arena.
         TextureArena();
@@ -141,20 +142,6 @@ namespace osgEarth
         //! disable copy
         TextureArena(const TextureArena&, const osg::CopyOp&) { } 
 
-        // Lookup table that maps texture ids to bindless handles
-        struct HandleLUT : public SSBO {
-            mutable GLuint64* _buf;
-            unsigned _numTextures;
-            bool _dirty;
-            optional<GLsizei> _alignment;
-            HandleLUT() : _buf(NULL), _dirty(false) { }
-            ~HandleLUT() { if (_buf) delete[] _buf; }
-            void sync(const TextureVector&, unsigned bindingPoint, osg::State&);
-            void refresh(const TextureVector&, osg::State&);
-            void release() const;
-            bool update();
-        };
-
         // Per-GC data
         struct GCState {
             GCState() : _inUse(false) { }
@@ -163,13 +150,17 @@ namespace osgEarth
             TextureVector _toActivate;
             TextureVector _toDeactivate;
             TextureVector _toRemove;
-            mutable HandleLUT _handleLUT;
+
+            GLBuffer::Ptr _handleBuffer;
+            std::vector<GLuint64> _handles;
+            bool _dirty;
         };
         mutable osg::buffered_object<GCState> _gc;
 
         TextureVector _textures;
         bool _autoRelease;
         unsigned _bindingPoint;
+        bool _useUBO;
     };
 }
 

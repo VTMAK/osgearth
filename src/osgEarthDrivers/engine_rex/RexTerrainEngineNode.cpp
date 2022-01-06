@@ -136,6 +136,9 @@ RexTerrainEngineNode::RexTerrainEngineNode() :
     _morphTerrainSupported(true),
     _frameLastUpdated(0u)
 {
+    // activate update traversals for this node.
+    ADJUST_UPDATE_TRAV_COUNT(this, +1);
+
     // Necessary for pager object data
     // Note: Do not change this value. Apps depend on it to
     // detect being inside a terrain traversal.
@@ -151,7 +154,7 @@ RexTerrainEngineNode::RexTerrainEngineNode() :
     osg::StateSet* stateset = getOrCreateStateSet();
     stateset->setName("RexTerrainEngineNode");
     VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
-    vp->setName("RexTerrainEngineNode");
+    vp->setName(typeid(*this).name());
     vp->setIsAbstract(true);    // cannot run by itself, requires additional children
 
     _surfaceStateSet = new osg::StateSet();
@@ -160,10 +163,7 @@ RexTerrainEngineNode::RexTerrainEngineNode() :
     _terrain = new osg::Group();
     addChild(_terrain.get());
 
-    // force an update traversal in order to compute layer extents.
     _cachedLayerExtentsComputeRequired = true;
-    ADJUST_UPDATE_TRAV_COUNT(this, +1);
-    ADJUST_EVENT_TRAV_COUNT(this, +1);
 
     _updatedThisFrame = false;
 }
@@ -365,73 +365,62 @@ RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
 
     Registry::instance()->getShaderFactory()->addPreProcessorCallback(
         "RexTerrainEngineNode",
-        [&](std::string& source)
+        [this, use_gl4](std::string& source)
         {
-            while (true)
+            std::string line;
+            std::vector<std::string> tokens;
+
+            while (ShaderLoader::getPragmaValueAsTokens(
+                source,
+                "#pragma oe_use_shared_layer",
+                line,
+                tokens))
             {
-                const std::string token("#pragma vp_import_sampler");
-                std::string::size_type statementPos = source.find(token);
-                if (statementPos == std::string::npos)
-                    break;
-
-                std::string::size_type startPos = source.find_first_not_of(" \t(", statementPos + token.length());
-                if (startPos == std::string::npos)
-                    break;
-
-                std::string::size_type endPos = source.find_first_of(")\n", startPos);
-                if (endPos == std::string::npos)
-                    break;
-
-                std::string::size_type nlPos = source.find('\n', startPos);
-                if (nlPos == std::string::npos)
-                    break;
-
-                std::string line(source.substr(statementPos, nlPos - statementPos));
-                std::string statement(source.substr(statementPos, endPos - statementPos));
-                std::string value(trim(source.substr(startPos, endPos - startPos)));
-
-                std::vector<std::string> tokens;
-                StringTokenizer(value, tokens, ", \t", "", false, true);
-                if (tokens.size() != 2)
-                    continue;
-
-                std::ostringstream buf;
-
-                if (use_gl4)
+                if (tokens.size() == 2)
                 {
-                    const std::string incGL4 = "#pragma include RexEngine.GL4.glsl";
-                    if (source.find(incGL4) == std::string::npos)
-                    {
-                        buf << incGL4 << "\n";
-                    }
+                    std::ostringstream buf;
 
-                    // find the shared index.
-                    int index = -1;
-                    const RenderBindings& bindings = this->_renderBindings;
-                    for (int i = SamplerBinding::SHARED; i < bindings.size() && index < 0; ++i)
+                    if (use_gl4)
                     {
-                        if (bindings[i].samplerName() == tokens[0])
+                        const std::string incGL4 = "#pragma include RexEngine.GL4.glsl";
+                        if (source.find(incGL4) == std::string::npos)
                         {
-                            index = i - SamplerBinding::SHARED;
+                            buf << incGL4 << "\n";
                         }
+
+                        // find the shared index.
+                        int index = -1;
+                        const RenderBindings& bindings = this->_renderBindings;
+                        for (int i = SamplerBinding::SHARED; i < bindings.size() && index < 0; ++i)
+                        {
+                            if (bindings[i].samplerName() == tokens[0])
+                            {
+                                index = i - SamplerBinding::SHARED;
+                            }
+                        }
+                        if (index < 0)
+                        {
+                            OE_WARN << LC << "Cannot find a shared sampler binding for " << tokens[0] << std::endl;
+                            Strings::replaceIn(source, line, "// error, no matching sampler binding");
+                            continue;
+                        }
+
+                        buf << "#define " << tokens[0] << "_HANDLE oe_terrain_tex[oe_tile[oe_tileID].sharedIndex[" << index << "]]\n"
+                            << "#define " << tokens[0] << " sampler2D(" << tokens[0] << "_HANDLE)\n"
+                            << "#define " << tokens[1] << " oe_tile[oe_tileID].sharedMat[" << index << "]\n";
                     }
-                    if (index < 0)
+                    else
                     {
-                        OE_WARN << LC << "Cannot find a shared sampler binding for " << tokens[0] << std::endl;
-                        continue;
+                        buf << "uniform sampler2D " << tokens[0] << ";\n"
+                            << "uniform mat4 " << tokens[1] << ";\n";
                     }
 
-                    buf << "#define " << tokens[0] << "_HANDLE oe_terrain_tex[oe_tile[oe_tileID].sharedIndex[" << index << "]]\n"
-                        << "#define " << tokens[0] << " sampler2D(" << tokens[0] << "_HANDLE)\n"
-                        << "#define " << tokens[1] << " oe_tile[oe_tileID].sharedMat[" << index << "]\n";
+                    Strings::replaceIn(source, line, buf.str());
                 }
                 else
                 {
-                    buf << "uniform sampler2D " << tokens[0] << ";\n"
-                        << "uniform mat4 " << tokens[1] << ";\n";
+                    Strings::replaceIn(source, line, "// error, missing token(s)");
                 }
-
-                Strings::replaceIn(source, line, buf.str());
             }
         }
     );
@@ -867,30 +856,14 @@ RexTerrainEngineNode::cull_traverse(osg::NodeVisitor& nv)
 }
 
 void
-RexTerrainEngineNode::event_traverse(osg::NodeVisitor& nv)
-{
-    OE_PROFILING_ZONE;
-
-    // Update the cached layer extents as necessary.
-    osg::ref_ptr<const Layer> layer;
-    for (auto& layerExtent : _cachedLayerExtents)
-    {
-        layerExtent.second._layer.lock(layer);
-        if (layer.valid() && layer->getRevision() > layerExtent.second._revision)
-        {
-            layerExtent.second._extent = _map->getProfile()->clampAndTransformExtent(layer->getExtent());
-            layerExtent.second._revision = layer->getRevision();
-        }
-    }
-}
-
-void
 RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
 {
     OE_PROFILING_ZONE;
 
     if (_renderModelUpdateRequired)
     {
+        OE_PROFILING_ZONE_NAMED("PurgeOrphanedLayers");
+
         PurgeOrphanedLayers visitor(getMap(), _renderBindings);
         _terrain->accept(visitor);
         _renderModelUpdateRequired = false;
@@ -902,16 +875,37 @@ RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
     {
         cacheAllLayerExtentsInMapSRS();
         _cachedLayerExtentsComputeRequired = false;
-        ADJUST_UPDATE_TRAV_COUNT(this, -1);
+    }
+    else
+    {
+        OE_PROFILING_ZONE_NAMED("Update cached layer extents");
+
+        // Update the cached layer extents as necessary.
+        osg::ref_ptr<const Layer> layer;
+        for (auto& layerExtent : _cachedLayerExtents)
+        {
+            layerExtent.second._layer.lock(layer);
+            if (layer.valid() && layer->getRevision() > layerExtent.second._revision)
+            {
+                layerExtent.second._extent = _map->getProfile()->clampAndTransformExtent(layer->getExtent());
+                layerExtent.second._revision = layer->getRevision();
+            }
+        }
     }
 
-    // Call update() on all open layers
-    LayerVector layers;
-    _map->getLayers(layers);
-    for (auto& layer : layers)
     {
-        if (layer->isOpen())
+        OE_PROFILING_ZONE_NAMED("Update open layers");
+
+        // Call update() on all open layers
+        LayerVector layers;
+        _map->getLayers(layers, [&](const Layer* layer) {
+            return layer->isOpen();
+            });
+
+        for (auto& layer : layers)
+        {
             layer->update(nv);
+        }
     }
 
     // Call update on the tile registry
@@ -921,13 +915,7 @@ RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
 void
 RexTerrainEngineNode::traverse(osg::NodeVisitor& nv)
 {
-    if (nv.getVisitorType() == nv.EVENT_VISITOR)
-    {
-        event_traverse(nv);
-        TerrainEngineNode::traverse(nv);
-    }
-
-    else if (nv.getVisitorType() == nv.UPDATE_VISITOR)
+    if (nv.getVisitorType() == nv.UPDATE_VISITOR)
     {
         if (!_updatedThisFrame.exchange(true))
         {
@@ -1219,18 +1207,6 @@ RexTerrainEngineNode::removeImageLayer( ImageLayer* layerRemoved )
                 e.second._drawables.erase(layerRemoved);
             });
 
-             
-        //_cullers.forEach([&](TerrainCuller& culler) {
-        //    culler.removeLayer(layerRemoved);
-        //});
-
-        //_layerDrawables.scoped_lock([&]() {
-        //    for (auto& entry : _layerDrawables) {
-        //        if (entry.first.first == layerRemoved)
-        //            _layerDrawables.erase(entry.first);
-        //    }
-        //});
-
         // for a shared layer, release the shared image unit.
         if ( layerRemoved->isOpen() && layerRemoved->isShared() )
         {
@@ -1338,13 +1314,13 @@ RexTerrainEngineNode::updateState()
 
         // Shaders that affect any terrain layer:
         VirtualProgram* terrainVP = VirtualProgram::getOrCreate(terrainStateSet);
-        terrainVP->setName("Rex Terrain");
+        terrainVP->setName(typeid(*this).name());
         shaders.load(terrainVP, shaders.sdk());
         shaders.load(terrainVP, shaders.vert());
 
         // Shaders that affect only terrain surface layers (RENDERTYPE_TERRAIN_SURFACE)
         VirtualProgram* surfaceVP = VirtualProgram::getOrCreate(surfaceStateSet);
-        surfaceVP->setName("Rex Surface");
+        surfaceVP->setName(typeid(*this).name());
 
         // Functions that affect the terrain surface only:
         shaders.load(surfaceVP, shaders.elevation());
