@@ -33,6 +33,7 @@
 #include <osgEarth/Math>
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/Metrics>
+#include <osgEarth/GLUtils>
 
 #include <osg/BlendFunc>
 #include <osg/Multisample>
@@ -1376,6 +1377,8 @@ VegetationLayer::Renderer::GroupState::compute(
 
     if (needs_generate)
     {
+        OE_GL_ZONE_NAMED("Generate");
+
         // the generator will change this, so save it and restore it later.
         osg::Matrix mvm = state->getModelViewMatrix();
 
@@ -1387,6 +1390,7 @@ VegetationLayer::Renderer::GroupState::compute(
 
     if (needs_cull)
     {
+        OE_GL_ZONE_NAMED("Cull");
         cull(ri);
     }
 
