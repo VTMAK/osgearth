@@ -94,6 +94,7 @@ namespace osgEarth { namespace Buildings
             std::atomic_bool _renderLeavesDetected;
             void traverse(osg::NodeVisitor& nv) override;
             void releaseGLObjects(osg::State*) const override;
+            void resizeGLObjectBuffers(unsigned) override;
         };
 
         osg::ref_ptr<Session>             _session;

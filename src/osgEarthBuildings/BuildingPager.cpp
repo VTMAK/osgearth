@@ -100,6 +100,25 @@ BuildingPager::CacheManager::releaseGLObjects(osg::State* state) const
     }
     
     OE_DEBUG << LC << "Cleared all internal caches" << std::endl;
+
+    // invoke parent's implementation
+    osg::Group::releaseGLObjects(state);
+}
+
+void
+BuildingPager::CacheManager::resizeGLObjectBuffers(unsigned size)
+{
+    if (_texCache.valid())
+    {
+        _texCache->resizeGLObjectBuffers(size);
+    }
+
+    if (_stateSetCache.valid())
+    {
+        _stateSetCache->resizeGLObjectBuffers(size);
+    }
+
+    osg::Group::resizeGLObjectBuffers(size);
 }
 
 void

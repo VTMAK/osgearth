@@ -113,6 +113,19 @@ namespace osgEarth { namespace Buildings
             }
         }
 
+        void resizeGLObjectBuffers(unsigned size)
+        {
+            ScopedMutexLock lock(_mutex);
+            for (auto iter : _cache)
+            {
+                osg::ref_ptr<osg::Texture>& tex = iter.second;
+                if (tex.valid())
+                {
+                    tex->resizeGLObjectBuffers(size);
+                }
+            }
+        }
+
         void clear()
         {
             ScopedMutexLock lock(_mutex);

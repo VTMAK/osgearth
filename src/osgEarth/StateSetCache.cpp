@@ -268,11 +268,21 @@ void
 StateSetCache::releaseGLObjects(osg::State* state) const
 {
     Threading::ScopedMutexLock lock( _mutex );
-    for(StateSetSet::const_iterator i = _stateSetCache.begin(); i != _stateSetCache.end(); ++i)
+    for(auto& stateset : _stateSetCache)
     {
-        i->get()->releaseGLObjects(state);
+        stateset->releaseGLObjects(state);
     }
 
+}
+
+void
+StateSetCache::resizeGLObjectBuffers(unsigned size)
+{
+    Threading::ScopedMutexLock lock(_mutex);
+    for (auto& stateset : _stateSetCache)
+    {
+        stateset->resizeGLObjectBuffers(size);
+    }
 }
 
 void
