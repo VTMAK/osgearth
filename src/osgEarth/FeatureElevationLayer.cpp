@@ -32,8 +32,8 @@ REGISTER_OSGEARTH_LAYER(feature_elevation, FeatureElevationLayer);
 void
 FeatureElevationLayer::Options::fromConfig(const Config& conf)
 {
-    attr().init("ELEVATION");
-    offset().init(-1.0);
+    attr().setDefault("ELEVATION");
+    offset().setDefault(0.0f);
 
     conf.get("attr", attr());
     conf.get("offset", offset());
