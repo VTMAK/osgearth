@@ -25,6 +25,7 @@
 #include <osgEarth/Metrics>
 #include <osgEarth/Utils>
 #include <osgEarth/NodeUtils>
+#include <osgEarth/Chonk>
 
 #include <osgUtil/Optimizer>
 #include <osgUtil/Statistics>
@@ -32,6 +33,7 @@
 #include <osg/CullFace>
 #include <osg/Geometry>
 #include <osg/MatrixTransform>
+#include <osgUtil/RenderBin>
 
 #include <osgDB/WriteFile>
 
@@ -140,7 +142,6 @@ BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
         osg::Group::traverse(nv);
 
         int after = RenderBinUtils::getTotalNumRenderLeaves(cv->getCurrentRenderBin());
-
         int newLeaves = after - before;
         if (newLeaves > 0)
         {
@@ -156,17 +157,16 @@ BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
         // if nothing was culled, clear out the caches and release their memory.
         // _cullCompleted = so it will work if update is called more than once
         //                  between culls
-        if (_cullCompleted.exchange(false) && 
-            _renderLeavesDetected && 
-            _renderLeaves == 0)
+        if (_cullCompleted.exchange(false))
         {
-            releaseGLObjects(nullptr);
-            _renderLeavesDetected = false;
+            if (_renderLeavesDetected && _renderLeaves == 0)
+            {
+                releaseGLObjects(nullptr);
+                _renderLeavesDetected = false;
+            }
+            osg::Group::traverse(nv);
         }
-
         _renderLeaves = 0;
-
-        osg::Group::traverse(nv);
     }
 
     else
@@ -181,19 +181,31 @@ BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
 
 
 BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
-SimplePager( map, profile ),
-_index     ( nullptr ),
-_filterUsage(FILTER_USAGE_NORMAL),
-_verboseWarnings(false)
+    SimplePager(map, profile),
+    _index(nullptr),
+    _filterUsage(FILTER_USAGE_NORMAL),
+    _verboseWarnings(false)
 {
     _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != nullptr;
 
     _caches = new CacheManager();
     _caches->setName("BuildingPager Cache Manager");
 
+    osg::StateSet* ss = getOrCreateStateSet();
+
     // Disable backface culling?
-    this->getOrCreateStateSet()->setAttributeAndModes(
+    ss->setAttributeAndModes(
         new osg::CullFace(), osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
+
+    ss->setMode(GL_BLEND, 1);
+
+    // Texture arena for the entire layer
+    _textures = new TextureArena();
+    _textures->setBindingPoint(1);
+    ss->setAttribute(_textures);
+
+    // Stores weak pointers to chonks for re-use.
+    _chonks = std::make_shared<ChonkArena>();
 }
 
 void
@@ -361,6 +373,8 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     output.setTextureCache(_caches->_texCache.get());
     output.setStateSetCache(_caches->_stateSetCache.get());
     output.setFilterUsage(_filterUsage);
+    output.setTextureArena(_textures.get());
+    output.setChonkArena(_chonks);
     
     bool canceled = false;
     bool caching = true;
@@ -468,6 +482,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 output.setRange(tileBound.radius() * getRangeFactor());
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 
+#if 0
                 osg::MatrixTransform * mt = dynamic_cast<osg::MatrixTransform *> (node.get());
                 if (mt)
                 {
@@ -485,8 +500,8 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                       }
                       mt->addChild(oqn.get());
                    }
-
                 }
+#endif
             }
             else
             {

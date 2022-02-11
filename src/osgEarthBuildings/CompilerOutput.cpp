@@ -31,6 +31,7 @@
 #include <osgEarth/Session>
 #include <osgEarth/ResourceCache>
 #include <osgEarth/MeshFlattener>
+#include <osgEarth/Chonk>
 #include <osgDB/WriteFile>
 #include <set>
 
@@ -387,6 +388,130 @@ void CompilerOutput::addInstances(osg::MatrixTransform* root, Session* session, 
    }
 }
 
+#if 1
+
+osg::Node*
+CompilerOutput::createSceneGraph(
+    Session* session,
+    const CompilerSettings& settings,
+    const osgDB::Options* readOptions,
+    ProgressCallback* progress) const
+{
+    constexpr float min_pixels = 25.0f;
+    osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+
+    ChonkFactory factory(_textures.get());
+
+    // Parametric geometry:
+    for (auto& geode : _geodes)
+    {
+        auto& group = geode.second;
+        for (unsigned i = 0; i < group->getNumChildren(); ++i)
+        {
+            Chonk::Ptr c = Chonk::create();
+            c->add(group->getChild(i), min_pixels, FLT_MAX, factory);
+            drawable->add(c);
+
+            // TODO: lods
+        }
+    }
+
+    // External models:
+    for (unsigned i = 0; i < _externalModelsGroup->getNumChildren(); ++i)
+    {
+        auto node = _externalModelsGroup->getChild(i);
+        if (node)
+        {
+            Chonk::Ptr c = Chonk::create();
+            c->add(node, min_pixels, FLT_MAX, factory);
+            drawable->add(c);
+        }
+    }
+
+    // Instanced models
+    for (auto iter : _instances)
+    {
+        auto& resource = iter.first;
+        auto& matrices = iter.second;
+
+        _chonks->_m.lock();
+        ChonkArena::WeakChonkPtr& ptr = _chonks->_lut[resource.get()];
+        Chonk::Ptr chonk = ptr.lock();
+        if (chonk == nullptr)
+        {
+            osg::ref_ptr<osg::Node> model;
+            if (session->getResourceCache()->cloneOrCreateInstanceNode(resource, model, readOptions))
+            {
+                chonk = Chonk::create();
+                chonk->add(model.get(), min_pixels, FLT_MAX, factory);
+                ptr = chonk;
+            }
+            else
+            {
+                OE_WARN << LC << "Failed to load " << resource->uri()->full() << std::endl;
+            }
+        }
+        _chonks->_m.unlock();
+
+        if (chonk)
+        {
+            for (auto& matrix : matrices)
+            {
+                drawable->add(chonk, matrix * getWorldToLocal());
+            }
+        }
+    }
+
+    if (drawable.valid())
+    {
+        osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform(getLocalToWorld());
+        
+        root->setName("oe.BuildingLayer.root");
+
+#if 0 // auto in chonkdrawable ctor
+        root->getOrCreateStateSet()->setRenderBinDetails(
+            812, // doens't matter, as long as there is no conflict
+            "ChonkBin",
+            osg::StateSet::OVERRIDE_PROTECTED_RENDERBIN_DETAILS);
+
+        root->addChild(drawable);
+#else
+
+        auto geom = new osg::Geometry();
+
+        osg::BoundingBox box = drawable->getBoundingBox();
+        auto verts = new osg::Vec3Array();
+        for(int i=0; i<8; ++i)
+            verts->push_back(box.corner(i));
+        geom->setVertexArray(verts);
+
+        const GLushort elements[36] = {
+            0,1,3, 3,2,0,
+            1,5,7, 7,3,1,
+            5,4,6, 6,7,5,
+            4,0,2, 2,6,4,
+            2,3,7, 7,6,2,
+            4,5,1, 1,0,4 };
+        geom->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 36, elements));
+
+        Chonk::Ptr c = Chonk::create();
+        c->add(geom, factory);
+        ChonkDrawable* d = new ChonkDrawable();
+        d->add(c);
+        root->addChild(d);
+
+        //root->addChild(geom);
+#endif
+        return root.release();
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+#else
+
 osg::Node*
 CompilerOutput::createSceneGraph(Session*                session,
                                  const CompilerSettings& settings,
@@ -456,6 +581,7 @@ CompilerOutput::createSceneGraph(Session*                session,
 
     return root.release();
 }
+#endif
 
 namespace
 {

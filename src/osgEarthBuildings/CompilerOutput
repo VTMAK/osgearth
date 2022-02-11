@@ -32,6 +32,8 @@
 #include <osgEarth/ModelResource>
 #include <osgEarth/ResourceCache>
 #include <osgEarth/StateSetCache>
+#include <osgEarth/TextureArena>
+#include <osgEarth/Chonk>
 
 #include <map>
 #include <unordered_map>
@@ -44,6 +46,14 @@ namespace osg
 namespace osgEarth { namespace Buildings 
 {
     using namespace osgEarth;
+
+    struct ChonkArena
+    {
+        using Ptr = std::shared_ptr<ChonkArena>;
+        using WeakChonkPtr = std::weak_ptr<Chonk>;
+        Mutex _m;
+        std::unordered_map<ModelResource*, WeakChonkPtr> _lut;
+    };
 
     struct TextureCache : public osg::Referenced
     {
@@ -156,6 +166,12 @@ namespace osgEarth { namespace Buildings
         //! Stateset cache for shader generation
         void setStateSetCache(StateSetCache* value) { _stateSetCache = value; }
 
+        //! Texture arena to use for GL4/NV rendering
+        void setTextureArena(TextureArena* value) { _textures = value; }
+
+        //! Set chonks arena to use
+        void setChonkArena(ChonkArena::Ptr value) { _chonks = value; }
+
         /** Read output from a cache bin */
         osg::Node* readFromCache(const osgDB::Options* readOptions, ProgressCallback* progress) const;
 
@@ -244,6 +260,10 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<TextureCache> _texCache;
 
         osg::ref_ptr<StateSetCache> _stateSetCache;
+
+        osg::ref_ptr<TextureArena> _textures;
+
+        ChonkArena::Ptr _chonks;
 
         FilterUsage _filterUsage;
 

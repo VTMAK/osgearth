@@ -30,6 +30,7 @@
 #include <osgEarth/FeatureSource>
 #include <osgEarth/FeatureIndex>
 #include <osgEarth/SimplePager>
+#include <osgEarth/TextureArena>
 
 #include <osgDB/ObjectCache>
 
@@ -108,6 +109,8 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<CacheManager> _caches;
         FilterUsage _filterUsage;
         bool _verboseWarnings;
+        osg::ref_ptr<TextureArena> _textures;
+        ChonkArena::Ptr _chonks;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;
