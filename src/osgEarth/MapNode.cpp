@@ -294,12 +294,12 @@ MapNode::init()
 
     this->addChild( _layerNodes );
 
-    // Connector to active the global GPUJobArena
-    //this->addChild(new GPUJobArenaConnector());
-
     // Make sure the Registry is not destroyed until we are done using
     // it (in ~MapNode).
     _registry = Registry::instance();
+
+    // the default SSE for all supporting geometries
+    _sseU = new osg::Uniform("oe_sse", 50.0f);
 
     _readyForUpdate = true;
 }
@@ -412,6 +412,8 @@ MapNode::open()
     overlayDecorator->setTerrainEngine(_terrainEngine);
 
     osg::StateSet* stateset = getOrCreateStateSet();
+
+    stateset->addUniform(_sseU.get());
 
     if ( options().enableLighting().isSet() )
     {
@@ -642,6 +644,20 @@ TerrainEngine*
 MapNode::getTerrainEngine() const
 {
     return _terrainEngine;
+}
+
+void
+MapNode::setScreenSpaceError(float value)
+{
+    _sseU->set(value);
+}
+
+float
+MapNode::getScreenSpaceError() const
+{
+    float sse;
+    _sseU->get(sse);
+    return sse;
 }
 
 void
