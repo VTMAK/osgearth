@@ -26,6 +26,7 @@
 #include <osgEarth/Utils>
 #include <osgEarth/NodeUtils>
 #include <osgEarth/Chonk>
+#include <osgEarth/Capabilities>
 
 #include <osgUtil/Optimizer>
 #include <osgUtil/Statistics>
@@ -199,13 +200,24 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
 
     ss->setMode(GL_BLEND, 1);
 
-    // Texture arena for the entire layer
-    _textures = new TextureArena();
-    _textures->setBindingPoint(1);
-    ss->setAttribute(_textures);
+    // unified NV stuff:
+    _useUnifiedNV =
+        Capabilities::get().supportsUnifiedNV() &&
+        ::getenv("OSGEARTH_USE_GL4") != nullptr;
 
-    // Stores weak pointers to chonks for re-use.
-    _chonks = std::make_shared<ChonkArena>();
+    if (_useUnifiedNV)
+    {
+        OE_INFO << LC << "Using UnifiedNV rendering" << std::endl;
+
+        // Texture arena for the entire layer
+        _textures = new TextureArena();
+        _textures->setBindingPoint(1);
+        _textures->setAutoRelease(true);
+        ss->setAttribute(_textures);
+
+        // Stores weak pointers to chonks for sharing.
+        _residentData = std::make_shared<ResidentData>();
+    }
 }
 
 void
@@ -373,8 +385,9 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     output.setTextureCache(_caches->_texCache.get());
     output.setStateSetCache(_caches->_stateSetCache.get());
     output.setFilterUsage(_filterUsage);
+    // GL4/NV support:
     output.setTextureArena(_textures.get());
-    output.setChonkArena(_chonks);
+    output.setResidentData(_residentData);
     
     bool canceled = false;
     bool caching = true;
@@ -482,26 +495,28 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 output.setRange(tileBound.radius() * getRangeFactor());
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 
-#if 0
-                osg::MatrixTransform * mt = dynamic_cast<osg::MatrixTransform *> (node.get());
-                if (mt)
+                // skip this if we are using NV -gw
+                if (!Capabilities::get().supportsUnifiedNV())
                 {
-                   osg::ref_ptr<osg::Group> oqn;
-                   if (osgEarth::OcclusionQueryNodeFactory::_occlusionFactory) {
-                      oqn = osgEarth::OcclusionQueryNodeFactory::_occlusionFactory->createQueryNode();
-                   }
-                   if (oqn.get()) 
-                   {
-                      oqn->setName("BuildingPager::oqn");
-                      //oqn.get()->setDebugDisplay(true);
-                      while (mt->getNumChildren()) {
-                         oqn.get()->addChild(mt->getChild(0));
-                         mt->removeChild(mt->getChild(0));
-                      }
-                      mt->addChild(oqn.get());
-                   }
+                    osg::MatrixTransform * mt = dynamic_cast<osg::MatrixTransform *> (node.get());
+                    if (mt)
+                    {
+                        osg::ref_ptr<osg::Group> oqn;
+                        if (osgEarth::OcclusionQueryNodeFactory::_occlusionFactory) {
+                            oqn = osgEarth::OcclusionQueryNodeFactory::_occlusionFactory->createQueryNode();
+                        }
+                        if (oqn.get())
+                        {
+                            oqn->setName("BuildingPager::oqn");
+                            //oqn.get()->setDebugDisplay(true);
+                            while (mt->getNumChildren()) {
+                                oqn.get()->addChild(mt->getChild(0));
+                                mt->removeChild(mt->getChild(0));
+                            }
+                            mt->addChild(oqn.get());
+                        }
+                    }
                 }
-#endif
             }
             else
             {

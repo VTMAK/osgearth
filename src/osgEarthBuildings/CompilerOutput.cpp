@@ -32,6 +32,7 @@
 #include <osgEarth/ResourceCache>
 #include <osgEarth/MeshFlattener>
 #include <osgEarth/Chonk>
+#include <osgEarth/Capabilities>
 #include <osgDB/WriteFile>
 #include <set>
 
@@ -387,9 +388,6 @@ void CompilerOutput::addInstances(osg::MatrixTransform* root, Session* session, 
       addInstancesZeroWorkCallbackBased(root, session, settings, readOptions, progress);
    }
 }
-
-#if 1
-
 osg::Node*
 CompilerOutput::createSceneGraph(
     Session* session,
@@ -397,24 +395,86 @@ CompilerOutput::createSceneGraph(
     const osgDB::Options* readOptions,
     ProgressCallback* progress) const
 {
-    constexpr float min_pixels = 25.0f;
+    if (_textures.valid() && _residentData)
+    {
+        return createSceneGraphUnifiedNV(session, settings, readOptions, progress);
+    }
+    else
+    {
+        return createSceneGraphLegacy(session, settings, readOptions, progress);
+    }
+}
+
+osg::Node*
+CompilerOutput::createSceneGraphUnifiedNV(
+    Session* session,
+    const CompilerSettings& settings,
+    const osgDB::Options* readOptions,
+    ProgressCallback* progress) const
+{
     osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
 
+    // This object will convert OSG geometry into Chonks,
+    // (which are indirect rendering units)
     ChonkFactory factory(_textures.get());
 
+    // This user function will ensure that we can share arena textures
+    // across tiles in the pager.
+    ResidentData::Ptr rd = _residentData;
+    auto get_or_create = [rd](osg::Texture* osgTex, bool& isNew)
+    {
+        ScopedMutexLock lock(rd->_m);
+
+        Texture::WeakPtr& weak = rd->_textures[osgTex];
+        Texture::Ptr arena_tex = weak.lock();
+        isNew = (arena_tex == nullptr);
+        if (isNew)
+        {
+            arena_tex = Texture::create();
+            weak = arena_tex;
+        }
+        return arena_tex;
+    };
+    factory.setGetOrCreateFunction(get_or_create);
+    
     // Parametric geometry:
+#if 0
+    // per-building. This works nicely but renders slowly.
+    // todo: consider chopping it up into subsections using
+    // an RTREE, for culling purposes?
     for (auto& geode : _geodes)
     {
         auto& group = geode.second;
         for (unsigned i = 0; i < group->getNumChildren(); ++i)
         {
             Chonk::Ptr c = Chonk::create();
-            c->add(group->getChild(i), min_pixels, FLT_MAX, factory);
+            c->add(group->getChild(i), 1.0f, FLT_MAX, factory);
             drawable->add(c);
 
             // TODO: lods
         }
     }
+#else
+    // per-geode group. Renders faster since every building is a unique geometry
+    for (auto& taggedGeode : _geodes)
+    {
+        auto& tag = taggedGeode.first;
+        auto& group = taggedGeode.second;
+
+        float far_pixel_scale = 1.0f;
+
+        const CompilerSettings::LODBin* bin = settings.getLODBin(tag);
+        if (bin)
+        {
+            if (bin->lodScale > 0.0f)
+                far_pixel_scale = far_pixel_scale / bin->lodScale;
+        }
+        
+        Chonk::Ptr c = Chonk::create();
+        c->add(group.get(), far_pixel_scale, FLT_MAX, factory);
+        drawable->add(c);
+    }
+#endif
 
     // External models:
     for (unsigned i = 0; i < _externalModelsGroup->getNumChildren(); ++i)
@@ -423,7 +483,7 @@ CompilerOutput::createSceneGraph(
         if (node)
         {
             Chonk::Ptr c = Chonk::create();
-            c->add(node, min_pixels, FLT_MAX, factory);
+            c->add(node, 1.0f, FLT_MAX, factory);
             drawable->add(c);
         }
     }
@@ -434,24 +494,27 @@ CompilerOutput::createSceneGraph(
         auto& resource = iter.first;
         auto& matrices = iter.second;
 
-        _chonks->_m.lock();
-        ChonkArena::WeakChonkPtr& ptr = _chonks->_lut[resource.get()];
-        Chonk::Ptr chonk = ptr.lock();
+        _residentData->_m.lock();
+        Chonk::Ptr chonk = _residentData->_chonks[resource.get()].lock();
+        _residentData->_m.unlock();
+
         if (chonk == nullptr)
         {
             osg::ref_ptr<osg::Node> model;
             if (session->getResourceCache()->cloneOrCreateInstanceNode(resource, model, readOptions))
             {
                 chonk = Chonk::create();
-                chonk->add(model.get(), min_pixels, FLT_MAX, factory);
-                ptr = chonk;
+                chonk->add(model.get(), 1.0f, FLT_MAX, factory);
+
+                _residentData->_m.lock();
+                _residentData->_chonks[resource.get()] = chonk;
+                _residentData->_m.unlock();
             }
             else
             {
                 OE_WARN << LC << "Failed to load " << resource->uri()->full() << std::endl;
             }
         }
-        _chonks->_m.unlock();
 
         if (chonk)
         {
@@ -468,15 +531,10 @@ CompilerOutput::createSceneGraph(
         
         root->setName("oe.BuildingLayer.root");
 
-#if 0 // auto in chonkdrawable ctor
-        root->getOrCreateStateSet()->setRenderBinDetails(
-            812, // doens't matter, as long as there is no conflict
-            "ChonkBin",
-            osg::StateSet::OVERRIDE_PROTECTED_RENDERBIN_DETAILS);
-
+#if 1
         root->addChild(drawable);
 #else
-
+        // TEST code to make a bounding box
         auto geom = new osg::Geometry();
 
         osg::BoundingBox box = drawable->getBoundingBox();
@@ -510,13 +568,13 @@ CompilerOutput::createSceneGraph(
     }
 }
 
-#else
 
 osg::Node*
-CompilerOutput::createSceneGraph(Session*                session,
-                                 const CompilerSettings& settings,
-                                 const osgDB::Options*   readOptions,
-                                 ProgressCallback*       progress) const
+CompilerOutput::createSceneGraphLegacy(
+    Session*                session,
+    const CompilerSettings& settings,
+    const osgDB::Options*   readOptions,
+    ProgressCallback*       progress) const
 {
     // install the master matrix for this graph:
     osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform( getLocalToWorld() );
@@ -581,7 +639,6 @@ CompilerOutput::createSceneGraph(Session*                session,
 
     return root.release();
 }
-#endif
 
 namespace
 {

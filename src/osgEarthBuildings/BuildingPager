@@ -110,7 +110,8 @@ namespace osgEarth { namespace Buildings
         FilterUsage _filterUsage;
         bool _verboseWarnings;
         osg::ref_ptr<TextureArena> _textures;
-        ChonkArena::Ptr _chonks;
+        ResidentData::Ptr _residentData;
+        bool _useUnifiedNV;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;
