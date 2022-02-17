@@ -39,19 +39,12 @@ using namespace osgEarth;
 namespace
 {
     const char* s_chonk_cull_compute_shader = R"(
-
 #version 460
 #extension GL_ARB_gpu_shader_int64 : enable
+#pragma import_defines(OE_GPUCULL_DEBUG)
+#pragma import_defines(OE_IS_SHADOW_CAMERA)
 
 layout(local_size_x=1, local_size_y=1, local_size_z=1) in;
-
-#pragma import_defines(OE_USE_CUSTOM_CULL_FUNCTION)
-#ifdef OE_USE_CUSTOM_CULL_FUNCTION
-bool oe_custom_cull(in vec2);
-#endif
-
-#pragma import_defines(OE_IS_SHADOW_CAMERA)
-#pragma import_defines(OE_GPUCULL_DEBUG)
 
 struct DrawElementsIndirectCommand
 {
@@ -148,12 +141,6 @@ void cull()
     if (lod >= chonks[v].num_lods)
         return;
 
-    // TODO: benchmark this before and after the SS cull below.
-#ifdef OE_USE_CUSTOM_CULL_FUNCTION
-    if (oe_custom_cull(input_instances[i].local_uv) == false)
-        return;
-#endif
-
     // intialize:
     float fade = 1.0;
 
@@ -164,7 +151,7 @@ void cull()
     float r = chonks[v].bs.w;
 
 #ifdef OE_GPUCULL_DEBUG
-    r = max(1.0, r-20.0);
+    r = max(1.0, r*0.75);
 #endif
 
     // Trivially accept (at the highest LOD) anything whose bounding sphere
@@ -890,7 +877,6 @@ ChonkDrawable::ChonkDrawable() :
     _gpucull(true)
 {
     setName(typeid(*this).name());
-    setCustomCullingShader(nullptr);
     setUseDisplayList(false);
     setUseVertexBufferObjects(false);
     setUseVertexArrayObject(false);
@@ -911,6 +897,7 @@ ChonkDrawable::installDefaultShader(osg::StateSet* ss)
 {
     OE_SOFT_ASSERT_AND_RETURN(ss != nullptr, void());
     VirtualProgram* vp = VirtualProgram::getOrCreate(ss);
+    vp->setName("ChonkDrawable");
     vp->addGLSLExtension("GL_ARB_gpu_shader_int64");
     ShaderLoader::load(vp, oe_chonk_default_shaders);
 }
@@ -965,43 +952,9 @@ ChonkDrawable::add(
 }
 
 void
-ChonkDrawable::setDrawStateSet(osg::StateSet* value)
-{
-    _drawSS = value;
-}
-
-void
 ChonkDrawable::setModelViewMatrix(const osg::Matrix& value)
 {
     _mvm = value;
-}
-
-void
-ChonkDrawable::setCustomCullingShader(osg::Shader* value)
-{
-    ScopedMutexLock lock(_s_cullStateSetMutex);
-
-    if (_s_baseShader.valid() == false)
-    {
-        _s_baseShader = new osg::Shader(
-            osg::Shader::COMPUTE, 
-            s_chonk_cull_compute_shader);
-    }
-
-    osg::ref_ptr<osg::StateSet>& ss = _s_cullStateSets[value];
-    if (ss.valid() == false)
-    {
-        auto program = new osg::Program();
-        program->addShader(_s_baseShader);
-        if (value != nullptr)
-            program->addShader(value);
-        ss = new osg::StateSet();
-        ss->setAttribute(program, osg::StateAttribute::OVERRIDE);
-        if (value != nullptr)
-            ss->setDefine("OE_USE_CUSTOM_CULL_FUNCTION");
-    }
-    _cullSS = ss;
-    _cullProgram = dynamic_cast<osg::Program*>(ss->getAttribute(osg::StateAttribute::PROGRAM));
 }
 
 struct StateEx : public osg::State
@@ -1029,6 +982,8 @@ struct StateEx : public osg::State
 void
 ChonkDrawable::drawImplementation(osg::RenderInfo& ri) const
 {
+    OE_HARD_ASSERT(false, "ChonkRenderBin::drawImplementation should never be called WHAT ARE YOU DOING");
+
     OE_PROFILING_ZONE;
     OE_GL_ZONE_NAMED(getName().c_str());
 
@@ -1049,19 +1004,12 @@ ChonkDrawable::drawImplementation(osg::RenderInfo& ri) const
     {
         // save bound program:
         pcp = state.getLastAppliedProgramObject();
-
-        // activate the culling compute shader and cull
-        _cullProgram->apply(state);
-        reinterpret_cast<StateEx*>(&state)->applyUniforms();
     }
 
     update_and_cull_batches(state);
 
     // restore the draw state (or use the custom one):
-    if (_drawSS.valid()) {
-        state.apply(_drawSS.get());
-    }
-    else if (pcp) {
+    if (pcp) {
         pcp->getProgram()->apply(state);
     }
 
@@ -1290,7 +1238,7 @@ ChonkDrawable::GCState::update(
     osg::State& state)
 {
     OE_PROFILING_ZONE;
-    OE_GL_ZONE_NAMED("Update");
+    OE_GL_ZONE_NAMED("update");
 
     if (_vao == nullptr)
     {
@@ -1380,7 +1328,7 @@ ChonkDrawable::GCState::cull(osg::State& state)
     if (_commands.empty())
         return;
 
-    OE_GL_ZONE_NAMED("Cull Dispatch");
+    OE_GL_ZONE_NAMED("dispatch");
 
     // transmit the uniforms
     state.applyModelViewAndProjectionUniformsIfRequired();
@@ -1401,14 +1349,22 @@ ChonkDrawable::GCState::cull(osg::State& state)
         command.cmd.instanceCount = 0;
         command.cmd.baseInstance = 0;
     }
-
-    // bind it as an SSBO so we can muck with it
     _commandBuf->uploadData(_commands);
 
     _instanceOutputBuf->bindBufferBase(0);
     _commandBuf->bindBufferBase(29);
     _chonkBuf->bindBufferBase(30);
     _instanceInputBuf->bindBufferBase(31);
+
+    // 2-pass culling compute. 
+    // Note. I tried separating this out so that all "pass ones"
+    // would run, and thena ll "pass twos" afterwards, in an attempt
+    // to avoid the memory barrier and multiple uniform sets.
+    // It was slower. Maybe because if was offset by having to 
+    // double-set the the matrix uniforms and the bindBufferBase
+    // calls for each tile.
+    // Also, removing the memory barrier seems to make no difference,
+    // but it's the right thing to do
 
     // cull:
     ext->glUniform1i(ps._passUL, 0);
@@ -1512,7 +1468,7 @@ ChonkRenderBin::robert(
     else
     {
         osgUtil::StateGraph::moveStateGraph(state, nullptr, leaf->_parent->_parent);
-        state.apply(_parent->getStateSet());
+        state.apply(leaf->_parent->getStateSet());
     }
 
     previous = leaf;
