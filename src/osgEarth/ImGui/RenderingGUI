@@ -196,7 +196,7 @@ namespace osgEarth
                     if (_sse == 0.0f)
                         _sse = _mapNode->getScreenSpaceError();
 
-                    if (ImGui::SliderFloat("SSE", &_sse, 1.0f, 125.0f))
+                    if (ImGui::SliderFloat("SSE", &_sse, 1.0f, 200.0f))
                     {
                         _mapNode->setScreenSpaceError(_sse);
                         dirtySettings();
@@ -235,6 +235,11 @@ namespace osgEarth
                             else
                                 stateset(ri)->setDefine("OE_GPUCULL_DEBUG", "0");
                         }
+
+                        float lod_scale = camera(ri)->getLODScale();
+                        if (ImGui::SliderFloat("LOD Scale", &lod_scale, 0.1f, 4.0f))
+                            camera(ri)->setLODScale(lod_scale);
+
                         ImGui::TreePop();
                     }
 
