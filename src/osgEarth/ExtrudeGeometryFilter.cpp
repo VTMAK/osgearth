@@ -1025,16 +1025,18 @@ ExtrudeGeometryFilter::process( FeatureList& features, FilterContext& context )
             Geometry* part = iter.next();
 
             osg::ref_ptr<osg::Geometry> walls = new osg::Geometry();
+            walls->setName(typeid(*this).name());
             walls->setUseVertexBufferObjects(true);
             
             osg::ref_ptr<osg::Geometry> rooflines = 0L;
             osg::ref_ptr<osg::Geometry> baselines = 0L;
             osg::ref_ptr<osg::Drawable> outlines  = 0L;
-            
-            if ( part->getType() == Geometry::TYPE_POLYGON )
+
+            if (part->getType() == Geometry::TYPE_POLYGON)
             {
-		part->rewind(osgEarth::Geometry::ORIENTATION_CCW);
+                part->rewind(osgEarth::Geometry::ORIENTATION_CCW);
                 rooflines = new osg::Geometry();
+                rooflines->setName(typeid(*this).name());
                 rooflines->setUseVertexBufferObjects(true);
 
                 // prep the shapes by making sure all polys are open:
@@ -1045,6 +1047,7 @@ ExtrudeGeometryFilter::process( FeatureList& features, FilterContext& context )
             if ( _makeStencilVolume )
             {
                 baselines = new osg::Geometry();
+                baselines->setName(typeid(*this).name());
                 baselines->setUseVertexBufferObjects(true);
             }
 
