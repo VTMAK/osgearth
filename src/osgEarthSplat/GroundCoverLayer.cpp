@@ -568,6 +568,7 @@ GroundCoverLayer::buildStateSets()
     // Install the land cover shaders on the state set
     VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
     vp->setName(typeid(*this).name());
+    vp->addGLSLExtension("GL_ARB_gpu_shader_int64");
 
     // Load shaders particular to this class
     loadShaders(vp, getReadOptions());

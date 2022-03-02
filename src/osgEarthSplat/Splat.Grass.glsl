@@ -1,4 +1,5 @@
 #version 460
+#extension GL_ARB_gpu_shader_int64 : enable
 $GLSL_DEFAULT_PRECISION_FLOAT
 
 #pragma vp_name       Grass VS MODEL
