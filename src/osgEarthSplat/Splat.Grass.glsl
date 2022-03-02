@@ -34,9 +34,10 @@ uniform sampler2D oe_GroundCover_noiseTex;
 #define NOISE_RANDOM_2 2
 #define NOISE_CLUMPY   3
 
-vec3 vp_Normal;
-vec4 vp_Color;
+out vec3 vp_Normal;
+out vec4 vp_Color;
 out vec4 oe_layer_tilec;
+
 vec3 oe_UpVectorView;
 
 uniform float osg_FrameTime; // OSG frame time (seconds) used for wind animation
@@ -237,7 +238,7 @@ in vec4 oe_layer_tilec;
 uniform sampler2DArray oe_GroundCover_billboardTex;
 in vec2 oe_GroundCover_texCoord;
 flat in float oe_GroundCover_atlasIndex;
-vec3 vp_Normal;
+in vec3 vp_Normal;
 
 uniform float oe_GroundCover_maxAlpha;
 uniform int oe_GroundCover_A2C;
