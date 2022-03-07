@@ -111,7 +111,6 @@ namespace osgEarth { namespace Buildings
         bool _verboseWarnings;
         osg::ref_ptr<TextureArena> _textures;
         ResidentData::Ptr _residentData;
-        bool _useUnifiedNV;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;

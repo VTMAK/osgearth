@@ -200,14 +200,9 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
 
     ss->setMode(GL_BLEND, 1);
 
-    // unified NV stuff:
-    _useUnifiedNV =
-        Capabilities::get().supportsUnifiedNV() &&
-        ::getenv("OSGEARTH_USE_GL4") != nullptr;
-
-    if (_useUnifiedNV)
+    if (GLUtils::useNVGL())
     {
-        OE_INFO << LC << "Using UnifiedNV rendering" << std::endl;
+        OE_INFO << LC << "Using NVIDIA GL rendering" << std::endl;
 
         // Texture arena for the entire layer
         _textures = new TextureArena();
@@ -496,7 +491,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 
                 // skip this if we are using NV -gw
-                if (!Capabilities::get().supportsUnifiedNV())
+                if (!GLUtils::useNVGL())
                 {
                     osg::MatrixTransform * mt = dynamic_cast<osg::MatrixTransform *> (node.get());
                     if (mt)
