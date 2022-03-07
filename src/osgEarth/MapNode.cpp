@@ -474,26 +474,12 @@ MapNode::open()
     return true;
 }
 
-void
-MapNode::shutdown()
+MapNode::~MapNode()
 {
     releaseGLObjects(nullptr);
 
     if (_terrainEngine)
         _terrainEngine->shutdown();
-
-    if (_map.valid())
-    {
-        LayerVector layers;
-        _map->getLayers(layers);
-        for(auto& layer : layers)
-            layer->close();
-    }
-}
-
-MapNode::~MapNode()
-{
-    shutdown();
 
     if (_mapCallback.valid())
     {
@@ -927,7 +913,8 @@ MapNode::traverse( osg::NodeVisitor& nv )
         // Ensures only one update will happen per frame loop
         if (_readyForUpdate.exchange(false))
         {
-            JobArena::get(JobArena::UPDATE_TRAVERSAL)->runJobs();
+            // re-enable if we decide to use it.
+            //JobArena::get(JobArena::UPDATE_TRAVERSAL)->runJobs();
         }
 
         // include these in the above condition as well??
