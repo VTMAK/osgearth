@@ -144,9 +144,16 @@ bool GLUtils::_useNVGL = false;
 void
 GLUtils::useNVGL(bool value)
 {
+    bool oldValue = _useNVGL;
+
     _useNVGL =
-        value &&
+        value == true &&
         Capabilities::get().supportsNVGL();
+
+    if (_useNVGL)
+    {
+        OE_INFO << LC << "Using NVIDIA GL4 extensions" << std::endl;
+    }
 }
 
 void
