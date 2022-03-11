@@ -24,6 +24,7 @@
 #include <osgEarth/MemCache>
 
 using namespace osgEarth;
+using namespace osgEarth::Threading;
 
 #define LC "[TileLayer] Layer \"" << getName() << "\" "
 
@@ -482,100 +483,104 @@ TileLayer::getCacheBin(const Profile* profile)
         return 0L;
 
     // does the metadata need initializing?
-    std::string metaKey = getMetadataKey(profile);
+    std::string metaKey = getMetadataKey(profile);    
 
-    Threading::ScopedWriteLock lock(layerMutex());
-
-    CacheBinMetadataMap::iterator i = _cacheBinMetadata.find(metaKey);
-    if (i == _cacheBinMetadata.end())
+    // See if the cache bin metadata is already stored.
     {
-        // read the metadata record from the cache bin:
-        ReadResult rr = bin->readString(metaKey, getReadOptions());
+        ScopedReadLock lock(_data_mutex);
+        if (_cacheBinMetadata.find(metaKey) != _cacheBinMetadata.end())
+            return bin;
+    }
 
-        osg::ref_ptr<CacheBinMetadata> meta;
-        bool metadataOK = false;
+    // We need to update the cache bin metadata
+    ScopedWriteLock lock(_data_mutex);
 
-        if (rr.succeeded())
+    // read the metadata record from the cache bin:
+    ReadResult rr = bin->readString(metaKey, getReadOptions());
+
+    osg::ref_ptr<CacheBinMetadata> meta;
+    bool metadataOK = false;
+
+    if (rr.succeeded())
+    {
+        // Try to parse the metadata record:
+        Config conf;
+        conf.fromJSON(rr.getString());
+        meta = new CacheBinMetadata(conf);
+
+        if (meta->isOK())
         {
-            // Try to parse the metadata record:
-            Config conf;
-            conf.fromJSON(rr.getString());
-            meta = new CacheBinMetadata(conf);
+            metadataOK = true;
 
-            if (meta->isOK())
+            if (cacheSettings->cachePolicy()->isCacheOnly() && !_profile.valid())
             {
-                metadataOK = true;
-
-                if (cacheSettings->cachePolicy()->isCacheOnly() && !_profile.valid())
-                {
-                    // in cacheonly mode, create a profile from the first cache bin accessed
-                    // (they SHOULD all be the same...)
-                    setProfile( Profile::create(meta->_sourceProfile.get()) );
-                    options().tileSize().init(meta->_sourceTileSize.get());
-                }
-
-                bin->setMetadata(meta.get());
+                // in cacheonly mode, create a profile from the first cache bin accessed
+                // (they SHOULD all be the same...)
+                setProfile(Profile::create(meta->_sourceProfile.get()));
+                options().tileSize().init(meta->_sourceTileSize.get());
             }
-            else
-            {
-                OE_WARN << LC << "Metadata appears to be corrupt.\n";
-            }
+
+            bin->setMetadata(meta.get());
+        }
+        else
+        {
+            OE_WARN << LC << "Metadata appears to be corrupt.\n";
+        }
+    }
+
+    if (!metadataOK)
+    {
+        // cache metadata does not exist, so try to create it.
+        if (getProfile())
+        {
+            meta = new CacheBinMetadata();
+
+            // no existing metadata; create some.
+            meta->_cacheBinId = _runtimeCacheId;
+            meta->_sourceName = this->getName();
+            meta->_sourceTileSize = getTileSize();
+            meta->_sourceProfile = getProfile()->toProfileOptions();
+            meta->_cacheProfile = profile->toProfileOptions();
+            meta->_cacheCreateTime = DateTime().asTimeStamp();
+            meta->_dataExtents = getDataExtents();
+
+            // store it in the cache bin.
+            std::string data = meta->getConfig().toJSON(false);
+            osg::ref_ptr<StringObject> temp = new StringObject(data);
+            bin->write(metaKey, temp.get(), getReadOptions());
+
+            bin->setMetadata(meta.get());
         }
 
-        if (!metadataOK)
+        else if (cacheSettings->cachePolicy()->isCacheOnly())
         {
-            // cache metadata does not exist, so try to create it.
-            if ( getProfile() )
-            {
-                meta = new CacheBinMetadata();
+            disable(Stringify() <<
+                "Failed to open a cache for layer "
+                "because cache_only policy is in effect and bin [" << _runtimeCacheId << "] "
+                "could not be located.");
 
-                // no existing metadata; create some.
-                meta->_cacheBinId      = _runtimeCacheId;
-                meta->_sourceName      = this->getName();
-                meta->_sourceTileSize  = getTileSize();
-                meta->_sourceProfile   = getProfile()->toProfileOptions();
-                meta->_cacheProfile    = profile->toProfileOptions();
-                meta->_cacheCreateTime = DateTime().asTimeStamp();
-                meta->_dataExtents     = getDataExtents();
-
-                // store it in the cache bin.
-                std::string data = meta->getConfig().toJSON(false);
-                osg::ref_ptr<StringObject> temp = new StringObject(data);
-                bin->write(metaKey, temp.get(), getReadOptions());
-
-                bin->setMetadata(meta.get());
-            }
-
-            else if ( cacheSettings->cachePolicy()->isCacheOnly() )
-            {
-                disable(Stringify() <<
-                    "Failed to open a cache for layer "
-                    "because cache_only policy is in effect and bin [" << _runtimeCacheId << "] "
-                    "could not be located.");
-
-                return 0L;
-            }
-
-            else
-            {
-                OE_WARN << LC <<
-                    "Failed to create cache bin [" << _runtimeCacheId << "] "
-                    "because there is no valid profile."
-                    << std::endl;
-
-                cacheSettings->cachePolicy() = CachePolicy::NO_CACHE;
-                return 0L;
-            }
+            return 0L;
         }
 
-        // If we loaded a profile from the cache metadata, apply the overrides:
-        applyProfileOverrides(_profile);
-
-        if (meta.valid())
+        else
         {
-            _cacheBinMetadata[metaKey] = meta.get();
-            OE_DEBUG << LC << "Established metadata for cache bin [" << _runtimeCacheId << "]" << std::endl;
+            OE_WARN << LC <<
+                "Failed to create cache bin [" << _runtimeCacheId << "] "
+                "because there is no valid profile."
+                << std::endl;
+
+            cacheSettings->cachePolicy() = CachePolicy::NO_CACHE;
+            return 0L;
         }
+    }
+
+    // If we loaded a profile from the cache metadata, apply the overrides:
+    applyProfileOverrides(_profile);
+
+    if (meta.valid())
+    {
+        _cacheBinMetadata[metaKey] = meta.get();
+        OE_DEBUG << LC << "Established metadata for cache bin [" << _runtimeCacheId << "]" << std::endl;
     }
 
     return bin;
@@ -591,12 +596,11 @@ TileLayer::CacheBinMetadata*
 TileLayer::getCacheBinMetadata(const Profile* profile)
 {
     if (!profile)
-        return 0L;
+        return nullptr;
 
-    Threading::ScopedReadLock lock(layerMutex());
-
-    CacheBinMetadataMap::iterator i = _cacheBinMetadata.find(getMetadataKey(profile));
-    return i != _cacheBinMetadata.end() ? i->second.get() : 0L;
+    ScopedReadLock lock(_data_mutex);
+    auto i = _cacheBinMetadata.find(getMetadataKey(profile));
+    return i != _cacheBinMetadata.end() ? i->second.get() : nullptr;
 }
 
 bool
@@ -751,7 +755,7 @@ TileLayer::dataExtents()
 void
 TileLayer::dirtyDataExtents()
 {
-    Threading::ScopedWriteLock lock(layerMutex());
+    ScopedWriteLock lock(_data_mutex);
     _dataExtentsUnion = GeoExtent::INVALID;
 }
 
@@ -762,7 +766,7 @@ TileLayer::getDataExtentsUnion() const
 
     if (_dataExtentsUnion.isInvalid() && !de.empty())
     {
-        Threading::ScopedWriteLock lock(layerMutex());
+        ScopedWriteLock lock(_data_mutex);
         {
             if (_dataExtentsUnion.isInvalid() && !de.empty()) // double-check
             {
