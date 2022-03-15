@@ -892,8 +892,6 @@ ProxyCullVisitor::apply(osg::Drawable& drawable)
 namespace
 {
     const char* horizon_vs =
-        "#version " GLSL_VERSION_STR "\n"
-        GLSL_DEFAULT_PRECISION_FLOAT "\n"
         "uniform mat4 osg_ViewMatrix; \n"
         "out float oe_horizon_alpha; \n"
         "void oe_horizon_vertex(inout vec4 VertexVIEW) \n"
@@ -917,8 +915,6 @@ namespace
         "} \n";
 
     const char* horizon_fs =
-        "#version " GLSL_VERSION_STR "\n"
-        GLSL_DEFAULT_PRECISION_FLOAT "\n"
         "in float oe_horizon_alpha; \n"
         "void oe_horizon_fragment(inout vec4 color) \n"
         "{ \n"
