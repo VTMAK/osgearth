@@ -430,7 +430,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
         isNew = (arena_tex == nullptr);
         if (isNew)
         {
-            arena_tex = Texture::create();
+            arena_tex = Texture::create(osgTex);
             weak = arena_tex;
         }
         return arena_tex;
