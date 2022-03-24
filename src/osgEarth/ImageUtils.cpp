@@ -451,7 +451,7 @@ ImageUtils::bicubicUpsample(const osg::Image* source,
 }
 
 const osg::Image*
-ImageUtils::mipmapImage(const osg::Image* input)
+ImageUtils::mipmapImage(const osg::Image* input, int minLevelSize)
 {
     OE_PROFILING_ZONE;
 
@@ -487,6 +487,26 @@ ImageUtils::mipmapImage(const osg::Image* input)
 
     // first, build the image that will hold all the mipmap levels.
     int numLevels = osg::Image::computeNumberOfMipmapLevels(input->s(), input->t(), input->r());
+
+    // DXT compression has minimum mipmap sizes; enforce those now:    
+    unsigned int minSize = 16;
+    for (int level = 0; level < numLevels; ++level)
+    {
+        int level_s = input->s() >> level;
+        int level_t = input->t() >> level;
+
+        if (level_s < minLevelSize || level_t < minLevelSize)
+        {
+            numLevels = level;
+            break;
+        }
+
+        if (level_s < minSize && level_t < minSize)
+        {
+            numLevels = level;
+        }
+    }
+
     int imageSizeBytes = input->getTotalSizeInBytes();
 
     // offset vector does not include level 0 (the full-resolution level)
@@ -528,6 +548,8 @@ ImageUtils::mipmapImage(const osg::Image* input)
 
     for(int level=1; level<numLevels; ++level)
     {
+#if 0
+        // Build mipmaps based on the full resolution image
         // OSG-custom gluScaleImage that does not require a graphics context
         GLint status = gluScaleImage(
             &psm,
@@ -540,6 +562,22 @@ ImageUtils::mipmapImage(const osg::Image* input)
             output->t() >> level,
             output->getDataType(),
             output->getMipmapData(level));
+#else
+        // Build mipmaps based on the previous level and not the full resolution for speed
+        // OSG-custom gluScaleImage that does not require a graphics context
+        GLint status = gluScaleImage(
+            &psm,
+            output->getPixelFormat(),
+            output->s() >> (level - 1),
+            output->t() >> (level -1 ),
+            output->getDataType(),
+            //output->data(),
+            output->getMipmapData(level - 1),
+            output->s() >> level,
+            output->t() >> level,
+            output->getDataType(),
+            output->getMipmapData(level));
+#endif
     }
 
     return output;

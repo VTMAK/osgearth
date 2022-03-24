@@ -868,7 +868,7 @@ ShaderGenerator::processGeometry(const osg::StateSet*         original,
                 << modelBodySource
                 << "}\n";
 
-            vp->setFunction(VERTEX_MODEL_FUNCTION, modelSource, ShaderComp::LOCATION_VERTEX_MODEL, 0.5f);
+            vp->setFunction(VERTEX_MODEL_FUNCTION, modelSource, VirtualProgram::LOCATION_VERTEX_MODEL, 0.5f);
         }
 
         std::string viewHeadSource;
@@ -885,7 +885,7 @@ ShaderGenerator::processGeometry(const osg::StateSet*         original,
                 << viewBodySource
                 << "}\n";
 
-            vp->setFunction(VERTEX_VIEW_FUNCTION, viewSource, ShaderComp::LOCATION_VERTEX_VIEW, 0.5f);
+            vp->setFunction(VERTEX_VIEW_FUNCTION, viewSource, VirtualProgram::LOCATION_VERTEX_VIEW, 0.5f);
         }
 
 
@@ -903,7 +903,7 @@ ShaderGenerator::processGeometry(const osg::StateSet*         original,
                 << fragBodySource
                 << "}\n";
 
-            vp->setFunction(FRAGMENT_FUNCTION, fragSource, ShaderComp::LOCATION_FRAGMENT_COLORING, 0.5f);
+            vp->setFunction(FRAGMENT_FUNCTION, fragSource, VirtualProgram::LOCATION_FRAGMENT_COLORING, 0.5f);
         }
     }
 
