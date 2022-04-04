@@ -75,16 +75,9 @@ ElevationTexture::ElevationTexture(
         heights->allocateImage(_heightField->getNumColumns(), _heightField->getNumRows(), 1, GL_RED, GL_FLOAT);
         heights->setInternalTextureFormat(GL_R32F);
 
-        ImageUtils::PixelWriter write(heights);
-        // TODO: speed this up since we know the format
-        for(unsigned row=0; row<_heightField->getNumRows(); ++row)
-        {
-            for(unsigned col=0; col<_heightField->getNumColumns(); ++col)
-            {
-                value.r() = _heightField->getHeight(col, row);
-                write(value, col, row);
-            }
-        }
+        // Copy the float height data into the image
+        memcpy(heights->data(), _heightField->getHeightList().data(), sizeof(float) * _heightField->getNumRows() * _heightField->getNumColumns());
+
         setImage(heights);
 
         setDataVariance(osg::Object::STATIC);
@@ -175,10 +168,12 @@ ElevationTexture::generateNormalMap(
 {
     OE_PROFILING_ZONE;
     if (!_normalTex.valid())
-    {
+    {        
+        ScopedMutexLock lock(_mutex);
+
         // one thread allowed to generate the normal map
-        static Gate<void*> s_thisGate("OE.ElevTexNormalMap");
-        ScopedGate<void*> lockThis(s_thisGate, this);
+        //static Gate<void*> s_thisGate("OE.ElevTexNormalMap");
+        //ScopedGate<void*> lockThis(s_thisGate, this);
 
         if (!_normalTex.valid())
         {
