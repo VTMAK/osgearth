@@ -248,18 +248,28 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
             osg::ref_ptr< VTPKFeatureSource > featureSource = new VTPKFeatureSource();
             featureSource->setReadOptions(options);
             featureSource->setURL(uri);
-            featureSource->open();
+            if (featureSource->open().isError())
+            {
+                OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << url() << std::endl;
+            }
             _featureSource = featureSource.get();
         }
         else if (type() == "vector-mbtiles")
         {
+#ifdef OSGEARTH_HAVE_MVT
             URI uri(url(), context);
 
             osg::ref_ptr< MVTFeatureSource > featureSource = new MVTFeatureSource();
             featureSource->setReadOptions(options);
             featureSource->setURL(uri);
-            featureSource->open();
+            if (featureSource->open().isError())
+            {
+                OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << url() << std::endl;
+            }
             _featureSource = featureSource.get();
+#else
+            OE_WARN << "[MapboxGLImageLayer] Cannot process 'vector-mbtiles' because osgEarth was not compiled with MVT support" << std::endl;
+#endif
         }
         else if (type() == "vector")
         {
@@ -274,7 +284,10 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
                 featureSource->setReadOptions(options);
                 // Not necessarily?
                 featureSource->options().profile() = ProfileOptions("spherical-mercator");
-                featureSource->open();
+                if (featureSource->open().isError())
+                {
+                    OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << *uri << std::endl;
+                }
                 _featureSource = featureSource.get();
             }
             else
@@ -311,18 +324,25 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
                         featureSource->setReadOptions(options);
                         // Not necessarily?
                         featureSource->options().profile() = ProfileOptions("spherical-mercator");
-                        featureSource->open();
+                        if (featureSource->open().isError())
+                        {
+                            OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << *uri << std::endl;
+                        }
                         _featureSource = featureSource.get();
-                    }                    
+                    }
                 }
             }
+        }
+        else
+        {
+            OE_WARN << "[MapBoxGLImageLayer] Unexpected type: " << type() << std::endl;
         }
     }
 }
 
 
 /*************************/
-Paint::Paint() :    
+Paint::Paint() :
     _fillAntialias(true),
     _visibility("visible")
 {
@@ -698,7 +718,7 @@ MapBoxGL::StyleSheet MapBoxGL::StyleSheet::load(const URI& location, const osgDB
                 // TODO:  This is a layout property, not a paint property
                 getIfSet(layout, "text-field", layer.paint().textField());
                 getIfSet(layout, "text-size", layer.paint().textSize());
-                getIfSet(layout, "text-anchor", layer.paint().textAnchor());                
+                getIfSet(layout, "text-anchor", layer.paint().textAnchor());
                 // Just grab the first font for now from the fonts array.
                 if (layout.isMember("text-font"))
                 {
@@ -1267,9 +1287,9 @@ MapBoxGLImageLayer::createImageImplementation(const TileKey& key, ProgressCallba
                         unsigned int numWide, numHigh;
                         queryKey.getProfile()->getNumTiles(queryKey.getLevelOfDetail(), numWide, numHigh);
 
-                        for (int x = (int)queryKey.getTileX() - 1; x <= (int)queryKey.getTileX() + 1; ++x)
+                        for (unsigned x = queryKey.getTileX() - 1; x <= queryKey.getTileX() + 1; ++x)
                         {
-                            for (int y = (int)queryKey.getTileY() - 1; y <= (int)queryKey.getTileY() + 1; ++y)
+                            for (unsigned y = queryKey.getTileY() - 1; y <= queryKey.getTileY() + 1; ++y)
                             {
                                 if (x < 0 || x >= numWide || y < 0 || y >= numHigh || (x == queryKey.getTileX() && y == queryKey.getTileY())) continue;
 
@@ -1294,7 +1314,7 @@ MapBoxGLImageLayer::createImageImplementation(const TileKey& key, ProgressCallba
 
                     if (allFeatures.empty())
                     {
-                        queryKey = queryKey.createParentKey();           
+                        queryKey = queryKey.createParentKey();
                         /*
                         if (queryKey.getLevelOfDetail() < featureSource->getFeatureProfile()->getMaxLevel())
                         {
@@ -1319,7 +1339,7 @@ MapBoxGLImageLayer::createImageImplementation(const TileKey& key, ProgressCallba
 
 
             if (layeredFeatures.features.find(layer.sourceLayer()) != layeredFeatures.features.end())
-            {                
+            {
                 // Run any filters on the layer.
                 FeatureList features;
                 if (!layer.filter()._filter.empty())

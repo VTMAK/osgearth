@@ -229,6 +229,7 @@ _supportsNVGL(false)
 #endif
 
         _supportsGLSL = GL2->isGlslSupported;
+        _GLSLversion = GL2->glslLanguageVersion;
 
         _vendor = std::string( reinterpret_cast<const char*>(glGetString(GL_VENDOR)) );
         OE_INFO << LC << "  GPU Vendor:        " << _vendor << std::endl;
@@ -237,7 +238,8 @@ _supportsNVGL(false)
         OE_INFO << LC << "  GPU Renderer:      " << _renderer << std::endl;
 
         _version = std::string( reinterpret_cast<const char*>(glGetString(GL_VERSION)) );
-        OE_INFO << LC << "  GL/Driver Version: " << _version << std::endl;
+        OE_INFO << LC << "  GL/Driver Version: " << _version << 
+            " (" << getGLSLVersionInt() << ")" << std::endl;
 
         // Detect core profile by investigating GL_CONTEXT_PROFILE_MASK
         if ( GL2->glVersion < 3.2f )
@@ -267,6 +269,10 @@ _supportsNVGL(false)
 
         glGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS_ARB, &_maxGPUTextureUnits );
         OE_DEBUG << LC << "  Max GPU texture units = " << _maxGPUTextureUnits << std::endl;
+
+        GLint mvoc;
+        glGetIntegerv(GL_MAX_VERTEX_VARYING_COMPONENTS_EXT, &mvoc);
+        OE_DEBUG << LC << "  Max varyings = " << mvoc << std::endl;
 
 #if !defined(OSG_GLES2_AVAILABLE) && !defined(OSG_GLES3_AVAILABLE)
         glGetIntegerv( GL_MAX_TEXTURE_COORDS_ARB, &_maxGPUTextureCoordSets );
@@ -309,7 +315,6 @@ _supportsNVGL(false)
 
         if ( _supportsGLSL )
         {
-			_GLSLversion = GL2->glslLanguageVersion;
             OE_DEBUG << LC << "  GLSL Version = " << getGLSLVersionInt() << std::endl;
         }
 
