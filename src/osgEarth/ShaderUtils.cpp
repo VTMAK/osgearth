@@ -635,13 +635,13 @@ void
 ShaderInfoLog::dumpErrors(
     osg::State& state) const
 {
-    for (auto i = 0u; i < _program->getNumShaders(); ++i)
+    bool done = false;
+    for (auto i = 0u; i < _program->getNumShaders() && !done; ++i)
     {
         auto shader = _program->getShader(i);
         auto pshader = shader->getPCS(state);
         std::string log;
         pshader->getInfoLog(log);
-        //OE_WARN << log << std::endl;
 
         // split into lines:
         std::vector<std::string> errors;
@@ -653,12 +653,12 @@ ShaderInfoLog::dumpErrors(
 
         // keep track of same lines (in order)
         std::stringstream buf;
-        for (int i = 0; i < errors.size(); ++i)
+        for (int e = 0; e < errors.size() && !done; ++e)
         {
-            if (errors[i].find(": error") != errors[i].npos)
+            if (errors[e].find(": error") != errors[e].npos)
             {
                 std::vector<std::string> tokens;
-                StringTokenizer(errors[i], tokens, "(", "", true, true);
+                StringTokenizer(errors[e], tokens, "(", "", true, true);
 
                 if (tokens.size() >= 2)
                 {
@@ -668,12 +668,12 @@ ShaderInfoLog::dumpErrors(
                     int end = lines.size(); // std::min((int)lines.size(), n + 7);
                     for (int k = start; k < end; ++k)
                     {
-                        std::string star = (k == n) ? ":>>>" : ":   ";
+                        std::string star = (k == n) ? "==> " : ":   ";
                         buf << k << star  << lines[k] << std::endl;
                     }
 
                     // just print the first error.
-                    break;
+                    done = true;
                 }
             }
         }
