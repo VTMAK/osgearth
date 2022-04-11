@@ -141,15 +141,7 @@ void CreateTileManifest::setProgressive(bool value)
 TerrainTileModelFactory::TerrainTileModelFactory(const TerrainOptions& options) :
 _options( options )
 {
-    // Create an empty texture that we can use as a placeholder
-    _emptyColorTexture = new osg::Texture2D(ImageUtils::createEmptyImage());
-    _emptyColorTexture->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
-
-    osg::Image* landCoverImage = LandCover::createImage(1u);
-    ImageUtils::PixelWriter writeLC(landCoverImage);
-    writeLC(osg::Vec4(0,0,0,0), 0, 0);
-    _emptyLandCoverTexture = new osg::Texture2D(landCoverImage);
-    _emptyLandCoverTexture->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
+    //nop
 }
 
 TerrainTileModel*
@@ -283,7 +275,8 @@ TerrainTileModelFactory::addImageLayer(
         _options.firstLOD() == key.getLOD() &&
         reqs && reqs->fullDataAtFirstLodRequired())
     {
-        tex = _emptyColorTexture.get();
+        tex = new osg::Texture2D(ImageUtils::createEmptyImage());
+        tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
     }
 
     if (tex)
@@ -576,7 +569,11 @@ TerrainTileModelFactory::addLandCover(
         _options.firstLOD() == key.getLOD() &&
         reqs && reqs->fullDataAtFirstLodRequired())
     {
-        tex = _emptyLandCoverTexture.get();
+        osg::Image* landCoverImage = LandCover::createImage(1u);
+        ImageUtils::PixelWriter writeLC(landCoverImage);
+        writeLC(osg::Vec4(0, 0, 0, 0), 0, 0);
+        tex = new osg::Texture2D(landCoverImage);
+        tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
     }
 
     if (tex)

@@ -197,8 +197,6 @@ namespace osgEarth
             const osg::Image* image) const;
 
         TerrainOptions _options;
-        osg::ref_ptr<osg::Texture> _emptyColorTexture;
-        osg::ref_ptr<osg::Texture> _emptyLandCoverTexture;
         ElevationPool::WorkingSet _workingSet;
     };
 }
