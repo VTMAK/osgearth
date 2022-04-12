@@ -60,7 +60,7 @@ void oeui_render_view_normals_fs(inout vec4 color) {
 in vec3 vp_Normal;
 void oeui_render_fb_normals(inout vec4 color) {
     float a = step(0.5, color.a);
-    float n = normalize(vp_Normal);
+    float n = normalize(vp_Normal).z;
     color.rgb = mix(vec3(1,0,0), vec3(0,0.75,0), (n+1.0)*0.5);
     color = vec4(color.rgb, a);
 }
