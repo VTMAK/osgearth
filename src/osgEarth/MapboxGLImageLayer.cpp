@@ -273,6 +273,9 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
         }
         else if (type() == "vector")
         {
+            std::string profileName = "spherical-mercator";
+            bool isESRIGeodetic = false;
+
             if (!tiles().empty())
             {
                 osg::ref_ptr< XYZFeatureSource > featureSource = new XYZFeatureSource;
@@ -282,8 +285,8 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
                 featureSource->setURL(uri);
                 featureSource->setFormat("pbf");
                 featureSource->setReadOptions(options);
-                // Not necessarily?
-                featureSource->options().profile() = ProfileOptions("spherical-mercator");
+                // It's possible arcgis can specify a non mercator profile right in the source, but I've never seen one of those in the wild so don't know what it might look like.
+                featureSource->options().profile() = ProfileOptions(profileName);
                 if (featureSource->open().isError())
                 {
                     OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << *uri << std::endl;
@@ -302,6 +305,20 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
                 Json::Value root(Json::objectValue);
                 if (reader.parse(data, root, false))
                 {
+                    if (root.isMember("tileInfo"))
+                    {
+                        if (root["tileInfo"].isMember("spatialReference"))
+                        {
+                            unsigned int wkid = root["tileInfo"]["spatialReference"].get("latestWkid", "3857").asUInt();
+                            if (wkid == 4326)
+                            {
+                                // Only ESRI sources have a tileInfo block
+                                profileName = "global-geodetic";
+                                isESRIGeodetic = true;
+                            }
+                        }
+                    }
+
                     if (root.isMember("tiles"))
                     {
                         std::string tilesetFull = tilesURI.full();
@@ -321,9 +338,9 @@ void MapBoxGL::StyleSheet::Source::loadFeatureSource(const std::string& styleShe
                         featureSource->setMaxLevel(22);
                         featureSource->setURL(uri);
                         featureSource->setFormat("pbf");
+                        featureSource->setEsriGeodetic(isESRIGeodetic);
                         featureSource->setReadOptions(options);
-                        // Not necessarily?
-                        featureSource->options().profile() = ProfileOptions("spherical-mercator");
+                        featureSource->options().profile() = ProfileOptions(profileName); 
                         if (featureSource->open().isError())
                         {
                             OE_WARN << "[MapBoxGLImageLayer] Failed to open: " << *uri << std::endl;
@@ -761,6 +778,24 @@ ResourceLibrary* MapBoxGL::StyleSheet::loadSpriteLibrary(const URI& sprite)
         unsigned int imageWidth = image->s();
         unsigned int imageHeight = image->t();
 
+        // Flip the image and convert the image to BGRA premultiplie alpha for blend2d so it doesn't need to do it each time an icon is rendered.
+        image->flipVertical();
+        ImageUtils::PixelReader imageReader(image.get());
+        ImageUtils::PixelWriter imageWriter(image.get());
+
+        for (unsigned int t = 0; t < image->t(); ++t)
+        {
+            for (unsigned int s = 0; s < image->s(); ++s)
+            {
+                osg::Vec4 color = imageReader(s, t);
+                osg::Vec4 pma(color.b() * color.a(),
+                    color.g() * color.a(),
+                    color.r() * color.a(),
+                    color.a());                
+                imageWriter(pma, s, t);
+            }
+        }
+
         auto data = uri.getString();
         Json::Reader reader;
         Json::Value root(Json::objectValue);
@@ -786,6 +821,11 @@ ResourceLibrary* MapBoxGL::StyleSheet::loadSpriteLibrary(const URI& sprite)
             }
         }
     }
+    else
+    {
+        OE_WARN << "Failed to load sprites from " << sprite.full() << std::endl;
+    }
+
     return library;
 }
 
@@ -935,7 +975,7 @@ bool evalFilter(const Json::Value& filter, osgEarth::Feature* feature)
         std::string key = filter[1u].asString();
         const Json::Value& value = filter[2u];
 
-        if (!feature->hasAttr(key)) return false;
+        if (key != "$type" && !feature->hasAttr(key)) return false;
 
         if (key == "$type")
         {
