@@ -426,16 +426,13 @@ namespace osgEarth
 
                 if (ImGui::Begin(name(), visible()))
                 {
-                    if (_node == nullptr)
-                        _node = ri.getCurrentCamera();
-
-                    if (!_mapNode.valid())
-                        _mapNode = osgEarth::findTopMostNodeOfType<MapNode>(ri.getCurrentCamera());
+                    _node = view(ri)->getCamera();
+                    _mapNode = osgEarth::findTopMostNodeOfType<MapNode>(_node.get());
 
                     if (!_installedSelectNodeHandler)
                     {
-                        auto view = dynamic_cast<osgViewer::View*>(ri.getView());
-                        view->addEventHandler(new SelectNodeHandler(this));
+                        auto v = view(ri);
+                        v->addEventHandler(new SelectNodeHandler(this));
                         _installedSelectNodeHandler = true;
                     }
 
@@ -482,6 +479,9 @@ namespace osgEarth
 
             void updateBoundsDebug(MapNode* mapNode)
             {
+                if (!mapNode)
+                    return;
+
                 if (_selectedBounds)
                 {
                     mapNode->removeChild(_selectedBounds);
@@ -557,7 +557,7 @@ namespace osgEarth
                     osg::Matrixd localToWorld = osg::computeLocalToWorld(nodePath);
 
                     osg::BoundingSphered bs(node->getBound().center(), node->getBound().radius());
-                    if (bs.valid())
+                    if (bs.valid() && mapNode)
                     {
                         bs.center() += localToWorld.getTrans();
                         osg::Vec3d c = bs.center();
@@ -590,8 +590,9 @@ namespace osgEarth
 
                 if (ImGui::TreeNode("General"))
                 {
-                    ImGui::Text("Type %s", typeid(*node).name());
-                    ImGui::Text("Name %s", node->getName().c_str());
+                    ImGui::Text("Type: %s", typeid(*node).name());
+                    ImGui::Text("Name: %s", node->getName().c_str());
+                    ImGui::Text("Mask: 0x%.8X", node->getNodeMask());
 
                     osg::Drawable* drawable = node->asDrawable();
                     if (drawable)
@@ -666,6 +667,22 @@ namespace osgEarth
                         std::string content = threeDTiles->getTile()->content()->getJSON().toStyledString();
                         ImGui::Text("Content");
                         ImGui::TextWrapped(content.c_str());
+                    }
+                }
+
+                osg::Camera* cam = dynamic_cast<osg::Camera*>(node);
+                if (cam)
+                {
+                    if (ImGui::TreeNode("osg::Camera"))
+                    {
+                        const std::string order[3] = { "PRE_RENDER", "NESTED_RENDER", "POST_RENDER" };
+                        const std::string proj[2] = { "PERSP", "ORTHO" };
+                        ImGui::Text("Render order: %s", order[(int)cam->getRenderOrder()]);
+                        ImGui::Text("Projection: %s", proj[ProjectionMatrix::isOrtho(cam->getProjectionMatrix()) ? 1 : 0]);
+                        ImGui::Text("Cull mask: %0x%.8X", cam->getCullMask());
+                        ImGui::Text("Gfx context: %0x%.16X", (std::uintptr_t)cam->getGraphicsContext());
+                        ImGui::Text("Gfx context ID: %d", cam->getGraphicsContext()->getState()->getContextID());
+                        ImGui::TreePop();
                     }
                 }
 
