@@ -958,31 +958,17 @@ VirtualProgram::compare(const osg::StateAttribute& sa) const
     COMPARE_StateAttribute_Parameter(_inherit);
     COMPARE_StateAttribute_Parameter(_isAbstract);
 
-    // compare the shader maps. Need to lock them while comparing.
+    // Need to lock while comparing
     {
-        //Threading::ScopedReadLock shared( _dataModelMutex );
         Threading::ScopedMutexLock lock(_dataModelMutex);
 
-        if (_shaderMap.size() < rhs._shaderMap.size()) return -1;
-        if (_shaderMap.size() > rhs._shaderMap.size()) return 1;
-
-        ShaderMap::const_iterator lhsIter = _shaderMap.begin();
-        ShaderMap::const_iterator rhsIter = rhs._shaderMap.begin();
-
-        while (lhsIter != _shaderMap.end())
-        {
-            if (lhsIter->first < rhsIter->first) return -1;
-            if (lhsIter->first > rhsIter->first) return +1;
-
-            const ShaderEntry& lhsEntry = lhsIter->second;
-            const ShaderEntry& rhsEntry = rhsIter->second;
-
-            if (lhsEntry < rhsEntry) return -1;
-            if (rhsEntry < lhsEntry) return  1;
-
-            lhsIter++;
-            rhsIter++;
-        }
+        // safely compare shader maps. Note, this function 
+        // treats the argument of the RHS, so we need to invert
+        // the result before returning it since the argument is
+        // actually our LHS.
+        int r = rhs.compareShaderMap(_shaderMap);
+        if (r != 0)
+            return -r;
 
         // compare the template settings.
         int templateCompare = _template->compare(*(rhs.getTemplate()));
@@ -1862,6 +1848,35 @@ bool VirtualProgram::getAcceptCallbacksVaryPerFrame() const
 void VirtualProgram::setAcceptCallbacksVaryPerFrame(bool acceptCallbacksVaryPerFrame)
 {
     _acceptCallbacksVaryPerFrame = acceptCallbacksVaryPerFrame;
+}
+
+int
+VirtualProgram::compareShaderMap(const ShaderMap& rhs) const
+{
+    ScopedMutexLock lock(_dataModelMutex);
+
+    if (_shaderMap.size() < rhs.size()) return -1;
+    if (_shaderMap.size() > rhs.size()) return 1;
+
+    ShaderMap::const_iterator lhsIter = _shaderMap.begin();
+    ShaderMap::const_iterator rhsIter = rhs.begin();
+
+    while (lhsIter != _shaderMap.end())
+    {
+        if (lhsIter->first < rhsIter->first) return -1;
+        if (lhsIter->first > rhsIter->first) return +1;
+
+        const ShaderEntry& lhsEntry = lhsIter->second;
+        const ShaderEntry& rhsEntry = rhsIter->second;
+
+        if (lhsEntry < rhsEntry) return -1;
+        if (rhsEntry < lhsEntry) return  1;
+
+        lhsIter++;
+        rhsIter++;
+    }
+
+    return 0;
 }
 
 //.........................................................................
