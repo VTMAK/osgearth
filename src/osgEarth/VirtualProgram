@@ -633,6 +633,9 @@ namespace osgEarth
             bool&              acceptCallbacksPresent);
 
         bool checkSharing();
+
+        //! Safely compare another shader map to this VP's shader map.
+        int compareShaderMap(const ShaderMap& rhs) const;
     };
 
 } // namespace osgEarth
