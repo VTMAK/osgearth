@@ -599,8 +599,8 @@ namespace osgEarth
 
         bool checkSharing();
 
-        //! Safely compare another shader map to this VP's shader map.
-        int compareShaderMap(const ShaderMap& rhs) const;
+        //! Safely compare this VP to another VP.
+        int compare_safe(const VirtualProgram& rhs) const;
 
     public: // backwards-compability functions
 
