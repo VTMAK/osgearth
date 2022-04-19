@@ -1068,29 +1068,11 @@ VirtualProgram::compare(const osg::StateAttribute& sa) const
     // used by the COMPARE_StateAttribute_Parameter macros below.
     COMPARE_StateAttribute_Types(VirtualProgram, sa);
 
-    // compare each parameter in turn against the rhs.
-    COMPARE_StateAttribute_Parameter(_mask);
-    COMPARE_StateAttribute_Parameter(_inherit);
-    COMPARE_StateAttribute_Parameter(_isAbstract);
-
-    // Need to lock while comparing
-    {
-        Threading::ScopedMutexLock lock(_dataModelMutex);
-
-        // safely compare shader maps. Note, this function 
-        // treats the argument of the RHS, so we need to invert
-        // the result before returning it since the argument is
-        // actually our LHS.
-        int r = rhs.compareShaderMap(_shaderMap);
-        if (r != 0)
-            return -r;
-
-        // compare the template settings.
-        int templateCompare = _template->compare(*(rhs.getTemplate()));
-        if (templateCompare != 0) return templateCompare;
-    }
-
-    return 0; // passed all the above comparison macros, must be equal.
+    // Safely compare the objects. Note, this function 
+    // treats the argument as the RHS, so we need to invert
+    // the result before returning it since the argument is
+    // actually our LHS.
+    return -rhs.compare_safe(*this);
 }
 
 void
@@ -2048,15 +2030,20 @@ void VirtualProgram::setAcceptCallbacksVaryPerFrame(bool acceptCallbacksVaryPerF
 }
 
 int
-VirtualProgram::compareShaderMap(const ShaderMap& rhs) const
+VirtualProgram::compare_safe(const VirtualProgram& rhs) const
 {
     ScopedMutexLock lock(_dataModelMutex);
 
-    if (_shaderMap.size() < rhs.size()) return -1;
-    if (_shaderMap.size() > rhs.size()) return 1;
+    // compare each parameter 
+    COMPARE_StateAttribute_Parameter(_mask);
+    COMPARE_StateAttribute_Parameter(_inherit);
+    COMPARE_StateAttribute_Parameter(_isAbstract);
+
+    if (_shaderMap.size() < rhs._shaderMap.size()) return -1;
+    if (_shaderMap.size() > rhs._shaderMap.size()) return +1;
 
     ShaderMap::const_iterator lhsIter = _shaderMap.begin();
-    ShaderMap::const_iterator rhsIter = rhs.begin();
+    ShaderMap::const_iterator rhsIter = rhs._shaderMap.begin();
 
     while (lhsIter != _shaderMap.end())
     {
@@ -2067,10 +2054,17 @@ VirtualProgram::compareShaderMap(const ShaderMap& rhs) const
         const ShaderEntry& rhsEntry = rhsIter->second;
 
         if (lhsEntry < rhsEntry) return -1;
-        if (rhsEntry < lhsEntry) return  1;
+        if (rhsEntry < lhsEntry) return +1;
 
         lhsIter++;
         rhsIter++;
+    }
+
+    // compare the template settings.
+    if (_template.valid() && rhs.getTemplate())
+    {
+        int r = _template->compare(*(rhs.getTemplate()));
+        if (r != 0) return r;
     }
 
     return 0;
