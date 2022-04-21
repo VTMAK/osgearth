@@ -740,12 +740,12 @@ namespace
 
             else if (dynamic_cast<ElevationsLodNode*>(&node))
             {
-                // If this class was been flagged for Indirect rendering,
-                // generate shaders on the elevationsLOD node
-                Registry::instance()->shaderGenerator().run(
-                    static_cast<ElevationsLodNode*>(&node)->elevationsLOD.get(),
-                    "ElevationsLodNode",
-                    _sscache.get());
+                // The presence of an ElevationLodNode means this class was flagged
+                // for indirect rendering. In this case we do not need to generate
+                // any shaders (the target app will do so) AND we also do not need
+                // to traverse down into the node.
+
+                // NOP (no traverse)
             }
 
             else
