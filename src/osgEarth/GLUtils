@@ -387,6 +387,9 @@ namespace osgEarth
         //! Make a bindless buffer non-resident within the state's context.
         void makeNonResident(osg::State&);
 
+        //! Align a value for the storage target.
+        size_t align(size_t val);
+
     protected:
         GLBuffer(GLenum target, osg::State& state);
         GLenum _target;
@@ -654,7 +657,7 @@ namespace osgEarth
 
             if (ssbo == nullptr)
             {
-                ssbo = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state, typeid(*this).name());
+                ssbo = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
                 _dirty[id] = 1;
             }
 

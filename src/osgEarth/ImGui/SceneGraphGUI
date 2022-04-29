@@ -465,8 +465,6 @@ namespace osgEarth
                 // If they closed the tool deselect the node.
                 if (!isVisible() && getSelectedNode())
                 {
-                    // TODO:
-                    //setSelectedNode(nullptr);
                     osg::NodePath empty;
                     setSelectedNodePath(empty);
                 }
