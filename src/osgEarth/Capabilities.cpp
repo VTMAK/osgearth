@@ -254,6 +254,11 @@ _supportsNVGL(false)
         }
         OE_INFO << LC << "  GL Core Profile:   " << SAYBOOL(_isCoreProfile) << std::endl;
 
+        // if blend2d is available, say so.
+#ifdef OSGEARTH_HAVE_BLEND2D
+        OE_INFO << LC << "  Blend2D:           yes" << std::endl;
+#endif
+
         // this extension implies the availability of
         // GL_NV_vertex_buffer_unified_memory (bindless buffers)
         _supportsNVGL =
