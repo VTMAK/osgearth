@@ -74,6 +74,9 @@ namespace osgEarth { namespace Buildings
         optional<bool>& verboseWarnings() { return _verboseWarnings; }
         const optional<bool>& verboseWarnings() const { return _verboseWarnings; }
 
+        //! Use the NVGL implementation if available
+        OE_OPTION(bool, useNVGL);
+
         OE_OPTION_LAYER(StyleSheet, styleSheet);
         OE_OPTION_LAYER(FeatureSource, featureSource);
 
@@ -88,6 +91,7 @@ namespace osgEarth { namespace Buildings
             _enableCancelation.init(true);
             _verboseWarnings.init(false);
             _clusterCulling.init(false);
+            useNVGL().setDefault(false);
             fromConfig( _conf );
         }
 
@@ -106,6 +110,7 @@ namespace osgEarth { namespace Buildings
             conf.set("cluster_culling", _clusterCulling);
             styleSheet().set(conf, "styles");
             featureSource().set(conf, "features");
+            conf.set("nvgl", useNVGL());
             return conf;
         }
 
@@ -130,6 +135,7 @@ namespace osgEarth { namespace Buildings
             conf.get("cluster_culling", _clusterCulling);
             styleSheet().get(conf, "styles");
             featureSource().get(conf, "features");
+            conf.get("nvgl", useNVGL());
         }
 
         optional<URI> _buildingCatalogURI;

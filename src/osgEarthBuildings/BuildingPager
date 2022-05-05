@@ -46,7 +46,10 @@ namespace osgEarth { namespace Buildings
     public:
 
         /** Constructs the pager with a target profile */
-        BuildingPager(const Map* map, const Profile* profile);
+        BuildingPager(
+            const Map* map,
+            const Profile* profile,
+            bool use_nvgl_if_possible);
 
         /** Session under which to load buildings */
         void setSession(Session* session);
@@ -109,6 +112,7 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<CacheManager> _caches;
         FilterUsage _filterUsage;
         bool _verboseWarnings;
+        bool _usingNVGL;
         osg::ref_ptr<TextureArena> _textures;
         ResidentData::Ptr _residentData;
 

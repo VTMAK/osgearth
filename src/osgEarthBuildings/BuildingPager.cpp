@@ -181,7 +181,7 @@ BuildingPager::CacheManager::traverse(osg::NodeVisitor& nv)
 //...................................................................
 
 
-BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
+BuildingPager::BuildingPager(const Map* map, const Profile* profile, bool useNVGLIfSupported) :
     SimplePager(map, profile),
     _index(nullptr),
     _filterUsage(FILTER_USAGE_NORMAL),
@@ -200,7 +200,9 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile) :
 
     ss->setMode(GL_BLEND, 1);
 
-    if (GLUtils::useNVGL())
+    _usingNVGL = useNVGLIfSupported && GLUtils::useNVGL();
+
+    if (_usingNVGL)
     {
         OE_INFO << LC << "Using NVIDIA GL rendering" << std::endl;
 
@@ -491,9 +493,9 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 
                 // skip this if we are using NV -gw
-                if (!GLUtils::useNVGL())
+                if (!_usingNVGL)
                 {
-                    osg::MatrixTransform * mt = dynamic_cast<osg::MatrixTransform *> (node.get());
+                    osg::MatrixTransform* mt = dynamic_cast<osg::MatrixTransform *> (node.get());
                     if (mt)
                     {
                         osg::ref_ptr<osg::Group> oqn;
