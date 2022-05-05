@@ -200,6 +200,7 @@ MapNode::Options::getConfig() const
     conf.set( "overlay_resolution_ratio", overlayResolutionRatio() );
     conf.set( "cascade_draping",          useCascadeDraping() );
     conf.set( "draping_render_bin_number",drapingRenderBinNumber() );
+    conf.set("screen_space_error", screenSpaceError());
 
     if (terrain().isSet() && !terrain()->empty())
         conf.set( "terrain", terrain()->getConfig() );
@@ -221,6 +222,7 @@ MapNode::Options::fromConfig(const Config& conf)
     useCascadeDraping().init(false);
     terrain().init(TerrainOptions());
     drapingRenderBinNumber().init(1);
+    screenSpaceError().setDefault(25.0f);
 
     conf.get( "proxy",                    proxySettings() );
     conf.get( "lighting",                 enableLighting() );
@@ -230,6 +232,7 @@ MapNode::Options::fromConfig(const Config& conf)
     conf.get( "overlay_resolution_ratio", overlayResolutionRatio() );
     conf.get( "cascade_draping",          useCascadeDraping() );
     conf.get( "draping_render_bin_number",drapingRenderBinNumber() );
+    conf.get("screen_space_error", screenSpaceError());
 
     if ( conf.hasChild( "terrain" ) )
         terrain() = TerrainOptions( conf.child("terrain") );
@@ -643,15 +646,14 @@ MapNode::getTerrainEngine() const
 void
 MapNode::setScreenSpaceError(float value)
 {
+    options().screenSpaceError() = value;
     _sseU->set(value);
 }
 
 float
 MapNode::getScreenSpaceError() const
 {
-    float sse;
-    _sseU->get(sse);
-    return sse;
+    return options().screenSpaceError().get();
 }
 
 void
