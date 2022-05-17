@@ -113,6 +113,8 @@ BiomeLayer::init()
     // BiomeLayer is invisible AND shared by default.
     options().visible().setDefault(false);
     options().shared().setDefault(true);
+    options().minFilter().setDefault(osg::Texture::LINEAR);
+    options().magFilter().setDefault(osg::Texture::NEAREST);
     options().textureCompression().setDefault("none");
 
     _pointIndex = nullptr;
@@ -405,6 +407,7 @@ BiomeLayer::createImageImplementation(
         GeoImage temp(image.get(), ex);
         GeoImageIterator iter(temp);
         LandCoverSample sample;
+        std::unordered_set<std::string> missing_biomes;
 
         // Use meta-tiling to read coverage data with access to the 
         // neighboring tiles - to support the blend radius.
@@ -495,6 +498,11 @@ BiomeLayer::createImageImplementation(
                                     {
                                         biome_index = mod->index();
                                     }
+                                    else
+                                    {
+                                        missing_biomes.insert(id);
+                                        biome_index = hit->_biome_index;
+                                    }
                                 }
                             }
 
@@ -520,6 +528,16 @@ BiomeLayer::createImageImplementation(
         // This will allow us to page out when all references to a biome
         // expire from the scene
         trackImage(result, key, biome_indices_seen);
+
+        // report any errors
+        if (missing_biomes.empty() == false)
+        {
+            std::ostringstream buf;
+            buf << "Undefined biomes detected: ";
+            for (auto i : missing_biomes)
+                buf << i << ' ';
+            OE_WARN << LC << buf.str() << std::endl;
+        }
 
         // cache:
         {
@@ -554,15 +572,23 @@ BiomeLayer::postCreateImageImplementation(
         std::set<int> biome_indices_seen;
         osg::Vec4 pixel;
 
-        iter.forEachPixel([&]()
+        // known format (GL_RED/GL_FLOAT) - traverse manually for speed
+        const osg::Image* image = createdImage.getImage();
+        OE_IF_SOFT_ASSERT(image && image->getPixelFormat() == GL_RED && image->getDataType() == GL_FLOAT)
+        {
+            unsigned size = image->s() * image->t();
+            const float* ptr = (const float*)(image->data());
+            int biome_index;
+
+            for (unsigned i = 0; i < size; ++i)
             {
-                read(pixel, iter.s(), iter.t());
-                int biome_index = (int)pixel.r();
+                biome_index = (int)(*ptr++);
                 if (biome_index > 0)
                     biome_indices_seen.insert(biome_index);
-            });
+            }
 
-        trackImage(createdImage, key, biome_indices_seen);
+            trackImage(createdImage, key, biome_indices_seen);
+        }
     }
 }
 
