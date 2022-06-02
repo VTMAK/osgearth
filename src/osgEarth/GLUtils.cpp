@@ -162,6 +162,10 @@ GLUtils::useNVGL(bool value)
     {
         OE_INFO << LC << "Using NVIDIA GL4 extensions" << std::endl;
     }
+    else
+    {
+        OE_INFO << LC << "Disabling NVIDIA GL4 extensions" << std::endl;
+    }
 }
 
 namespace
