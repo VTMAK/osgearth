@@ -336,6 +336,13 @@ LifeMapLayer::addedToMap(const Map* map)
     checkForLayerError(getLandCoverLayer());
     checkForLayerError(getLandUseLayer());
 
+    // Initialize the landcover creator
+    if (getLandCoverLayer() && getLandCoverLayer()->isOpen())
+    {
+        _landCoverCreator = std::unique_ptr< CoverageLayer::CoverageCreator<LandCoverSample> >(
+            new CoverageLayer::CoverageCreator<LandCoverSample>(getLandCoverLayer()));
+    }
+
     _map = map;
 }
 
@@ -571,12 +578,12 @@ LifeMapLayer::createImageImplementation(
 
     // set up the land cover data metatiler:
     MetaTile<GeoCoverage<LandCoverSample>> landcover;
-    if (getLandCoverLayer())
+    if (_landCoverCreator)
     {
         landcover.setCreateTileFunction(
             [&](const TileKey& key, ProgressCallback* p) -> GeoCoverage<LandCoverSample>
             {
-                return getLandCoverLayer()->createCoverage<LandCoverSample>(key, p);
+                return _landCoverCreator->createCoverage(key, p);
             });
 
         landcover.setCenterTileKey(key, progress);
