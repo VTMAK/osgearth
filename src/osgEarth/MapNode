@@ -73,7 +73,6 @@ namespace osgEarth
             OE_OPTION(TerrainOptions, terrain);
             OE_OPTION(int, drapingRenderBinNumber);
             OE_OPTION(float, screenSpaceError);
-            OE_OPTION(bool, useNVGL);
             virtual Config getConfig() const;
         private:
             void fromConfig(const Config& conf);

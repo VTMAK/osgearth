@@ -206,8 +206,6 @@ MapNode::Options::getConfig() const
     if (terrain().isSet() && !terrain()->empty())
         conf.set( "terrain", terrain()->getConfig() );
 
-    conf.set("nvgl", useNVGL());
-
     return conf;
 }
 
@@ -237,12 +235,6 @@ MapNode::Options::fromConfig(const Config& conf)
 
     if ( conf.hasChild( "terrain" ) )
         terrain() = TerrainOptions( conf.child("terrain") );
-
-    conf.get("nvgl", useNVGL());
-    if (useNVGL().isSet())
-    {
-        GLUtils::useNVGL(useNVGL().get());
-    }
 }
 
 //....................................................................
