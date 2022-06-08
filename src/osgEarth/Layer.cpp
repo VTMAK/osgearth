@@ -380,7 +380,7 @@ Layer::open()
     // Install any shader #defines
     if (options().shaderDefine().isSet() && !options().shaderDefine()->empty())
     {
-        OE_INFO << LC << "Setting shader define " << options().shaderDefine().get() << "\n";
+        OE_DEBUG << LC << "Setting shader define " << options().shaderDefine().get() << "\n";
         getOrCreateStateSet()->setDefine(options().shaderDefine().get());
     }
 
@@ -426,7 +426,7 @@ Layer::openImplementation()
         CacheBin* bin = _cacheSettings->getCache()->addBin(_runtimeCacheId);
         if (bin)
         {
-            OE_INFO << LC << "Cache bin is [" << _runtimeCacheId << "]\n";
+            OE_DEBUG << LC << "Cache bin is [" << _runtimeCacheId << "]\n";
             _cacheSettings->setCacheBin(bin);
         }
         else

@@ -409,7 +409,7 @@ TileLayer::setUpL2Cache(unsigned minSize)
     if (l2CacheSize > 0)
     {
         _memCache = new MemCache(l2CacheSize);
-        OE_INFO << LC << "L2 cache size = " << l2CacheSize << std::endl;
+        OE_DEBUG << LC << "L2 cache size = " << l2CacheSize << std::endl;
     }
 }
 
@@ -892,7 +892,7 @@ TileLayer::getBestAvailableTileKey(
         ScopedWriteLock lock(_data_mutex);
         if (!_dataExtentsIndex) // Double check
         {
-            OE_INFO << LC << "Building data extents index with " << getDataExtents().size() << " extents" << std::endl;
+            OE_DEBUG << LC << "Building data extents index with " << getDataExtents().size() << " extents" << std::endl;
             DataExtentsIndex* dataExtentsIndex = new DataExtentsIndex();
             for (auto de = getDataExtents().begin(); de != getDataExtents().end(); ++de)
             {

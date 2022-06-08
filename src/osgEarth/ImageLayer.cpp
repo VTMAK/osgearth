@@ -569,7 +569,7 @@ ImageLayer::createImageInKeyProfile(
         {
             if ( key.getExtent() != result.getExtent() )
             {
-                OE_INFO << LC << "WARNING! mismatched extents." << std::endl;
+                OE_INFO << LC << "WARNING! mismatched extents between layer and cache" << std::endl;
             }
 
             cacheBin->write(cacheKey, result.getImage(), 0L);
