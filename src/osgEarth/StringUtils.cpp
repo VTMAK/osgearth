@@ -173,6 +173,19 @@ StringTokenizer::tokenize( const std::string& input, StringVector& output ) cons
         output.push_back( bufstr );
 }
 
+StringVector
+osgEarth::Strings::tokenize(
+    const std::string& input,
+    const std::string& delims,
+    const std::string& quotes,
+    bool keepEmpties,
+    bool trimTokens)
+{
+    StringVector output;
+    StringTokenizer(input, output, delims, quotes, keepEmpties, trimTokens);
+    return output;
+}
+
 //--------------------------------------------------------------------------
 
 const std::string osgEarth::Util::EMPTY_STRING;

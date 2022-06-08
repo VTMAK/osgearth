@@ -333,6 +333,13 @@ namespace osgEarth { namespace Util
         bool     _allowEmpties;
         bool     _trimTokens;
     };
+
+    extern OSGEARTH_EXPORT StringVector tokenize(
+        const std::string& input,
+        const std::string& delims = " \t\r\n",
+        const std::string& quotes = "'\"",
+        bool keepEmpties = true,
+        bool trimTokens = true);
 } }
 
 
