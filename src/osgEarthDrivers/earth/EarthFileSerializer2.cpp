@@ -90,13 +90,7 @@ namespace
     {
         return
             k == "options" ||
-            //k == "image" ||
-            //k == "elevation" ||
-            //k == "heightfield" ||
-            //k == "model" ||
-            //k == "mask" ||
             k == "external" ||
-            //k == "extensions" ||
             k == "libraries";
     }
 
@@ -147,25 +141,27 @@ namespace
         Config libraries = conf.child("libraries");
         if (!libraries.value().empty())
         {
-            StringTokenizer izer( ";" );
-            StringVector libs;
-            izer.tokenize( libraries.value(), libs );
-            for (StringVector::iterator itr = libs.begin(); itr != libs.end(); ++itr)
+            for(auto& lib : tokenize(libraries.value(), ";, \t", "", false))
             {
-                std::string lib = *itr;
-                trim2(lib);
                 std::string libName = osgDB::Registry::instance()->createLibraryNameForNodeKit(lib);
                 osgDB::Registry::LoadStatus status = osgDB::Registry::instance()->loadLibrary(libName);
                 if (status == osgDB::Registry::LOADED)
                 {
                     OE_INFO << LC << "Loaded library \"" << libName << "\"\n";
+                    
+                    // Temp: force NVGL OFF to support the legacy splat library
+                    if (Strings::toLower(lib) == "osgearthsplat")
+                    {
+                        GLUtils::useNVGL(false);
+                        OE_INFO << LC << "Disabled NVGL after loading library \"" << lib << "\"" << std::endl;
+                    }
                 }
                 else
                 {
                     OE_INFO << LC << "Failed to load library \"" << libName << "\"\n";
                 }
             }
-        }        
+        }
     }
 
     /**
