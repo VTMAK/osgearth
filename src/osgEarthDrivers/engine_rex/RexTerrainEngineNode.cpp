@@ -234,6 +234,12 @@ RexTerrainEngineNode::getJobArenaName() const
     return ARENA_LOAD_TILE;
 }
 
+unsigned
+RexTerrainEngineNode::getNumResidentTiles() const
+{
+    return _tiles ? _tiles->size() : 0u;
+}
+
 void
 RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
 {
@@ -287,11 +293,9 @@ RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
     // if requested in the options. Revision tracking lets the registry notify all
     // live tiles of the current map revision so they can inrementally update
     // themselves if necessary.
-    _liveTiles = new TileNodeRegistry("live");
-    _liveTiles->setFrameClock(&_clock);
-    _liveTiles->setMapRevision(map->getDataModelRevision());
-    _liveTiles->setNotifyNeighbors(options().normalizeEdges() == true);
-    _liveTiles->setFirstLOD(options().firstLOD().get());
+    _tiles = std::make_shared<TileNodeRegistry>();
+    _tiles->setFrameClock(&_clock);
+    _tiles->setNotifyNeighbors(options().normalizeEdges() == true);
 
     // A shared geometry pool.
     _geometryPool = new GeometryPool();
@@ -310,10 +314,11 @@ RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
     JobArena::setConcurrency(ARENA_LOAD_TILE, concurrency);
 
     // Make a tile unloader
-    _unloader = new UnloaderGroup(_liveTiles.get());
+    _unloader = new UnloaderGroup(_tiles.get());
     _unloader->setFrameClock(&_clock);
     _unloader->setMaxAge(options().minExpiryTime().get());
     _unloader->setMaxTilesToUnloadPerFrame(options().maxTilesToUnloadPerFrame().get());
+    _unloader->setMinResidentTiles(options().minResidentTiles().get());
     _unloader->setMinimumRange(options().minExpiryRange().get());
     this->addChild(_unloader.get());
 
@@ -339,7 +344,7 @@ RexTerrainEngineNode::setMap(const Map* map, const TerrainOptions& inOptions)
         this, // engine
         _geometryPool.get(),
         _merger.get(),
-        _liveTiles.get(),
+        _tiles,
         _renderBindings,
         options(),
         _selectionInfo,
@@ -445,7 +450,7 @@ RexTerrainEngineNode::invalidateRegion(
     unsigned         minLevel,
     unsigned         maxLevel)
 {
-    if ( _liveTiles.valid() )
+    if (_tiles)
     {
         GeoExtent extentLocal = extent;
 
@@ -468,7 +473,7 @@ RexTerrainEngineNode::invalidateRegion(
             manifest.insert(i->get());
         }
 
-        _liveTiles->setDirty(extentLocal, minLevel, maxLevel, manifest);
+        _tiles->setDirty(extentLocal, minLevel, maxLevel, manifest);
     }
 }
 
@@ -479,7 +484,7 @@ RexTerrainEngineNode::invalidateRegion(
     unsigned minLevel,
     unsigned maxLevel)
 {
-    if ( _liveTiles.valid() )
+    if (_tiles)
     {
         GeoExtent extentLocal = extent;
 
@@ -504,7 +509,7 @@ RexTerrainEngineNode::invalidateRegion(
             }
         }
 
-        _liveTiles->setDirty(extentLocal, minLevel, maxLevel, manifest);
+        _tiles->setDirty(extentLocal, minLevel, maxLevel, manifest);
     }
 }
 
@@ -529,9 +534,9 @@ RexTerrainEngineNode::refresh(bool forceDirty)
         _merger->clear();
 
         // clear out the tile registry:
-        if (_liveTiles.valid())
+        if (_tiles)
         {
-            _liveTiles->releaseAll(nullptr);
+            _tiles->releaseAll(nullptr);
         }
 
         // scrub the geometry pool:
@@ -964,7 +969,7 @@ RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
     }
 
     // Call update on the tile registry
-    _liveTiles->update(nv);
+    _tiles->update(nv);
 
     // check on the persistent data cache
     _persistent.lock();
@@ -1108,7 +1113,6 @@ RexTerrainEngineNode::onMapModelChanged( const MapModelChange& change )
 
     else
     {
-        _liveTiles->setMapRevision(getMap()->getDataModelRevision());
 
         // dispatch the change handler
         if ( change.getLayer() )
