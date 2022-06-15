@@ -54,7 +54,7 @@ namespace osgEarth { namespace Splat
             VirtualProgram* vp,
             const osgDB::Options* options) const override;
 
-        virtual osg::Geometry* createParametricGeometry() const;
+        virtual osg::Geometry* createGeometry() const override;
     };
 
 } } // namespace osgEarth::Splat
