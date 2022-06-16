@@ -88,7 +88,16 @@ namespace osgEarth
                     ImGui::Separator();
                     ImGui::Text("Total: %d", m.totalJobs());
                     ImGui::SameLine();
-                    ImGui::Text(" ICO: %d", GLObjectsCompiler::totalJobs());
+
+                    int icojobs = 0;
+                    auto pager = view(ri)->getDatabasePager();
+                    if (pager) {
+                        auto ico = pager->getIncrementalCompileOperation();
+                        if (ico) {
+                            icojobs = ico->getToCompile().size();
+                        }
+                    }
+                    ImGui::Text(" ICO: %d", icojobs);
                     ImGui::SameLine();
                     ImGui::Text(" Compute: %d", GPUJobArena::arena().size());
 
