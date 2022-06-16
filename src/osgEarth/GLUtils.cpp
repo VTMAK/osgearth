@@ -1681,6 +1681,7 @@ ComputeImageSession::readback(osg::State* state)
 
 //........................................................................
 
+#include <iostream>
 namespace
 {
     using ICO = osgUtil::IncrementalCompileOperation;
@@ -1695,7 +1696,8 @@ namespace
             _node(node),
             _jobsActive(jobsActive) { }
 
-        virtual ~ICOCallback() {
+        virtual ~ICOCallback()
+        {
             _jobsActive--;
         }
 
