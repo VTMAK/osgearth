@@ -275,7 +275,7 @@ BuildingFactory::createExternalModelBuilding(Feature*      feature,
 
     // Calculate a local reference frame for this building.
     // The frame clamps the building by including the terrain elevation that was passed in.
-    osg::Vec2d center2d = geometry->getBounds().center2d();
+    osg::Vec3d center2d = geometry->getBounds().center();
     GeoPoint centerPoint( feature->getSRS(), center2d.x(), center2d.y(), context.getTerrainMin(), ALTMODE_ABSOLUTE );
     osg::Matrix local2world;
     centerPoint.createLocalToWorld( local2world );
@@ -297,7 +297,7 @@ BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
     if ( geometry && geometry->getComponentType() == Geometry::TYPE_POLYGON && geometry->isValid() )
     {
         // Calculate a local reference frame for this building:
-        osg::Vec2d center2d = geometry->getBounds().center2d();
+        osg::Vec3d center2d = geometry->getBounds().center();
         GeoPoint centerPoint( feature->getSRS(), center2d.x(), center2d.y(), 0.0, ALTMODE_ABSOLUTE );
         osg::Matrix local2world, world2local;
         centerPoint.createLocalToWorld( local2world );

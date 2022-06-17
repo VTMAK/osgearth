@@ -54,7 +54,7 @@ BuildingCatalog::createBuildings(Feature*              feature,
     if ( geometry && geometry->getComponentType() == Geometry::TYPE_POLYGON && geometry->isValid() )
     { 
         // Calculate a local reference frame for this building:
-        osg::Vec2d center2d = geometry->getBounds().center2d();
+        osg::Vec3d center2d = geometry->getBounds().center();
         GeoPoint centerPoint( feature->getSRS(), center2d.x(), center2d.y(), context.getTerrainMin(), ALTMODE_ABSOLUTE );
         osg::Matrix local2world, world2local;
         centerPoint.createLocalToWorld( local2world );
@@ -81,7 +81,7 @@ BuildingCatalog::createBuildings(Feature*              feature,
             Polygon* polygon = dynamic_cast<Polygon*>(iter2.next());
             if ( polygon && polygon->isValid() )
             {
-                float area = polygon->getBounds().area2d();
+                float area = area2d(polygon->getBounds());
 
                 // A footprint is the minumum info required to make a building.
                 osg::ref_ptr<Building> building = cloneBuildingTemplate(feature, tags, height, area);
