@@ -22,6 +22,7 @@
 #include "BiomeLayer"
 #include <osgEarth/Random>
 #include <osgEarth/MetaTile>
+#include <random>
 
 using namespace osgEarth;
 using namespace osgEarth::Util;
@@ -149,20 +150,16 @@ BiomeLayer::addedToMap(const Map* map)
         return;
     }
 
-    // Initialize the biome creator
+    // Prepare to create samples for the base biome layer
     if (getBiomeBaseLayer() && getBiomeBaseLayer()->isOpen())
     {
-        _biomeCreator = std::unique_ptr< CoverageLayer::CoverageCreator<BiomeSample> >(
-            new CoverageLayer::CoverageCreator<BiomeSample>(getBiomeBaseLayer())
-            );
+        _biomeFactory = BiomeSample::Factory::create(getBiomeBaseLayer());
     }
 
-    // Initialize the landcover creator
+    // Prepare to create samples for the landcover layer
     if (getLandCoverLayer() && getLandCoverLayer()->isOpen())
     {
-        _landCoverCreator = std::unique_ptr< CoverageLayer::CoverageCreator<LandCoverSample> >(
-            new CoverageLayer::CoverageCreator<LandCoverSample>(getLandCoverLayer())
-            );
+        _landCoverFactory = LandCoverSample::Factory::create(getLandCoverLayer());
     }
 }
 
@@ -242,12 +239,14 @@ BiomeLayer::createImageImplementation(
 
     image->setInternalTextureFormat(GL_R16F);
 
-
     ImageUtils::PixelWriter write(image.get());
     osg::Vec4 value;
     float noise = 1.0f;
 
-    Random prng(key.hash());
+    // pseudo-random number generator:
+    std::minstd_rand gen(key.hash());
+    std::uniform_real_distribution<double> prng;
+
     double radius = options().blendRadius().get();
     std::set<int> biome_indices_seen;
     const GeoExtent& ex = key.getExtent();
@@ -255,42 +254,35 @@ BiomeLayer::createImageImplementation(
     GeoImageIterator iter(temp);
     std::unordered_set<std::string> missing_biomes;
 
-    
-
     // Use meta-tiling to read coverage data with access to the 
     // neighboring tiles - to support the blend radius.
-    MetaTile<GeoCoverage<LandCoverSample>> landcover;    
+    MetaTile<GeoCoverage<LandCoverSample>> landcoverData;
 
-    if (_landCoverCreator)
+    if (_landCoverFactory)
     {
-        landcover.setCreateTileFunction(
-            [&](const TileKey& key, ProgressCallback* p) -> GeoCoverage<LandCoverSample>
-            {
-                return _landCoverCreator->createCoverage(key, p);
-            });
-
-        landcover.setCenterTileKey(key, progress);
+        auto creator = [&](const TileKey& key, ProgressCallback* p) {
+            return _landCoverFactory->createCoverage(key, p);
+        };
+        landcoverData.setCreateTileFunction(creator);
+        landcoverData.setCenterTileKey(key, progress);
     }
 
     // Use meta-tiling to read biome coverage data with access to the 
     // neighboring tiles
-    MetaTile<GeoCoverage<BiomeSample>> biomeMetaTile;
+    MetaTile<GeoCoverage<BiomeSample>> biomeData;
 
-    if (_biomeCreator)
+    if (_biomeFactory)
     {
-        biomeMetaTile.setCreateTileFunction(
-            [&](const TileKey& key, ProgressCallback* p) -> GeoCoverage<BiomeSample>
-            {            
-                return _biomeCreator->createCoverage(key, p);
-            });
-
-        biomeMetaTile.setCenterTileKey(key, progress);
+        auto creator = [&](const TileKey& key, ProgressCallback* p) {
+            return _biomeFactory->createCoverage(key, p);
+        };
+        biomeData.setCreateTileFunction(creator);
+        biomeData.setCenterTileKey(key, progress);
     }
 
     iter.forEachPixelOnCenter([&]()
         {
             int biome_index = 0;
-            std::string traits;
 
             double x = iter.x();
             double y = iter.y();
@@ -298,8 +290,8 @@ BiomeLayer::createImageImplementation(
             // randomly permute the coordinates in order to blend across biomes
             if (radius > temp.getUnitsPerPixel())
             {
-                x += radius * (prng.next() * 2.0 - 1.0);
-                y += radius * (prng.next() * 2.0 - 1.0);
+                x += radius * (prng(gen) * 2.0 - 1.0);
+                y += radius * (prng(gen) * 2.0 - 1.0);
             }
 
             // convert the x,y to u,v
@@ -307,9 +299,9 @@ BiomeLayer::createImageImplementation(
             double v = (y - ex.yMin()) / ex.height();
 
             // First try the biome base layer
-            if (biomeMetaTile.valid())
+            if (biomeData.valid())
             {
-                const BiomeSample* sample = biomeMetaTile.read(u, v);
+                const BiomeSample* sample = biomeData.read(u, v);
 
                 if (sample)
                 {
@@ -325,9 +317,9 @@ BiomeLayer::createImageImplementation(
             }
 
             // Next try the landcover layer.
-            if (landcover.valid())
+            if (landcoverData.valid())
             {
-                const LandCoverSample* sample = landcover.read(u, v);
+                const LandCoverSample* sample = landcoverData.read(u, v);
                 if (sample)
                 {
                     if (sample->biomeid().isSet())
@@ -338,16 +330,10 @@ BiomeLayer::createImageImplementation(
                             biome_index = biome->index();
                         }
                     }
-                    else if (sample->traits().isSet())
-                    {                     
-                        traits = sample->traits().get();
-                    }
 
                     // NB: lifemap values are handled by the LifeMapLayer (ignored here)
                 }
             }
-
-            
 
             // if we found a valid one, insert it into the set
             if (biome_index > 0)
