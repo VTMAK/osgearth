@@ -637,12 +637,18 @@ void
 VegetationLayer::activateMultisampling()
 {
     osg::StateSet* ss = getOrCreateStateSet();
-    ss->setDefine("OE_USE_ALPHA_TO_COVERAGE");
     ss->setMode(GL_MULTISAMPLE, 1);
-    ss->setMode(GL_SAMPLE_ALPHA_TO_COVERAGE_ARB, 1);
-    ss->setAttributeAndModes(new osg::BlendFunc(), 0 | osg::StateAttribute::OVERRIDE);
+
+    if (options().alphaToCoverage() == true)
+    {
+        ss->setDefine("OE_USE_ALPHA_TO_COVERAGE");
+        ss->setMode(GL_SAMPLE_ALPHA_TO_COVERAGE_ARB, 1);
+        ss->setAttributeAndModes(new osg::BlendFunc(), 0 | osg::StateAttribute::OVERRIDE);
+    }
 
     _multisamplingActivated = true;
+
+    OE_INFO << LC << "Multisampling and ALPHA_TO_COVERAGE are active" << std::endl;
 }
 
 void
@@ -1263,9 +1269,6 @@ VegetationLayer::getAssetPlacements(
                 (noise[N_RANDOM_2] * 2.0f - 1.0f));
         }
 
-        // allow overlap for "billboard" models (i.e. grasses).
-        //bool allow_overlap = isGrass;
-
         // apply instance-specific density adjustment:
         density *= instance.coverage();
 
@@ -1379,7 +1382,7 @@ VegetationLayer::getAssetPlacements(
     {
         for (auto biome : empty_biomes)
         {
-            OE_WARN << "No assets defined in group " << AssetGroup::name(group) << " for biome " << biome->id().get() << std::endl;
+            OE_WARN << "No assets defined in group " << AssetGroup::name(group) << " for biome " << biome->id() << std::endl;
         }
     }
 
