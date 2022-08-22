@@ -36,37 +36,34 @@ namespace osgEarth { namespace Aerodrome
     class AerodromeLayerOptions : public VisibleLayer::Options
     {
     public:
-        AerodromeLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt ),
-            _range(50000.0f)
+        AerodromeLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt )
         {
             // init properties here
+            range().setDefault(Distance("15000m"));
+
             fromConfig( _conf );
         }
 
         //! XML file containing aerodrome definitions
-        optional<URI>& catalog() { return _catalog; }
-        const optional<URI>& catalog() const { return _catalog; }
+        OE_OPTION(URI, catalog);
 
         //! Range at which aerodromes whould appear
-        optional<float>& range() { return _range; }
-        const optional<float>& range() const { return _range; }
+        OE_OPTION(Distance, range);
 
         //! Render bin number
-        optional<int>& renderOrder() { return _renderOrder; }
-        const optional<int>& renderOrder() const { return _renderOrder; }
+        OE_OPTION(int, renderOrder);
 
         //! Render bin name
-        optional<std::string>& renderBin() { return _renderBin; }
-        const optional<std::string>& renderBin() const { return _renderBin; }
+        OE_OPTION(std::string, renderBin);
 
     public:
         Config getConfig() const
         {
             Config conf = VisibleLayer::Options::getConfig();
-            conf.set("catalog", _catalog);
-            conf.set("range", _range);
-            conf.set("render_order", _renderOrder);
-            conf.set("render_bin", _renderBin);
+            conf.set("catalog", catalog());
+            conf.set("range", range());
+            conf.set("render_order", renderOrder());
+            conf.set("render_bin", renderBin());
             return conf;
         }
 
@@ -80,16 +77,11 @@ namespace osgEarth { namespace Aerodrome
     private:
         void fromConfig(const Config& conf)
         {
-            conf.get("catalog", _catalog);
-            conf.get("range", _range);
-            conf.get("render_order", _renderOrder);
-            conf.get("render_bin", _renderBin);
+            conf.get("catalog", catalog());
+            conf.get("range", range());
+            conf.get("render_order", renderOrder());
+            conf.get("render_bin", renderBin());
         }
-
-        optional<URI> _catalog;
-        optional<float> _range;
-        optional<int> _renderOrder;
-        optional<std::string> _renderBin;
     };
 
 

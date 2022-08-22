@@ -41,6 +41,7 @@
 #include <osgEarth/FeatureCursor>
 #include <osgEarth/Registry>
 #include <osgEarth/HTM>
+#include <osgEarth/ElevationRanges>
 
 #include <osgDB/FileNameUtils>
 #include <osgDB/Registry>
@@ -201,21 +202,31 @@ REGISTER_OSGPLUGIN(osgearth_pseudo_amf, osgEarthAerodromeModelPseudoLoader);
 
 osg::ref_ptr<AerodromeRenderer> AerodromeFactory::s_renderer = 0L;
 
-AerodromeFactory::AerodromeFactory(const Map* map, 
-                                   AerodromeCatalog* catalog,
-                                   SceneGraphCallbacks* callbacks,
-                                   const osgDB::Options* options)
-  : _map(map), _catalog(catalog), _sceneGraphCallbacks(callbacks), _lodRange(50000.0f)
+AerodromeFactory::AerodromeFactory(
+    const Map* map,
+    AerodromeCatalog* catalog,
+    SceneGraphCallbacks* callbacks,
+    const osgDB::Options* options) :
+    
+    _map(map),
+    _catalog(catalog),
+    _sceneGraphCallbacks(callbacks),
+    _lodRange(Distance(15000.0f, Units::METERS))
 {
     init(options);
 }
 
-AerodromeFactory::AerodromeFactory(const Map* map, 
-                                   AerodromeCatalog* catalog,
-                                   float lodRange,                                    
-                                   SceneGraphCallbacks* callbacks,
-                                   const osgDB::Options* options)
-  : _map(map), _catalog(catalog), _sceneGraphCallbacks(callbacks), _lodRange(lodRange)
+AerodromeFactory::AerodromeFactory(
+    const Map* map,
+    AerodromeCatalog* catalog,
+    const Distance& lodRange,
+    SceneGraphCallbacks* callbacks,
+    const osgDB::Options* options) :
+    
+    _map(map),
+    _catalog(catalog), 
+    _sceneGraphCallbacks(callbacks),
+    _lodRange(lodRange)
 {
     init(options);
 }
@@ -533,16 +544,16 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
     // set up a spatial indexing tree
     HTMGroup* tree = new HTMGroup();
     tree->setMaximumObjectsPerCell(4);
-    tree->setMaxRange(_lodRange);
-    // MERGE: This was commented in orig, put in with 2.10.2 merge
-    // I am leaving this commented out
-    //tree->setStoreObjectsInLeavesOnly(true);
+    tree->setThreshold(_lodRange);
+    //tree->setMaxRange(_lodRange);
 
     this->addChild(tree);
 
     OE_INFO << LC << "Seeding aerodromes from boundaries." << std::endl;
 
     int aeroCount = 0;
+
+    unsigned maxRangesLevel = ElevationRanges::getMaxLevel();
 
     for(BoundaryOptionsSet::iterator i = catalog->boundaryOptions().begin(); i != catalog->boundaryOptions().end(); ++i)
     {
@@ -569,14 +580,25 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
 
                 if (f->getGeometry())
                 {
-                    GeoPoint gp(f->getSRS(), f->getGeometry()->getBounds().center());
-                    gp = gp.transform(refMap->getSRS());
-                    osg::Vec3d center;
-                    gp.toWorld(center);
+                    GeoCircle circle = f->getExtent().computeBoundingGeoCircle();
+                    GeoPoint center = circle.getCenter();
 
-#ifdef USE_PAGING_MANAGER
+#if 1 // Attempt to get the bounding sphere more accurate
+                    GeoPoint centerER = center.transform(ElevationRanges::getProfile()->getSRS());
+                    TileKey rangeKey = ElevationRanges::getProfile()->createTileKey(centerER.x(), centerER.y(), maxRangesLevel);
+                    short lo, hi;
+                    ElevationRanges::getElevationRange(maxRangesLevel, rangeKey.getTileX(), rangeKey.getTileY(), lo, hi);
+                    center.z() = (lo + hi) / 2.0;
+#endif
+                    center.transformInPlace(refMap->getSRS());
+                    osg::Vec3d centerWorld;
+                    center.toWorld(centerWorld);
+
                     PagedNode2* p = new PagedNode2();
+                    p->setName(icao);
                     p->setSceneGraphCallbacks(getSceneGraphCallbacks());
+                    p->setCenter(centerWorld);
+                    p->setRadius(circle.getRadius());
 
                     osg::ref_ptr<const osgDB::Options> load_options(options);
                     osg::observer_ptr<AerodromeFactory> factory_obs(this);
@@ -590,22 +612,17 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
                             return result;
                         }
                     );
-                    p->setMaxRange(_lodRange);
-
-#else
-                    osg::PagedLOD* p = _sceneGraphCallbacks.valid() ? 
-                        new PagedLODWithSceneGraphCallbacks(_sceneGraphCallbacks.get()) :
-                        new osg::PagedLOD();
-
-                    p->setFileName(0, uri);
-                    p->setRange(0, 0.0f, _lodRange);
-#endif
-                    p->setName(icao);
-                    p->setCenter(center);
-                    p->setRadius(std::max((float)f->getGeometry()->getBounds().radius(), _lodRange));
+                    
+                    if (_lodRange.getUnits() == Units::PIXELS)
+                    {
+                        p->setMinPixels(_lodRange.getValue());
+                    }
+                    else
+                    {
+                        p->setMaxRange(_lodRange.as(Units::METERS));
+                    }
 
                     tree->addChild( p );
-
                     aeroCount++;
                 }
                 else

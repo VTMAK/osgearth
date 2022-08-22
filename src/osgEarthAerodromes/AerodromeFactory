@@ -42,8 +42,20 @@ namespace osgEarth { namespace Aerodrome
     {
     public:
 
-        AerodromeFactory(const Map* map, AerodromeCatalog* catalog, SceneGraphCallbacks* callbacks, const osgDB::Options* options);
-        AerodromeFactory(const Map* map, AerodromeCatalog* catalog, float lodRange, SceneGraphCallbacks* callbacks, const osgDB::Options* options);
+        //! Construct a factory
+        AerodromeFactory(
+            const Map* map,
+            AerodromeCatalog* catalog,
+            SceneGraphCallbacks* callbacks,
+            const osgDB::Options* options);
+
+        //! Construct a factory
+        AerodromeFactory(
+            const Map* map,
+            AerodromeCatalog* catalog,
+            const Distance& range,
+            SceneGraphCallbacks* callbacks,
+            const osgDB::Options* options);
 
         virtual ~AerodromeFactory();
 
@@ -86,7 +98,8 @@ namespace osgEarth { namespace Aerodrome
         osg::ref_ptr<AerodromeRenderer> _renderer;
         osg::ref_ptr<SceneGraphCallbacks> _sceneGraphCallbacks;
         mutable Threading::ReadWriteMutex _mutex;
-        float _lodRange;
+        Distance _lodRange;
+        int _lodSSE;
     };
 
 } } // namespace osgEarth::Aerodrome
