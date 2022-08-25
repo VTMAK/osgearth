@@ -21,7 +21,6 @@ namespace osgEarth {
             std::unordered_map<const Biome*, bool> _isManualBiomeActive;
             osg::observer_ptr<BiomeLayer> _biolayer;
             osg::observer_ptr<VegetationLayer> _veglayer;
-            float _maxMaxRanges[NUM_ASSET_GROUPS];
             osg::observer_ptr<MapNode> _mapNode;
             Future<const Biome*> _biomeUnderMouse;
 
@@ -56,12 +55,6 @@ namespace osgEarth {
                 if (_first)
                 {
                     _first = false;
-
-                    if (_veglayer.valid())
-                    {
-                        for (int i = 0; i < NUM_ASSET_GROUPS; ++i)
-                            _maxMaxRanges[i] = _veglayer->options().groups()[i].maxRange().get() * 2.0f;
-                    }
 
                     if (_lodTransitionPixelScale == 0.0f)
                         _lodTransitionPixelScale = _biolayer->getBiomeManager().getLODTransitionPixelScale();
@@ -106,22 +99,24 @@ namespace osgEarth {
                         ImGui::Separator();
                         ImGui::TextColored(ImVec4(1, 1, 0, 1), "Generator:");
 
-                        for (int i = 0; i < NUM_ASSET_GROUPS; ++i)
+                        int vi = 0;
+                        for(auto& iter : _veglayer->options().groups())
                         {
-                            ImGui::PushID(i);
+                            auto& groupName = iter.first;
+                            auto& groupOptions = iter.second;
 
-                            if (i > 0)
+                            ImGui::PushID(vi++);
+
+                            if (vi > 1)
                                 ImGui::Separator();
 
-                            AssetGroup::Type type = (AssetGroup::Type)i;
-
                             ImGui::Checkbox(
-                                AssetGroup::name(type).c_str(),
-                                &_veglayer->options().group(type).enabled().mutable_value());
+                                groupName.c_str(),
+                                &groupOptions.enabled().mutable_value());
 
                             ImGui::SliderInt(
                                 "Instances per sqkm",
-                                &_veglayer->options().group(type).instancesPerSqKm().mutable_value(),
+                                &groupOptions.instancesPerSqKm().mutable_value(),
                                 1024, 1024000,
                                 "%d",
                                 ImGuiSliderFlags_Logarithmic);
@@ -142,16 +137,10 @@ namespace osgEarth {
                     ImGui::Checkbox("Show biome under mouse", &_showBiomeUnderMouse);
                     if (_showBiomeUnderMouse)
                     {
-                        //if (_queriedLandCover.valid())
-                        //{
-                        //    ImGui::Text("R=%.2f D=%.2f L=%.2f",
-                        //        _queriedLandCover.rugged().get(),
-                        //        _queriedLandCover.dense().get(),
-                        //        _queriedLandCover.lush().get());
-                        //}
                         if (_biomeUnderMouse.isWorking())
                         {
-                            ImGui::Text("..searching..");
+                            ImGui::Text("...searching..");
+                            ImGui::Text("...");
                         }
                         else if (_biomeUnderMouse.isAvailable())
                         {
@@ -245,15 +234,16 @@ namespace osgEarth {
                             sprintf(buf, "[%s] %s", biome->id().c_str(), biome->name()->c_str());
                             if (ImGui::TreeNode(buf))
                             {
-                                for (int group = 0; group < NUM_ASSET_GROUPS; ++group)
+                                for(auto& iter : _veglayer->options().groups())
                                 {
-                                    std::string groupName = group == 0 ? "Trees" : "Undergrowth";
+                                    auto& groupName = iter.first;
 
-                                    if (ImGui::TreeNode(groupName.c_str()))
+                                    auto assets = biome->getModelAssets(groupName);
+                                    if (!assets.empty() && ImGui::TreeNode(groupName.c_str()))
                                     {
-                                        for (auto& pointer : biome->getModelAssetsToUse(group))
+                                        for (auto& asset_ref : assets)
                                         {
-                                            drawModelAsset(pointer.asset());
+                                            drawModelAsset(asset_ref->asset());
                                         }
                                         ImGui::TreePop();
                                     }
