@@ -118,13 +118,11 @@ VegetationLayer::Options::fromConfig(const Config& conf)
 {
     // defaults:
     alphaToCoverage().setDefault(true);
-    gravity().setDefault(0.125f);
 
     colorLayer().get(conf, "color_layer");
     biomeLayer().get(conf, "biomes_layer");    
 
     conf.get("alpha_to_coverage", alphaToCoverage());
-    conf.get("gravity", gravity());
 
     // some nice default group settings
     groups()[GROUP_TREES].lod().setDefault(14);
@@ -133,20 +131,23 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     groups()[GROUP_TREES].maxRange().setDefault(4000.0f);
     groups()[GROUP_TREES].instancesPerSqKm().setDefault(16384);
     groups()[GROUP_TREES].allowOverlap().setDefault(false);
+    groups()[GROUP_TREES].farPixelScale().setDefault(1.0f);
 
     groups()[GROUP_BUSHES].lod().setDefault(18);
     groups()[GROUP_BUSHES].enabled().setDefault(true);
-    groups()[GROUP_BUSHES].castShadows().setDefault(true);
+    groups()[GROUP_BUSHES].castShadows().setDefault(false);
     groups()[GROUP_BUSHES].maxRange().setDefault(200.0f);
     groups()[GROUP_BUSHES].instancesPerSqKm().setDefault(4096);
-    groups()[GROUP_BUSHES].allowOverlap().setDefault(true);
+    groups()[GROUP_BUSHES].allowOverlap().setDefault(false);
+    groups()[GROUP_BUSHES].farPixelScale().setDefault(2.0f);
 
     groups()[GROUP_UNDERGROWTH].lod().setDefault(19);
     groups()[GROUP_UNDERGROWTH].enabled().setDefault(true);
     groups()[GROUP_UNDERGROWTH].castShadows().setDefault(false);
     groups()[GROUP_UNDERGROWTH].maxRange().setDefault(75.0f);
     groups()[GROUP_UNDERGROWTH].instancesPerSqKm().setDefault(524288);
-    groups()[GROUP_UNDERGROWTH].allowOverlap().setDefault(true);
+    groups()[GROUP_UNDERGROWTH].allowOverlap().setDefault(false);
+    groups()[GROUP_UNDERGROWTH].farPixelScale().setDefault(3.5f);
 
     ConfigSet groups_c = conf.child("groups").children();
     for (auto& group_conf : groups_c)
@@ -160,6 +161,8 @@ VegetationLayer::Options::fromConfig(const Config& conf)
         group_conf.get("lod", group.lod());
         group_conf.get("cast_shadows", group.castShadows());
         group_conf.get("allow_overlap", group.allowOverlap());
+        group_conf.get("far_pixel_scale", group.farPixelScale());
+        group_conf.get("far_sse_scale", group.farPixelScale());
 
         if (group_conf.value("lod") == "auto") {
             group.lod() = 0;
@@ -468,18 +471,6 @@ VegetationLayer::getEnabled(const std::string& name) const
 }
 
 void
-VegetationLayer::setGravity(float value)
-{
-    options().gravity() = value;
-}
-
-float
-VegetationLayer::getGravity() const
-{
-    return options().gravity().get();
-}
-
-void
 VegetationLayer::addedToMap(const Map* map)
 {
     PatchLayer::addedToMap(map);
@@ -607,11 +598,12 @@ VegetationLayer::buildStateSets()
         return;
     }
 
-    // NEXT assemble the asset group statesets.
-    configureGroup(GROUP_TREES);
-    configureGroup(GROUP_BUSHES);
-    configureUndergrowth();
+    // Create impostor geometries for each group
+    configureImpostor(GROUP_TREES);
+    configureImpostor(GROUP_BUSHES);
+    configureImpostor(GROUP_UNDERGROWTH);
 
+    // NEXT assemble the asset group statesets.
     osg::StateSet* ss = getOrCreateStateSet();
     ss->setName(typeid(*this).name());
 
@@ -665,17 +657,17 @@ VegetationLayer::activateMultisampling()
 }
 
 void
-VegetationLayer::configureGroup(const std::string& groupName)
+VegetationLayer::configureImpostor(
+    const std::string& groupName)
 {
-    Options::Group& trees = options().groups()[groupName];
+    Options::Group& group = options().groups()[groupName];
 
     // functor for generating cross hatch geometry for trees:
-    trees._createImpostor = [](
+    group._createImpostor = [&group](
         const osg::BoundingBox& b,
         std::vector<osg::Texture*>& textures)
     {
-        osg::Group* group = new osg::Group();
-        osg::Geometry* geom[2];
+        osg::Group* node = new osg::Group();
 
         // one part if we only have side textures;
         // two parts if we also have top textures
@@ -685,22 +677,21 @@ VegetationLayer::configureGroup(const std::string& groupName)
         float ymin = xmin;
         float xmax = std::max(b.xMax(), b.yMax());
         float ymax = xmax;
+        
+        const osg::Vec4f colors[1] = {
+            {1,1,1,1}
+        };
 
         for (int i = 0; i < parts; ++i)
         {
-            geom[i] = new osg::Geometry();
-            geom[i]->setName("Tree impostor");
-            geom[i]->setUseVertexBufferObjects(true);
-            geom[i]->setUseDisplayList(false);
-
-            osg::StateSet* ss = geom[i]->getOrCreateStateSet();
-
-            const osg::Vec4f colors[1] = {
-                {1,1,1,1}
-            };
-
-            if (i == 0)
+            if (i == 0 && textures[0] != nullptr)
             {
+                osg::Geometry* geom = new osg::Geometry();
+                geom->setName("Vegetation Impostor");
+                geom->setUseVertexBufferObjects(true);
+                geom->setUseDisplayList(false);
+                osg::StateSet* ss = geom->getOrCreateStateSet();
+
                 static const GLushort indices[12] = {
                     0,1,2,  2,3,0,
                     4,5,6,  6,7,4 };
@@ -732,22 +723,30 @@ VegetationLayer::configureGroup(const std::string& groupName)
                     {0,0,0}, {0,0,0}, {0,1,1}, {0,-1,1}
                 };
 
-                geom[i]->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 12, &indices[0]));
-                geom[i]->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, verts));
-                geom[i]->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, normals));
-                geom[i]->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
-                geom[i]->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 8, uvs));
-                geom[i]->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, flexors));
+                geom->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 12, &indices[0]));
+                geom->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, verts));
+                geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, normals));
+                geom->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
+                geom->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 8, uvs));
+                geom->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, flexors));
 
                 if (textures.size() > 0)
                     ss->setTextureAttribute(0, textures[0], 1); // side albedo
+
+                node->addChild(geom);
 
                 // No normal texture support - it looks much better without it.
                 //if (textures.size() > 1)
                 //    ss->setTextureAttribute(1, textures[1], 1); // side normal
             }
-            else if (i == 1)
+            else if (i == 1 && textures[2] != nullptr)
             {
+                osg::Geometry* geom = new osg::Geometry();
+                geom->setName("Tree impostor");
+                geom->setUseVertexBufferObjects(true);
+                geom->setUseDisplayList(false);
+                osg::StateSet* ss = geom->getOrCreateStateSet();
+
                 float zmid = 0.33f*(b.zMax() - b.zMin());
 
                 static const GLushort indices[6] = {
@@ -768,12 +767,12 @@ VegetationLayer::configureGroup(const std::string& groupName)
                     {0,0}, {1,0}, {1,1}, {0,1}
                 };
 
-                geom[i]->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 6, &indices[0]));
-                geom[i]->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, verts));
-                geom[i]->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, normals));
-                geom[i]->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
-                geom[i]->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 4, uvs));
-                geom[i]->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4)); // flexors
+                geom->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 6, &indices[0]));
+                geom->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, verts));
+                geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, normals));
+                geom->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
+                geom->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 4, uvs));
+                geom->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4)); // flexors
 
                 if (textures.size() > 2)
                     ss->setTextureAttribute(0, textures[2], 1); // top albedo
@@ -781,17 +780,23 @@ VegetationLayer::configureGroup(const std::string& groupName)
                 // No normal texture support - it looks much better without it.
                 //if (textures.size() > 3)
                 //    ss->setTextureAttribute(1, textures[3], 1); // top normal
+
+                node->addChild(geom);
             }
-            group->addChild(geom[i]);
         }
-        return group;
+
+        BiomeManager::Impostor result;
+        result._node = node;
+        result._farPixelScale = group.farPixelScale().get();
+        return std::move(result);
     };
 
-    getBiomeLayer()->getBiomeManager().setCreateFunction(
+    getBiomeLayer()->getBiomeManager().setCreateImpostorFunction(
         groupName,
-        trees._createImpostor);
+        group._createImpostor);
 }
 
+#if 0
 void
 VegetationLayer::configureUndergrowth()
 {
@@ -887,6 +892,7 @@ VegetationLayer::configureUndergrowth()
         GROUP_UNDERGROWTH,
         undergrowth._createImpostor);
 }
+#endif
 
 bool
 VegetationLayer::checkForNewAssets() const
@@ -1291,7 +1297,7 @@ VegetationLayer::getAssetPlacements(
         if (asset->assetDef()->sizeVariation().isSet())
         {
             scale *= 1.0 + (asset->assetDef()->sizeVariation().get() *
-                (noise[N_RANDOM_2] * 2.0f - 1.0f));
+                (noise[N_CLUMPY] * 2.0f - 1.0f));
         }
 
         // apply instance-specific density adjustment:
@@ -1500,16 +1506,16 @@ VegetationLayer::cull(
 
     for (auto& entry : batch.tiles())
     {
-        const std::string& group = getGroupAtLOD(entry->getKey().getLOD());
+        const std::string& groupName = getGroupAtLOD(entry->getKey().getLOD());
+        const Options::Group& group = options().group(groupName);
 
-
-        if (options().group(group).enabled() == false)
+        if (group.enabled() == false)
         {
             continue;
         }
 
         if (CameraUtils::isShadowCamera(cv->getCurrentCamera()) &&
-            options().group(group).castShadows() == false)
+            group.castShadows() == false)
         {
             continue;
         }
@@ -1538,7 +1544,7 @@ VegetationLayer::cull(
 
                 tile->_drawable = createDrawableAsync(
                     entry->getKey(),
-                    group,
+                    groupName,
                     entry->getBBox());
             }
 
@@ -1560,7 +1566,11 @@ VegetationLayer::cull(
             {
                 view._matrix->set(entry->getModelViewMatrix());
                 cv->pushModelViewMatrix(view._matrix.get(), osg::Transform::ABSOLUTE_RF);
-                view._tile->_drawable.get()->accept(nv);
+                auto& bound = view._tile->_drawable.get()->getBound();
+                //if (nv.getDistanceToViewPoint(bound.center(), true) - bound.radius() < group.maxRange().get())
+                {
+                    view._tile->_drawable.get()->accept(nv);
+                }
                 cv->popModelViewMatrix();
 
                 // unref the old placeholder.
