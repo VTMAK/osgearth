@@ -157,8 +157,8 @@ namespace osgEarth
 
                 out_elevation = new osg::Image();
                 out_elevation->allocateImage(
-                    ELEVATION_TILE_SIZE,
-                    ELEVATION_TILE_SIZE,
+                    256,
+                    256,
                     1,
                     GL_RED,
                     GL_UNSIGNED_BYTE);
@@ -189,6 +189,7 @@ namespace osgEarth
                     {
                         readSDF(value, lm_iter.s(), lm_iter.t());
                         float dist = clamp(value.r(), 0.0f, 1.0f);
+                        dist = accel(accel(dist));
                         value.set(rugged, dense, lush, (1.0f - dist) * lifemapMix);
                         writeLifeMap(value, lm_iter.s(), lm_iter.t());
                     }
@@ -479,12 +480,6 @@ namespace osgEarth
                     GL_ONE_MINUS_SRC_ALPHA,
                     GL_ZERO,
                     GL_ONE);
-
-                //_lifemapDecal->setBlendFuncs(
-                //    GL_ONE,
-                //    GL_ZERO,
-                //    GL_ZERO,
-                //    GL_ONE);
 
                 // If there is a LifeMapLayer, append to it as a Post, otherwise standalone decal.
                 std::vector<osg::ref_ptr<Layer>> lifemaplayers;

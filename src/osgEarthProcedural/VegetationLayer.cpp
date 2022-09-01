@@ -1045,6 +1045,16 @@ VegetationLayer::getAssetPlacements(
     osg::Matrix lifemap_sb;
     if (getLifeMapLayer())
     {
+#if 0
+        TileKey bestKey = getLifeMapLayer()->getBestAvailableTileKey(key);
+        lifemap = getLifeMapLayer()->createImage(bestKey, progress);
+        key.getExtent().createScaleBias(bestKey.getExtent(), lifemap_sb);
+#endif
+
+        lifemap = getLifeMapLayer()->createImage(key, progress);
+        key.getExtent().createScaleBias(lifemap.getExtent(), lifemap_sb);
+
+#if 0
         for (TileKey q_key = key;
             q_key.valid() && !lifemap.valid();
             q_key.makeParent())
@@ -1055,6 +1065,7 @@ VegetationLayer::getAssetPlacements(
                 key.getExtent().createScaleBias(q_key.getExtent(), lifemap_sb);
             }
         }
+#endif
     }
 
     // Load a biome map raster:
@@ -1062,6 +1073,11 @@ VegetationLayer::getAssetPlacements(
     osg::Matrix biomemap_sb;
     if (getBiomeLayer())
     {
+        TileKey bestKey = getBiomeLayer()->getBestAvailableTileKey(key);
+        biomemap = getBiomeLayer()->createImage(bestKey, progress);
+        key.getExtent().createScaleBias(bestKey.getExtent(), biomemap_sb);
+        biomemap.getReader().setBilinear(false);
+#if 0
         for (TileKey q_key = key;
             q_key.valid() && !biomemap.valid();
             q_key.makeParent())
@@ -1073,6 +1089,7 @@ VegetationLayer::getAssetPlacements(
                 biomemap.getReader().setBilinear(false);
             }
         }
+#endif
     }
 
     // If the biome residency is not up to date, do that now
