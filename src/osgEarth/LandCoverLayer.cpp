@@ -290,6 +290,8 @@ LandCoverLayer::createImageImplementation(const TileKey& key, ProgressCallback* 
         osg::ref_ptr<osg::Image> output = LandCover::createImage(getTileSize());
 
         ImageUtils::PixelReader read(img.getImage());
+        read.setBilinear(false);
+
         ImageUtils::PixelWriter write(output.get());
 
         osg::Vec4 pixel;
@@ -301,7 +303,9 @@ LandCoverLayer::createImageImplementation(const TileKey& key, ProgressCallback* 
         {
             for (int s = 0; s < output->s(); ++s)
             {
-                read(pixel, s, t);
+                float u = (float)s / (float)(output->s() - 1);
+                float v = (float)t / (float)(output->t() - 1);
+                read(pixel, u, v);
 
                 wrotePixel = false;
 
