@@ -37,6 +37,9 @@ using namespace osgEarth::Procedural;
 
 #define NORMAL_MAP_TEX_UNIT 1
 
+#undef OE_DEBUG
+#define OE_DEBUG OE_INFO
+
 //...................................................................
 
 ResidentModelAsset::Ptr
@@ -369,24 +372,6 @@ BiomeManager::materializeNewAssets(
 {
     OE_PROFILING_ZONE;
 
-    // VRV_PATCH
-    // The VRV DtOsgFileCache will fail to cache the textures from our vegetation
-    // models correctly, and they will show up without textures. It prints out
-    // this message:
-    //    "Warning: makVrv::DtOsgFileCache::ts_readImageFile: Attempting to save
-    //    accelerated file for [imagename] which also has myInstanceNodesFlag set
-    //    to false. These two options are incompatible and the accelerated file
-    //    will not be saved."
-    // We work around this by disabling the use of the acceleration cache.
-    osg::ref_ptr<osgDB::Options> local =
-        readOptions ? osg::clone(readOptions, osg::CopyOp::DEEP_COPY_ALL) :
-        new osgDB::Options();
-    std::string os = local->getOptionString();
-    Strings::ciReplaceIn(os, "vrvUseAcceleratedCache", "");
-    local->setOptionString(os);
-    readOptions = local.get();
-    // END VRV_PATCH
-
     // exclusive access to the resident dataset
     ScopedMutexLock lock(_residentData_mutex);
 
@@ -421,21 +406,23 @@ BiomeManager::materializeNewAssets(
     {
         const std::string NML = "_NML";
 
-        auto underscore_pos = filename.find_last_of('_');
-        if (underscore_pos != filename.npos)
+        std::string dot_ext = osgDB::getFileExtensionIncludingDot(filename);
+        if (Strings::ciEquals(dot_ext, ".meif"))
         {
-            return
-                filename.substr(0, underscore_pos)
-                + NML
-                + filename.substr(underscore_pos);
+            auto underscore_pos = filename.find_last_of('_');
+            if (underscore_pos != filename.npos)
+            {
+                return
+                    filename.substr(0, underscore_pos)
+                    + NML
+                    + filename.substr(underscore_pos);
+            }
         }
-        else
-        {
-            return
-                osgDB::getNameLessExtension(filename)
-                + NML
-                + osgDB::getFileExtensionIncludingDot(filename);
-        }
+
+        return
+            osgDB::getNameLessExtension(filename)
+            + NML
+            + dot_ext;
     };
 
     Util::MaterialLoader materialLoader;
@@ -570,18 +557,19 @@ BiomeManager::materializeNewAssets(
                             OE_DEBUG << LC << "Loaded BB: " << uri.base() << std::endl;
                             texcache[uri] = residentAsset;
 
-                            osg::ref_ptr<osg::Image> normalMap;
-                            for (int i = 0; i < 2 && !normalMap.valid(); ++i)
-                            {
-                                // normal map is the same file name but with _NML inserted before the extension
-                                URI normalMapURI(getNormalMapFileName(uri.full()));
+                            // normal map is the same file name but with _NML inserted before the extension
+                            URI normalMapURI(getNormalMapFileName(uri.full()));
 
-                                // silenty fail if no normal map found.
-                                normalMap = normalMapURI.getImage(readOptions);
-                                if (normalMap.valid())
-                                {
-                                    residentAsset->sideBillboardNormalMap() = new osg::Texture2D(normalMap.get());
-                                }
+                            // silenty fail if no normal map found.
+                            osg::ref_ptr<osg::Image> normalMap = normalMapURI.getImage(readOptions);
+                            if (normalMap.valid())
+                            {
+                                OE_DEBUG << LC << "Loaded NML: " << normalMapURI.base() << std::endl;
+                                residentAsset->sideBillboardNormalMap() = new osg::Texture2D(normalMap.get());
+                            }
+                            else
+                            {
+                                OE_WARN << LC << "Failed to load NML: " << normalMapURI.base() << std::endl;
                             }
                         }
                         else
@@ -616,18 +604,19 @@ BiomeManager::materializeNewAssets(
                                 OE_DEBUG << LC << "Loaded BB: " << uri.base() << std::endl;
                                 texcache[uri] = residentAsset;
 
-                                osg::ref_ptr<osg::Image> normalMap;
-                                for (int i = 0; i < 2 && !normalMap.valid(); ++i)
-                                {
-                                    // normal map is the same file name but with _NML inserted before the extension
-                                    URI normalMapURI(getNormalMapFileName(uri.full()));
+                                // normal map is the same file name but with _NML inserted before the extension
+                                URI normalMapURI(getNormalMapFileName(uri.full()));
 
-                                    // silenty fail if no normal map found.
-                                    normalMap = normalMapURI.getImage(readOptions);
-                                    if (normalMap.valid())
-                                    {
-                                        residentAsset->topBillboardNormalMap() = new osg::Texture2D(normalMap.get());
-                                    }
+                                // silenty fail if no normal map found.
+                                osg::ref_ptr<osg::Image> normalMap = normalMapURI.getImage(readOptions);
+                                if (normalMap.valid())
+                                {
+                                    OE_DEBUG << LC << "Loaded NML: " << normalMapURI.base() << std::endl;
+                                    residentAsset->topBillboardNormalMap() = new osg::Texture2D(normalMap.get());
+                                }
+                                else
+                                {
+                                    OE_WARN << LC << "Failed to load NML: " << normalMapURI.base() << std::endl;
                                 }
                             }
                             else
