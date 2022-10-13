@@ -498,12 +498,25 @@ GL3RealizeOperation::operator()(osg::Object* object)
 #undef LC
 #define LC "[GLObjectPool] "
 
+// static decl
+Mutexed<std::vector<GLObjectPool*>> GLObjectPool::_pools;
+
 GLObjectPool*
 GLObjectPool::get(osg::State& state)
 {
     GLObjectPool* pool = osg::get<GLObjectPool>(state.getContextID());
     pool->track(state.getGraphicsContext());
     return pool;
+}
+
+std::unordered_map<int, GLObjectPool*>
+GLObjectPool::getAll()
+{
+    std::unordered_map<int, GLObjectPool*> result;
+    ScopedMutexLock lock(_pools);
+    for (auto& pool : _pools)
+        result[pool->getContextID()] = pool;
+    return result;
 }
 
 GLObjectPool::GLObjectPool(unsigned cxid) :
@@ -513,8 +526,10 @@ GLObjectPool::GLObjectPool(unsigned cxid) :
     _totalBytes(0),
     _avarice(10.f)
 {
-    //nop
     _gcs.resize(256);
+
+    ScopedMutexLock lock(_pools);
+    _pools.emplace_back(this);
 }
 
 namespace
