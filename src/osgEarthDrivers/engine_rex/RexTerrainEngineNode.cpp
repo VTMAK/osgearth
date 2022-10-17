@@ -996,6 +996,11 @@ RexTerrainEngineNode::update_traverse(osg::NodeVisitor& nv)
         }
     }
     _persistent.unlock();
+
+    // traverse the texture arena since it's not in the scene graph.
+    auto* arena = getEngineContext()->textures();
+    if (arena)
+        arena->update(nv);
 }
 
 void
@@ -1529,9 +1534,12 @@ RexTerrainEngineNode::updateState()
                 OSGEARTH_OBJECTID_TERRAIN));
         }
 
-        // STATE for image layers only:
+        // STATE for image layers
         VirtualProgram* vp = VirtualProgram::getOrCreate(_imageLayerSS.get());
         shaders.load(vp, shaders.imagelayer());
+
+        // The above shader will integrate opacity itself.
+        _imageLayerSS->setDefine("OE_SELF_MANAGE_LAYER_OPACITY");
 
         _stateUpdateRequired = false;
     }

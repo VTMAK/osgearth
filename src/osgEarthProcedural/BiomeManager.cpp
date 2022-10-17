@@ -90,6 +90,7 @@ BiomeManager::BiomeManager() :
 {
     // this arena will hold all the textures for loaded assets.
     _textures = new TextureArena();
+    _textures->setAutoRelease(true);
     _textures->setName("Biomes");
     _textures->setBindingPoint(1);
 }
@@ -131,11 +132,9 @@ BiomeManager::unref(const Biome* biome)
             // would also result in re-loading assets that are already
             // resident... think on this -gw
             //++_revision;
-            OE_INFO << LC << "Goodbye, " << biome->name().get() << "(" << biome->index() << ")" << std::endl;
+            OE_DEBUG << LC << "Goodbye, " << biome->name().get() << "(" << biome->index() << ")" << std::endl;
         }
     }
-
-    //OE_INFO << LC << "(" << iter->second << ")" << biome->name().get() << std::endl;
 }
 
 int
@@ -177,7 +176,7 @@ BiomeManager::reset()
         for (auto& iter : _refs)
         {
             const Biome* biome = iter.first;
-            OE_INFO << LC << "Goodbye, " << biome->name().get() << std::endl;
+            OE_DEBUG << LC << "Goodbye, " << biome->name().get() << std::endl;
             iter.second = 0;
         }
 
@@ -186,6 +185,15 @@ BiomeManager::reset()
 
     // Resolve the references and unload any resident assets from memory.
     recalculateResidentBiomes();
+}
+
+void
+BiomeManager::flush()
+{
+    recalculateResidentBiomes();
+
+    if (_textures.valid())
+        _textures->flush();
 }
 
 void
@@ -369,24 +377,6 @@ BiomeManager::materializeNewAssets(
 {
     OE_PROFILING_ZONE;
 
-    // VRV_PATCH
-    // The VRV DtOsgFileCache will fail to cache the textures from our vegetation
-    // models correctly, and they will show up without textures. It prints out
-    // this message:
-    //    "Warning: makVrv::DtOsgFileCache::ts_readImageFile: Attempting to save
-    //    accelerated file for [imagename] which also has myInstanceNodesFlag set
-    //    to false. These two options are incompatible and the accelerated file
-    //    will not be saved."
-    // We work around this by disabling the use of the acceleration cache.
-    osg::ref_ptr<osgDB::Options> local =
-        readOptions ? osg::clone(readOptions, osg::CopyOp::DEEP_COPY_ALL) :
-        new osgDB::Options();
-    std::string os = local->getOptionString();
-    Strings::ciReplaceIn(os, "vrvUseAcceleratedCache", "");
-    local->setOptionString(os);
-    readOptions = local.get();
-    // END VRV_PATCH
-
     // exclusive access to the resident dataset
     ScopedMutexLock lock(_residentData_mutex);
 
@@ -416,14 +406,33 @@ BiomeManager::materializeNewAssets(
     // This loader will find material textures and install them on
     // secondary texture image units.. in this case, normal maps.
     // We can expand this later to include other types of material maps.
+
+    auto getNormalMapFileName = [](const std::string& filename)
+    {
+        const std::string NML = "_NML";
+
+        std::string dot_ext = osgDB::getFileExtensionIncludingDot(filename);
+        if (Strings::ciEquals(dot_ext, ".meif"))
+        {
+            auto underscore_pos = filename.find_last_of('_');
+            if (underscore_pos != filename.npos)
+            {
+                return
+                    filename.substr(0, underscore_pos)
+                    + NML
+                    + filename.substr(underscore_pos);
+            }
+        }
+
+        return
+            osgDB::getNameLessExtension(filename)
+            + NML
+            + dot_ext;
+    };
+
     Util::MaterialLoader materialLoader;
 
-    materialLoader.setMangler(NORMAL_MAP_TEX_UNIT,
-        [](const std::string& filename)
-        {
-            return osgDB::getNameLessExtension(filename) + "_NML.png";
-        }
-    );
+    materialLoader.setMangler(NORMAL_MAP_TEX_UNIT, getNormalMapFileName);
 
     materialLoader.setTextureFactory(NORMAL_MAP_TEX_UNIT,
         [](osg::Image* image)
@@ -468,7 +477,7 @@ BiomeManager::materializeNewAssets(
             // First reference to this instance? Populate it:
             if (residentAsset == nullptr)
             {
-                OE_INFO << LC << "  Loading asset " << assetDef->name() << std::endl;
+                OE_DEBUG << LC << "  Loading asset " << assetDef->name() << std::endl;
 
                 residentAsset = ResidentModelAsset::create();
 
@@ -553,21 +562,19 @@ BiomeManager::materializeNewAssets(
                             OE_DEBUG << LC << "Loaded BB: " << uri.base() << std::endl;
                             texcache[uri] = residentAsset;
 
-                            osg::ref_ptr<osg::Image> normalMap;
-                            for (int i = 0; i < 2 && !normalMap.valid(); ++i)
-                            {
-                                // normal map is the same file name but with _NML inserted before the extension
-                                URI normalMapURI(
-                                    osgDB::getNameLessExtension(uri.full()) +
-                                    (i == 0 ? "_NML." : ".normal.") +
-                                    osgDB::getFileExtension(uri.full()));
+                            // normal map is the same file name but with _NML inserted before the extension
+                            URI normalMapURI(getNormalMapFileName(uri.full()));
 
-                                // silenty fail if no normal map found.
-                                normalMap = normalMapURI.getImage(readOptions);
-                                if (normalMap.valid())
-                                {
-                                    residentAsset->sideBillboardNormalMap() = new osg::Texture2D(normalMap.get());
-                                }
+                            // silenty fail if no normal map found.
+                            osg::ref_ptr<osg::Image> normalMap = normalMapURI.getImage(readOptions);
+                            if (normalMap.valid())
+                            {
+                                OE_DEBUG << LC << "Loaded NML: " << normalMapURI.base() << std::endl;
+                                residentAsset->sideBillboardNormalMap() = new osg::Texture2D(normalMap.get());
+                            }
+                            else
+                            {
+                                OE_WARN << LC << "Failed to load NML: " << normalMapURI.base() << std::endl;
                             }
                         }
                         else
@@ -602,21 +609,19 @@ BiomeManager::materializeNewAssets(
                                 OE_DEBUG << LC << "Loaded BB: " << uri.base() << std::endl;
                                 texcache[uri] = residentAsset;
 
-                                osg::ref_ptr<osg::Image> normalMap;
-                                for (int i = 0; i < 2 && !normalMap.valid(); ++i)
-                                {
-                                    // normal map is the same file name but with _NML inserted before the extension
-                                    URI normalMapURI(
-                                        osgDB::getNameLessExtension(uri.full()) +
-                                        (i == 0 ? "_NML." : ".normal.") +
-                                        osgDB::getFileExtension(uri.full()));
+                                // normal map is the same file name but with _NML inserted before the extension
+                                URI normalMapURI(getNormalMapFileName(uri.full()));
 
-                                    // silenty fail if no normal map found.
-                                    normalMap = normalMapURI.getImage(readOptions);
-                                    if (normalMap.valid())
-                                    {
-                                        residentAsset->topBillboardNormalMap() = new osg::Texture2D(normalMap.get());
-                                    }
+                                // silenty fail if no normal map found.
+                                osg::ref_ptr<osg::Image> normalMap = normalMapURI.getImage(readOptions);
+                                if (normalMap.valid())
+                                {
+                                    OE_DEBUG << LC << "Loaded NML: " << normalMapURI.base() << std::endl;
+                                    residentAsset->topBillboardNormalMap() = new osg::Texture2D(normalMap.get());
+                                }
+                                else
+                                {
+                                    OE_WARN << LC << "Failed to load NML: " << normalMapURI.base() << std::endl;
                                 }
                             }
                             else

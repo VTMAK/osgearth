@@ -92,6 +92,7 @@ VegetationLayer::Options::getConfig() const
     conf.set("far_lod_scale", farLODScale());
     conf.set("near_lod_scale", nearLODScale());
     conf.set("lod_transition_padding", lodTransitionPadding());
+    conf.set("use_impostor_normal_maps", useImpostorNormalMaps());
 
     //TODO: groups
 
@@ -138,6 +139,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     farLODScale().setDefault(1.0f);
     nearLODScale().setDefault(1.0f);
     lodTransitionPadding().setDefault(0.5f);
+    useImpostorNormalMaps().setDefault(true);
 
     biomeLayer().get(conf, "biomes_layer");
 
@@ -147,6 +149,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     conf.get("far_lod_scale", farLODScale());
     conf.get("near_lod_scale", nearLODScale());
     conf.get("lod_transition_padding", lodTransitionPadding());
+    conf.get("use_impostor_normal_maps", useImpostorNormalMaps());
 
     // some nice default group settings
     groups()[GROUP_TREES].lod().setDefault(14);
@@ -316,9 +319,14 @@ VegetationLayer::update(osg::NodeVisitor& nv)
 
         if (dt > 5.0 && df > 60)
         {
-            releaseGLObjects(nullptr);
-
             reset();
+
+            if (getBiomeLayer())
+            {
+                getBiomeLayer()->getBiomeManager().flush();
+            }
+
+            releaseGLObjects(nullptr);
 
             OE_INFO << LC << "timed out for inactivity." << std::endl;
         }
@@ -352,6 +360,25 @@ VegetationLayer::dirty()
         {
             _cameraState.clear();
         });
+}
+
+void
+VegetationLayer::setUseImpostorNormalMaps(bool value)
+{
+    if (value != getUseImpostorNormalMaps())
+        options().useImpostorNormalMaps() = value;
+
+    auto ss = getOrCreateStateSet();
+    if (value == false)
+        ss->setDefine("OE_CHONK_MAX_LOD_FOR_NORMAL_MAPS", "0");
+    else
+        ss->setDefine("OE_CHONK_MAX_LOD_FOR_NORMAL_MAPS", "99");
+}
+
+bool
+VegetationLayer::getUseImpostorNormalMaps() const
+{
+    return options().useImpostorNormalMaps().get();
 }
 
 void
@@ -736,6 +763,7 @@ VegetationLayer::buildStateSets()
     setImpostorLowAngle(options().impostorLowAngle().get());
     setImpostorHighAngle(options().impostorHighAngle().get());
     setLODTransitionPadding(options().lodTransitionPadding().get());
+    setUseImpostorNormalMaps(options().useImpostorNormalMaps().get());
 }
 
 void
@@ -761,9 +789,10 @@ VegetationLayer::configureImpostor(
     const std::string& groupName)
 {
     Options::Group& group = options().groups()[groupName];
+    bool isUndergrowth = (groupName == GROUP_UNDERGROWTH);
 
     // functor for generating cross hatch geometry for trees:
-    group._createImpostor = [&group](
+    group._createImpostor = [&group, isUndergrowth](
         const osg::BoundingBox& b,
         std::vector<osg::Texture*>& textures)
     {
@@ -811,17 +840,17 @@ VegetationLayer::configureImpostor(
                     {-1,0,1}, {1,0,1}, {1,0,2}, {-1,0,2},
                     {0,-1,1}, {0,1,1}, {0,1,2}, {0,-1,2}
                 };
-                for (int i = 0; i < 8; ++i) normals[i].normalize();
+                for (auto& n : normals) n.normalize();
+
+                osg::Vec4f bb_normals[8];
+                for (int i = 0; i < 8; ++i) {
+                    bb_normals[i].set(normals[i].x(), normals[i].y(), normals[i].z(), 1.0f);
+                }
 
                 const osg::Vec2f uvs[8] = {
                     {0,0},{1,0},{1,1},{0,1},
                     {0,0},{1,0},{1,1},{0,1}
                 };
-
-                //const osg::Vec3f flexors[8] = {
-                //    {0,0,0}, {0,0,0}, {1,0,1}, {-1,0,1},
-                //    {0,0,0}, {0,0,0}, {0,1,1}, {0,-1,1}
-                //};
 
                 const osg::Vec3f flexors[8] = {
                     {0,0,0}, {0,0,0}, {0,0,1}, {0,0,1},
@@ -830,19 +859,22 @@ VegetationLayer::configureImpostor(
 
                 geom->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 12, &indices[0]));
                 geom->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, verts));
-                geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, normals));
                 geom->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
                 geom->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 8, uvs));
                 geom->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, flexors));
+
+                if (isUndergrowth)
+                    geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 8, normals));
+                else
+                    geom->setNormalArray(new osg::Vec4Array(osg::Array::BIND_PER_VERTEX, 8, bb_normals));
 
                 if (textures.size() > 0)
                     ss->setTextureAttribute(0, textures[0], 1); // side albedo
 
                 node->addChild(geom);
 
-                // No normal texture support - it looks much better without it.
-                //if (textures.size() > 1)
-                //    ss->setTextureAttribute(1, textures[1], 1); // side normal
+                if (textures.size() > 1)
+                    ss->setTextureAttribute(1, textures[1], 1); // side normal
             }
             else if (i == 1 && textures[2] != nullptr)
             {
@@ -853,6 +885,7 @@ VegetationLayer::configureImpostor(
                 osg::StateSet* ss = geom->getOrCreateStateSet();
 
                 float zmid = 0.33f*(b.zMax() - b.zMin());
+                //float zmid = 0.5f*(b.zMax() - b.zMin());
 
                 static const GLushort indices[6] = {
                     0,1,2,  2,3,0
@@ -866,7 +899,12 @@ VegetationLayer::configureImpostor(
                 osg::Vec3f normals[4] = {
                     {-1,-1,2}, {1,-1,2}, {1,1,2}, {-1,1,2}
                 };
-                for (int i = 0; i < 4; ++i) normals[i].normalize();
+                for (auto& n : normals) n.normalize();
+
+                osg::Vec4f bb_normals[4];
+                for (int i = 0; i < 4; ++i) {
+                    bb_normals[i].set(normals[i].x(), normals[i].y(), normals[i].z(), 1.0f);
+                }
 
                 const osg::Vec2f uvs[4] = {
                     {0,0}, {1,0}, {1,1}, {0,1}
@@ -874,17 +912,20 @@ VegetationLayer::configureImpostor(
 
                 geom->addPrimitiveSet(new osg::DrawElementsUShort(GL_TRIANGLES, 6, &indices[0]));
                 geom->setVertexArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, verts));
-                geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, normals));
                 geom->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, colors));
                 geom->setTexCoordArray(0, new osg::Vec2Array(osg::Array::BIND_PER_VERTEX, 4, uvs));
                 geom->setTexCoordArray(3, new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4)); // flexors
 
+                if (isUndergrowth)
+                    geom->setNormalArray(new osg::Vec3Array(osg::Array::BIND_PER_VERTEX, 4, normals));
+                else
+                    geom->setNormalArray(new osg::Vec4Array(osg::Array::BIND_PER_VERTEX, 4, bb_normals));
+
                 if (textures.size() > 2)
                     ss->setTextureAttribute(0, textures[2], 1); // top albedo
 
-                // No normal texture support - it looks much better without it.
-                //if (textures.size() > 3)
-                //    ss->setTextureAttribute(1, textures[3], 1); // top normal
+                if (textures.size() > 3)
+                    ss->setTextureAttribute(1, textures[3], 1); // top normal
 
                 node->addChild(geom);
             }
@@ -1199,6 +1240,8 @@ VegetationLayer::getAssetPlacements(
 
     auto catalog = getBiomeLayer()->getBiomeCatalog();
 
+    bool scaleWithDensity = (group == GROUP_UNDERGROWTH);
+
     // determine a local tile bbox size for collisions and uv generation
     // note. This doesn't take elevation data into account. Does that matter?
     auto& ex = key.getExtent();
@@ -1318,12 +1361,8 @@ VegetationLayer::getAssetPlacements(
 
         osg::Vec3d scale(1, 1, 1);
 
-        // hack. assume an explicit width/height means this is a grass billboard..
-        // TODO: find another way.
-        bool isGrass = asset->assetDef()->width().isSet();
-        if (isGrass)
+        if (asset->assetDef()->width().isSet())
         {
-            // Grass imposter geometrh is 1x1, so scale it:
             scale.set(
                 asset->assetDef()->width().get(),
                 asset->assetDef()->width().get(),
@@ -1340,24 +1379,13 @@ VegetationLayer::getAssetPlacements(
         // apply instance-specific density adjustment:
         density *= instance.coverage();
 
-#if 0
-        // use randomness to apply a density threshold:
-        if (noise[N_SMOOTH] > density)
-            continue;
-        else
-            noise[N_SMOOTH] /= density;
-
-        // For grasses, shrink the instance as the density decreases.
-        // TODO: should we?
-        if (isGrass)
+        const float edge_threshold = 0.10f;
+        if (scaleWithDensity && density < edge_threshold)
         {
-            float edge_scale = 1.0f;
-            const float edge_threshold = 0.5f;
-            if (noise[N_SMOOTH] > edge_threshold)
-                edge_scale = 1.0f - ((noise[N_SMOOTH] - edge_threshold) / (1.0f - edge_threshold));
-            scale *= edge_scale;
+            float edginess = (density / edge_threshold);
+            scale *= edginess;
         }
-#endif
+
 
         // tile-local coordinates of the position:
         local.set(
@@ -1729,5 +1757,11 @@ VegetationLayer::releaseGLObjects(osg::State* state) const
         auto drawable = tile.second->_drawable.get();
         if (drawable.valid())
             drawable->releaseGLObjects(state);
+    }
+
+    if (getBiomeLayer())
+    {
+        auto textures = getBiomeLayer()->getBiomeManager().getTextures();
+        textures->releaseGLObjects(state);
     }
 }

@@ -163,7 +163,7 @@ namespace
                         arena_tex = Texture::create(tex);
                     }
 
-                    arena_tex->label() = "Chonk Texture";
+                    arena_tex->category() = "Chonk Texture";
 
                     int index = _textures->add(arena_tex);
                     if (index >= 0)
@@ -231,14 +231,16 @@ namespace
 
             auto verts = dynamic_cast<osg::Vec3Array*>(node.getVertexArray());
             auto colors = dynamic_cast<osg::Vec4Array*>(node.getColorArray());
-            auto normals = dynamic_cast<osg::Vec3Array*>(node.getNormalArray());
-            auto flexers = dynamic_cast<osg::Vec3Array*>(node.getTexCoordArray(3));
+            auto normals3 = dynamic_cast<osg::Vec3Array*>(node.getNormalArray());
+            auto normals4 = dynamic_cast<osg::Vec4Array*>(node.getNormalArray());
+            auto flexors = dynamic_cast<osg::Vec3Array*>(node.getTexCoordArray(3));
 
             // support either 2- or 3-component tex coords, but only read the xy components!
             auto uv2s = dynamic_cast<osg::Vec2Array*>(node.getTexCoordArray(0));
             auto uv3s = dynamic_cast<osg::Vec3Array*>(node.getTexCoordArray(0));
 
             auto& material = _materialStack.top();
+            osg::Vec3f n;
 
             for (unsigned i = 0; i < numVerts; ++i)
             {
@@ -251,53 +253,51 @@ namespace
                 
                 if (colors)
                 {
-                    if (colors->getBinding() == colors->BIND_PER_VERTEX)
-                        v.color = Color((*colors)[i]).asNormalizedRGBA();
-                    else
-                        v.color = Color((*colors)[0]).asNormalizedRGBA();
+                    int k = colors->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.color = Color((*colors)[k]).asNormalizedRGBA();
                 }
                 else
                 {
                     v.color.set(255, 255, 255, 255);
                 }
 
-                if (normals)
+                if (normals3)
                 {
-                    if (normals->getBinding() == normals->BIND_PER_VERTEX)
-                        v.normal = (*normals)[i];
-                    else
-                        v.normal = (*normals)[0];
+                    int k = normals3->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    n = osg::Matrix::transform3x3((*normals3)[k], _transformStack.top());
+                    v.normal4.set(n.x(), n.y(), n.z(), 0.0f);
+                }
+                else if (normals4)
+                {
+                    int k = normals4->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    n.set((*normals4)[k].x(), (*normals4)[k].y(), (*normals4)[k].z());
+                    n = osg::Matrix::transform3x3(n, _transformStack.top());
+                    v.normal4.set(n.x(), n.y(), n.z(), (*normals4)[k].w());
                 }
                 else
                 {
-                    v.normal.set(0, 0, 1);
+                    v.normal4.set(0, 0, 1, 0);
                 }
 
                 if (uv2s)
                 {
-                    if (uv2s->getBinding() == normals->BIND_PER_VERTEX)
-                        v.uv = (*uv2s)[i];
-                    else
-                        v.uv = (*uv2s)[0];
+                    int k = uv2s->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.uv = (*uv2s)[k];
                 }
                 else if (uv3s)
                 {
-                    if (uv3s->getBinding() == normals->BIND_PER_VERTEX)
-                        v.uv.set((*uv3s)[i].x(), (*uv3s)[i].y());
-                    else
-                        v.uv.set((*uv3s)[0].x(), (*uv3s)[0].y());
+                    int k = uv3s->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.uv.set((*uv3s)[k].x(), (*uv3s)[k].y());
                 }
                 else
                 {
                     v.uv.set(0.0f, 0.0f);
                 }
 
-                if (flexers)
+                if (flexors)
                 {
-                    if (flexers->getBinding() == flexers->BIND_PER_VERTEX)
-                        v.flex = (*flexers)[i];
-                    else
-                        v.flex = (*flexers)[0];
+                    int k = flexors->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.flex = osg::Matrix::transform3x3((*flexors)[k], _transformStack.top());
                 }
                 else
                 {
@@ -360,7 +360,7 @@ Chonk::add(
     ChonkFactory& factory)
 {
     OE_SOFT_ASSERT_AND_RETURN(node != nullptr, false);
-    OE_HARD_ASSERT(_lods.size() < 4);
+    OE_HARD_ASSERT(_lods.size() < 3);
 
     factory.load(node, *this);
     _lods.push_back({ 0u, _ebo_store.size(), 0.0f, FLT_MAX });
@@ -378,7 +378,7 @@ Chonk::add(
     ChonkFactory& factory)
 {
     OE_SOFT_ASSERT_AND_RETURN(node != nullptr, false);
-    OE_HARD_ASSERT(_lods.size() < 4);
+    OE_HARD_ASSERT(_lods.size() < 3);
 
     unsigned offset = _ebo_store.size();
     factory.load(node, *this);
@@ -405,7 +405,7 @@ Chonk::getOrCreateCommands(osg::State& state) const
     {
         gs.vbo = GLBuffer::create(GL_ARRAY_BUFFER_ARB, state);
         gs.vbo->bind();
-        gs.vbo->debugLabel("Chonk");
+        gs.vbo->debugLabel("Chonk", "VBO");
         gs.vbo->bufferStorage(
             _vbo_store.size() * sizeof(VertexGPU),
             _vbo_store.data(),
@@ -413,7 +413,7 @@ Chonk::getOrCreateCommands(osg::State& state) const
 
         gs.ebo = GLBuffer::create(GL_ELEMENT_ARRAY_BUFFER_ARB, state);
         gs.ebo->bind();
-        gs.ebo->debugLabel("Chonk");
+        gs.ebo->debugLabel("Chonk", "EBO");
         gs.ebo->bufferStorage(
             _ebo_store.size() * sizeof(element_t),
             _ebo_store.data(),
@@ -642,7 +642,7 @@ ChonkDrawable::add(
         instance.lod = 0;
         instance.visibility[0] = 0;
         instance.visibility[1] = 0;
-        instance.visibility[2] = 0;
+        instance.radius = 0.0f;
         instance.alphaCutoff = 0.0f;
         instance.first_lod_cmd_index = 0;
         _batches[chonk].push_back(std::move(instance));
@@ -810,13 +810,13 @@ ChonkDrawable::GLObjects::initialize(
     // DrawElementsCommand buffer:
     _commandBuf = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
     _commandBuf->bind();
-    _commandBuf->debugLabel("Chonk", host->getName());
+    _commandBuf->debugLabel("Chonk", "Cmd buf " + host->getName());
     _commandBuf->unbind();
 
     // Per-culling instances:
     _instanceInputBuf = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
     _instanceInputBuf->bind();
-    _instanceInputBuf->debugLabel("Chonk", host->getName());
+    _instanceInputBuf->debugLabel("Chonk", "In buf " +host->getName());
     _instanceInputBuf->unbind();
 
     if (_cull)
@@ -824,13 +824,13 @@ ChonkDrawable::GLObjects::initialize(
         // Culled instances (GPU only)
         _instanceOutputBuf = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
         _instanceOutputBuf->bind();
-        _instanceOutputBuf->debugLabel("Chonk", host->getName());
+        _instanceOutputBuf->debugLabel("Chonk", "Out buf " + host->getName());
         _instanceOutputBuf->unbind();
 
         // Chonk data
         _chonkBuf = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
         _chonkBuf->bind();
-        _chonkBuf->debugLabel("Chonk", host->getName());
+        _chonkBuf->debugLabel("Chonk", "Chonk buf " + host->getName());
         _chonkBuf->unbind();
     }
 
@@ -851,7 +851,7 @@ ChonkDrawable::GLObjects::initialize(
     _vao->bind();
 
     // must call AFTER bind
-    _vao->debugLabel("Chonk", host->getName());
+    _vao->debugLabel("Chonk", "VAO " + host->getName());
 
     // required in order to use BindlessNV extension
     glEnableClientState_(GL_VERTEX_ATTRIB_ARRAY_UNIFIED_NV);
@@ -859,7 +859,7 @@ ChonkDrawable::GLObjects::initialize(
 
     const VADef formats[7] = {
         {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, position)},
-        {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, normal)},
+        {4, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, normal4)},
         {4, GL_UNSIGNED_BYTE, GL_TRUE,  offsetof(Chonk::VertexGPU, color)},
         {2, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, uv)},
         {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, flex)},
