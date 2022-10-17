@@ -360,6 +360,7 @@ SET(LIB_PUBLIC_HEADERS
     FeatureSourceIndexNode
     Filter
     FilterContext
+    FilteredFeatureSource
     GeometryCompiler
     GeometryUtils
     ImageToFeatureLayer
@@ -762,6 +763,7 @@ set(TARGET_SRC
     FeatureSourceIndexNode.cpp
     Filter.cpp
     FilterContext.cpp
+    FilteredFeatureSource.cpp
     GeometryCompiler.cpp
     GeometryUtils.cpp
     ImageToFeatureLayer.cpp
