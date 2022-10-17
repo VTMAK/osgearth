@@ -86,7 +86,7 @@ void oe_chonk_default_vertex_model(inout vec4 vertex)
     }
 
     oe_metal_smooth_ao_tex = 0;
-    if (metal_smooth_ao >= 0 && chonk_lod < OE_CHONK_MAX_LOD_FOR_PBR_MAPS)
+    if (metal_smooth_ao >= 0 && chonk_lod <= OE_CHONK_MAX_LOD_FOR_PBR_MAPS)
     {
         oe_metal_smooth_ao_tex = textures[metal_smooth_ao];
     }
