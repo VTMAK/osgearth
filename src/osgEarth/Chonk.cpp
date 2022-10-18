@@ -84,32 +84,34 @@ namespace
         std::stack<osg::Matrix> _transformStack;
         std::unordered_map<osg::Texture*, Texture::Ptr> _textureLUT;
 
-        const unsigned ALBEDO = 0;
-        const unsigned NORMAL = 1;
-        const unsigned METAL_SMOOTH_AO = 2;
+        const unsigned ALBEDO_UNIT = 0;
+        const unsigned NORMAL_UNIT = 1;
+        const unsigned PBR_UNIT = 2;
+        const unsigned NORMAL_TECHNIQUE_SLOT = 6;
+        const unsigned FLEXOR_SLOT = 3;
 
         ChonkMaterial::Ptr reuseOrCreateMaterial(
             Texture::Ptr albedo_tex,
             Texture::Ptr normal_tex,
-            Texture::Ptr metal_smooth_ao_tex)
+            Texture::Ptr pbr_tex)
         {
-            int albedo = _textures->find(albedo_tex);
-            int normal = _textures->find(normal_tex);
-            int metal_smooth_ao = _textures->find(metal_smooth_ao_tex);
+            int albedo_index = _textures->find(albedo_tex);
+            int normal_index = _textures->find(normal_tex);
+            int pbr_index = _textures->find(pbr_tex);
 
             for (auto& m : _materialCache)
             {
-                if (m->albedo == albedo &&
-                    m->normal == normal &&
-                    m->metal_smooth_ao == metal_smooth_ao)
+                if (m->albedo_index == albedo_index &&
+                    m->normal_index == normal_index &&
+                    m->pbr_index == pbr_index)
                 {
                     return m;
                 }
             }
             auto material = ChonkMaterial::create();
-            material->albedo = albedo;
-            material->normal = normal;
-            material->metal_smooth_ao = metal_smooth_ao;
+            material->albedo_index = albedo_index;
+            material->normal_index = normal_index;
+            material->pbr_index = pbr_index;
 
             // If our arena is in auto-release mode, we need to 
             // store a pointer to each texture we use so they do not
@@ -118,7 +120,7 @@ namespace
             {
                 material->albedo_tex = albedo_tex;
                 material->normal_tex = normal_tex;
-                material->metal_smooth_ao_tex = metal_smooth_ao_tex;
+                material->pbr_tex = pbr_tex;
             }
 
             _materialCache.push_back(material);
@@ -192,14 +194,14 @@ namespace
             bool pushed = false;
             if (stateset)
             {
-                Texture::Ptr albedo_tex = addTexture(ALBEDO, stateset);
-                Texture::Ptr normal_tex = addTexture(NORMAL, stateset);
-                Texture::Ptr msa_tex = addTexture(METAL_SMOOTH_AO, stateset);
+                Texture::Ptr albedo_tex = addTexture(ALBEDO_UNIT, stateset);
+                Texture::Ptr normal_tex = addTexture(NORMAL_UNIT, stateset);
+                Texture::Ptr pbr_tex = addTexture(PBR_UNIT, stateset);
 
                 if (albedo_tex || normal_tex)
                 {
                     ChonkMaterial::Ptr material = reuseOrCreateMaterial(
-                        albedo_tex, normal_tex, msa_tex);
+                        albedo_tex, normal_tex, pbr_tex);
                     _materialStack.push(material);
                     pushed = true;
                 }
@@ -238,9 +240,10 @@ namespace
 
             auto verts = dynamic_cast<osg::Vec3Array*>(node.getVertexArray());
             auto colors = dynamic_cast<osg::Vec4Array*>(node.getColorArray());
-            auto normals3 = dynamic_cast<osg::Vec3Array*>(node.getNormalArray());
+            auto normals = dynamic_cast<osg::Vec3Array*>(node.getNormalArray());
+            auto normal_techniques = dynamic_cast<osg::UByteArray*>(node.getVertexAttribArray(NORMAL_TECHNIQUE_SLOT));
             auto normals4 = dynamic_cast<osg::Vec4Array*>(node.getNormalArray());
-            auto flexors = dynamic_cast<osg::Vec3Array*>(node.getTexCoordArray(3));
+            auto flexors = dynamic_cast<osg::Vec3Array*>(node.getTexCoordArray(FLEXOR_SLOT));
 
             // support either 2- or 3-component tex coords, but only read the xy components!
             auto uv2s = dynamic_cast<osg::Vec2Array*>(node.getTexCoordArray(0));
@@ -268,22 +271,24 @@ namespace
                     v.color.set(255, 255, 255, 255);
                 }
 
-                if (normals3)
+                if (normals)
                 {
-                    int k = normals3->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
-                    n = osg::Matrix::transform3x3((*normals3)[k], _transformStack.top());
-                    v.normal4.set(n.x(), n.y(), n.z(), 0.0f);
-                }
-                else if (normals4)
-                {
-                    int k = normals4->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
-                    n.set((*normals4)[k].x(), (*normals4)[k].y(), (*normals4)[k].z());
-                    n = osg::Matrix::transform3x3(n, _transformStack.top());
-                    v.normal4.set(n.x(), n.y(), n.z(), (*normals4)[k].w());
+                    int k = normals->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.normal = osg::Matrix::transform3x3((*normals)[k], _transformStack.top());
                 }
                 else
                 {
-                    v.normal4.set(0, 0, 1, 0);
+                    v.normal.set(0, 0, 1);
+                }
+
+                if (normal_techniques)
+                {
+                    int k = normal_techniques->getBinding() == osg::Array::BIND_PER_VERTEX ? i : 0;
+                    v.normal_technique = (*normal_techniques)[k];
+                }
+                else
+                {
+                    v.normal_technique = 0;
                 }
 
                 if (uv2s)
@@ -311,9 +316,9 @@ namespace
                     v.flex.set(0, 0, 1);
                 }
 
-                v.albedo_index = material ? material->albedo : -1;
-                v.normalmap_index = material ? material->normal : -1;
-                v.metal_smooth_ao_index = material ? material->metal_smooth_ao : -1;
+                v.albedo_index = material ? material->albedo_index : -1;
+                v.normalmap_index = material ? material->normal_index : -1;
+                v.pbr_index = material ? material->pbr_index : -1;
 
                 _result._vbo_store.emplace_back(std::move(v));
 
@@ -344,11 +349,17 @@ namespace std {
     template<> struct hash<ChonkMaterial> {
         inline size_t operator()(const ChonkMaterial& value) const {
             return hash_value_unsigned(
-                value.albedo,
-                value.normal);
+                value.albedo_index,
+                value.normal_index,
+                value.pbr_index);
         }
     };
 }
+
+GLubyte Chonk::NORMAL_TECHNIQUE_DEFAULT = 0;
+GLubyte Chonk::NORMAL_TECHNIQUE_ZAXIS = 1;
+GLubyte Chonk::NORMAL_TECHNIQUE_HEMISPHERE = 2;
+
 
 
 Chonk::Ptr
@@ -866,25 +877,35 @@ ChonkDrawable::GLObjects::initialize(
     glEnableClientState_(GL_VERTEX_ATTRIB_ARRAY_UNIFIED_NV);
     glEnableClientState_(GL_ELEMENT_ARRAY_UNIFIED_NV);
 
-    const VADef formats[8] = {
+    const VADef formats[9] = {
         {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, position)},
-        {4, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, normal4)},
+        {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, normal)},
+        {1, GL_UNSIGNED_BYTE, GL_FALSE, offsetof(Chonk::VertexGPU, normal_technique)},
         {4, GL_UNSIGNED_BYTE, GL_TRUE,  offsetof(Chonk::VertexGPU, color)},
         {2, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, uv)},
         {3, GL_FLOAT,         GL_FALSE, offsetof(Chonk::VertexGPU, flex)},
         {1, GL_INT,           GL_FALSE, offsetof(Chonk::VertexGPU, albedo_index)},
         {1, GL_INT,           GL_FALSE, offsetof(Chonk::VertexGPU, normalmap_index)},
-        {1, GL_INT,           GL_FALSE, offsetof(Chonk::VertexGPU, metal_smooth_ao_index)}
+        {1, GL_INT,           GL_FALSE, offsetof(Chonk::VertexGPU, pbr_index)}
     };
 
     // configure the format of each vertex attribute in our structure.
-    for (unsigned location = 0; location < 8; ++location)
+    for (unsigned location = 0; location < 9; ++location)
     {
         const VADef& d = formats[location];
-        if (d.type == GL_INT || d.type == GL_INT)
+        if ((d.type == GL_INT) ||
+            (d.type == GL_UNSIGNED_INT) ||
+            (d.type == GL_SHORT) ||
+            (d.type == GL_UNSIGNED_SHORT) ||
+            (d.type == GL_BYTE && d.normalize == GL_FALSE) ||
+            (d.type == GL_UNSIGNED_BYTE && d.normalize == GL_FALSE))
+        {
             gl_VertexAttribIFormat(location, d.size, d.type, d.offset);
+        }
         else
+        {
             gl_VertexAttribFormat(location, d.size, d.type, d.normalize, d.offset);
+        }
         _ext->glVertexAttribBinding(location, 0);
         _ext->glEnableVertexAttribArray(location);
     }
