@@ -822,7 +822,7 @@ VegetationLayer::configureImpostor(
 
         // one part if we only have side textures;
         // two parts if we also have top textures
-        int parts = textures.size() > 2 ? 2 : 1;
+        int parts = textures.size() > 3 ? 2 : 1;
 
         float xmin = std::min(b.xMin(), b.yMin());
         float ymin = xmin;
