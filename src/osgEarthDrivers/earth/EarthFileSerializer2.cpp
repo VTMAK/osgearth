@@ -148,13 +148,6 @@ namespace
                 if (status == osgDB::Registry::LOADED)
                 {
                     OE_INFO << LC << "Loaded library \"" << libName << "\"\n";
-                    
-                    // Temp: force NVGL OFF to support the legacy splat library
-                    if (Strings::toLower(lib) == "osgearthsplat")
-                    {
-                        GLUtils::useNVGL(false);
-                        OE_INFO << LC << "Disabled NVGL after loading library \"" << lib << "\"" << std::endl;
-                    }
                 }
                 else
                 {
@@ -339,6 +332,14 @@ namespace
         if (layer)
         {
             layers.push_back(layer);
+
+            // Temp: force NVGL OFF to support the legacy splat library
+            const std::string splatLibrary("osgEarthSplat");
+            if (std::string(layer->libraryName()) == splatLibrary)
+            {
+                GLUtils::useNVGL(false);
+                OE_WARN << LC << "DISABLED NVGL after detecting layer of type \"" << layer->libraryName() << "::" << layer->className() << "\"" << std::endl;
+            }
         }
         return layer != 0L;
     }
@@ -567,6 +568,7 @@ EarthFileSerializer2::deserialize(
     LayerVector layers;
     Config externalConfig;
     std::vector<osg::ref_ptr<Extension> > extensions;
+    bool forceDisableNVGL = false;
     
     for(ConfigSet::const_iterator i = conf.children().begin(); i != conf.children().end(); ++i)
     {
