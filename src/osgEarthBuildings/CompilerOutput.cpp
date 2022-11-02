@@ -103,9 +103,7 @@ CompilerOutput::addDrawable(osg::Drawable* drawable, const std::string& tag)
 void
 CompilerOutput::addInstance(ModelResource* model, const osg::Matrix& matrix)
 {
-    _instances[model].push_back( matrix );
-
-    //TODO: index it. the vector needs to be a vector of pair<matrix,feature>
+    _instances[model].push_back( std::make_pair(matrix, _currentFeature));    
 }
 
 std::string
@@ -294,11 +292,15 @@ void CompilerOutput::addInstancesNormal(osg::MatrixTransform* root, Session* ses
 
          // Build a normal scene graph based on MatrixTransforms, and then convert it 
          // over to use instancing if it's available.
-         const MatrixVector& mats = i->second;
-         for (MatrixVector::const_iterator m = mats.begin(); m != mats.end(); ++m)
+         const InstanceVector& instanceVector = i->second;
+         for (InstanceVector::const_iterator m = instanceVector.begin(); m != instanceVector.end(); ++m)
          {
-            osg::MatrixTransform* modelxform = new osg::MatrixTransform(*m);
+            osg::MatrixTransform* modelxform = new osg::MatrixTransform(m->first);
             modelxform->addChild(modelNode.get());
+            if (_index && m->second.valid())
+            {
+                _index->tagNode(modelxform, m->second.get());
+            }
             modelGroup->addChild(modelxform);
          }
 
@@ -352,7 +354,7 @@ void CompilerOutput::addInstancesZeroWorkCallbackBased(osg::MatrixTransform* roo
       float maxRange = _range*lodScale;
 
       const URI& uri = res->uri().value().full();
-      const MatrixVector& srcMatricees = it->second;
+      const InstanceVector& srcMatricees = it->second;
 
       InstancedModelNode::Instances& dstInstances = instancedModelNode->_mapModelToInstances[uri.full()];
       InstancedModelNode::MatrixdVector& dstMatrices = dstInstances.matrices;
@@ -362,7 +364,7 @@ void CompilerOutput::addInstancesZeroWorkCallbackBased(osg::MatrixTransform* roo
 
       for (int matrixIndex = 0; matrixIndex < srcMatricees.size(); ++matrixIndex)
       {
-         dstMatrices.push_back(srcMatricees[matrixIndex]);
+         dstMatrices.push_back(srcMatricees[matrixIndex].first);
       }
    }
 
@@ -520,7 +522,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
         {
             for (auto& matrix : matrices)
             {
-                drawable->add(chonk, matrix * getWorldToLocal());
+                drawable->add(chonk, matrix.first * getWorldToLocal());
             }
         }
     }

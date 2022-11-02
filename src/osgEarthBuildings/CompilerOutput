@@ -238,8 +238,8 @@ namespace osgEarth { namespace Buildings
         using TaggedGeodes = std::unordered_map<std::string, osg::ref_ptr<osg::Geode>>;
         TaggedGeodes _geodes;
         
-        using MatrixVector = std::vector<osg::Matrix>;
-        using InstanceMap = std::map<osg::ref_ptr<ModelResource>, MatrixVector>;
+        using InstanceVector = std::vector<std::pair<osg::Matrix, osg::ref_ptr< Feature > > >;
+        using InstanceMap = std::map<osg::ref_ptr<ModelResource>, InstanceVector>;
         InstanceMap _instances;
         
         osg::ref_ptr<osg::Group> _externalModelsGroup;
