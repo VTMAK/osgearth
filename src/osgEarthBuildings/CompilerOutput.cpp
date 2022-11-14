@@ -98,6 +98,12 @@ CompilerOutput::addDrawable(osg::Drawable* drawable, const std::string& tag)
     {
         _index->tagDrawable( drawable, _currentFeature );
     }
+
+    if (_metadata && _currentFeature)
+    {     
+        auto id = _metadata->add(_currentFeature, true);
+        _metadata->tagDrawable(drawable, id);
+    }
 }
 
 void
@@ -300,6 +306,12 @@ void CompilerOutput::addInstancesNormal(osg::MatrixTransform* root, Session* ses
             if (_index && m->second.valid())
             {
                 _index->tagNode(modelxform, m->second.get());
+            }
+
+            if (_metadata && _currentFeature)
+            {            
+                auto id = _metadata->add(m->second.get(), true);
+                _metadata->tagNode(modelxform, id);
             }
             modelGroup->addChild(modelxform);
          }
