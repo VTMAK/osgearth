@@ -21,6 +21,7 @@
 #include <osgEarth/Registry>
 #include <osgEarth/CullingUtils>
 #include <osgEarth/Query>
+#include <osgEarth/MetadataNode>
 #include <osgEarth/StyleSheet>
 #include <osgEarth/Metrics>
 #include <osgEarth/Utils>
@@ -374,11 +375,14 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     //Registry::instance()->startActivity("RCache skins", Stringify() << _session->getResourceCache()->getSkinStats()._entries);
     //Registry::instance()->startActivity("RCache insts", Stringify() << _session->getResourceCache()->getInstanceStats()._entries);
 
+    osg::ref_ptr< osgEarth::MetadataNode > metadata = new MetadataNode;
+
     // Holds all the final output.
     CompilerOutput output;
     output.setName(tileKey.str());
     output.setTileKey(tileKey);
     output.setIndex(_index);
+    output.setMetadata(metadata.get());
     output.setTextureCache(_caches->_texCache.get());
     output.setStateSetCache(_caches->_stateSetCache.get());
     output.setFilterUsage(_filterUsage);
@@ -403,7 +407,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     canceled = canceled || (progress && progress->isCanceled());
 
     if (!node.valid() && !canceled)
-    {
+    {     
         // fetch the style for this LOD:
         std::string styleName = Stringify() << tileKey.getLOD();
         const Style* style = _session->styles() ? _session->styles()->getStyle(styleName) : nullptr;
@@ -490,6 +494,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 // set the distance at which details become visible.
                 osg::BoundingSphered tileBound = getBounds(tileKey);
                 output.setRange(tileBound.radius() * getRangeFactor());
+
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 
                 // skip this if we are using NV -gw
@@ -550,7 +555,16 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     }
     else
     {
-        return node;
+        if (metadata && node)
+        {
+            metadata->addChild(node);
+            metadata->finalize();
+            return  metadata;
+        }
+        else
+        {
+            return node;
+        }
     }
 }
 

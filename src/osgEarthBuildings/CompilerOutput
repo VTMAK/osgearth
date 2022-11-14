@@ -29,6 +29,7 @@
 #include <osgEarth/Progress>
 #include <osgEarth/Session>
 #include <osgEarth/FeatureIndex>
+#include <osgEarth/MetadataNode>
 #include <osgEarth/ModelResource>
 #include <osgEarth/ResourceCache>
 #include <osgEarth/StateSetCache>
@@ -197,6 +198,9 @@ namespace osgEarth { namespace Buildings
         void setIndex(FeatureIndexBuilder* index) { _index = index; }
         FeatureIndexBuilder* getIndex()           { return _index; }
 
+        void setMetadata(MetadataNode* metadata) { _metadata = metadata; }
+        MetadataNode* getMetadata() { return _metadata; }
+
         /** Sets the currently active feature (for indexing purposes). If an index is set,
             calls to addDrawable or addInstance will prompt the indexer to tag the new
             data with this feature. */
@@ -250,6 +254,7 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<ResourceCache> _resourceCache;
 
         FeatureIndexBuilder* _index;
+        MetadataNode* _metadata;
 
         Feature* _currentFeature;
 
