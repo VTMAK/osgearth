@@ -6,7 +6,7 @@ env:
   VCPKG_BINARY_SOURCES : 'clear;nuget,GitHub,readwrite'
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  VCPKG_VERSION: 'bb584d35bba70ca9f1ecaf09ad96ce5d1ff946f8'
+  VCPKG_VERSION: 'a4013afe6d3053e739b37c4cb6b5e64b55611e24'
 
 jobs:
 
@@ -23,7 +23,7 @@ jobs:
             VCPKG_WORKSPACE: 'c:/vcpkg_own'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         submodules: recursive
 
@@ -62,7 +62,7 @@ jobs:
       run: cmake $GITHUB_WORKSPACE -DWIN32_USE_MP=ON -DOSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT=ON -DOSGEARTH_BUILD_PROCEDURAL_NODEKIT=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_TOOLCHAIN_FILE=${{ matrix.VCPKG_WORKSPACE }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
     - name: 'Upload cmake configure log artifact'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       if: ${{ failure() }}
       with:
         name: cmake-log

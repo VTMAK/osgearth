@@ -33,7 +33,9 @@
 #include <osgEarth/ExampleResources>
 #include <osg/Camera>
 
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #if defined(__has_include)
 #if __has_include(<third_party/portable-file-dialogs/portable-file-dialogs.h>)
 #include <third_party/portable-file-dialogs/portable-file-dialogs.h>
@@ -230,7 +232,7 @@ namespace osgEarth {
             {
                 if (!visible) return;
 
-                ImGui::Begin("Add XYZ", &visible);                
+                ImGui::Begin("Add XYZ", &visible);
                 ImGui::InputText("Name", name, IM_ARRAYSIZE(name));
                 ImGui::InputText("URL", url, IM_ARRAYSIZE(url));
 
@@ -296,7 +298,11 @@ namespace osgEarth {
             AddXYZDialog _addXYZDialog;
 
             ImageLayer* _queryLayer;
-            Future<osg::Vec4> _imageLayerValueUnderMouse;
+            using ValueUnderMouse = struct {
+                osg::Vec4 pixel;
+                GLenum pixelFormat;
+            };
+            Future<Result<ValueUnderMouse>> _imageLayerValueUnderMouse;
 
             std::function<bool(const Layer*)>
                 _showPred,
@@ -306,7 +312,7 @@ namespace osgEarth {
                 _showFeatureModelLayers,
                 _showConstraintLayers;
 
-        public:            
+        public:
 
             LayersGUI() : BaseGUI("Map"),
                 _showDisabled(false),
@@ -507,7 +513,7 @@ namespace osgEarth {
                                                 gdalImage->setName(osgDB::getSimpleFileName(name));
                                                 gdalImage->setURL(name);
                                                 _mapNode->getMap()->addLayer(gdalImage);
-                                            }                                            
+                                            }
                                         }
                                     }
                                     else
@@ -552,7 +558,7 @@ namespace osgEarth {
                         }
                         ImGui::EndMenuBar();
                     }
-                    
+
                     // Draw the add dialogs
                     _addXYZDialog.draw(_mapNode.get());
                     _addTMSDialog.draw(_mapNode.get());
@@ -812,14 +818,32 @@ namespace osgEarth {
                                     {
                                         if (_imageLayerValueUnderMouse.isAvailable())
                                         {
-                                            osg::Vec4 p = _imageLayerValueUnderMouse.get();
-                                            ImGui::Text("  (%.2f, %.2f, %.2f, %.2f)", p.r(), p.g(), p.b(), p.a());
-                                            p *= 255.0f;
-                                            ImGui::Text("  (%d %d %d %d)", (int)p.r(), (int)p.g(), (int)p.b(), (int)p.a());
+                                            if (_imageLayerValueUnderMouse->isOK())
+                                            {
+                                                auto& value = _imageLayerValueUnderMouse->value();
+                                                if (value.pixelFormat == GL_RGBA)
+                                                {
+                                                    auto& p = value.pixel;
+                                                    ImGui::Text("  (%.2f %.2f %.2f %.2f)", p.r(), p.g(), p.b(), p.a());
+                                                    ImGui::Text("  (%.2X %.2X %.2X %.2X)",
+                                                        (int)(255.f*p.r()), (int)(255.f*p.g()), (int)(255.0f*p.b()), (int)(255.0f*p.a()));
+                                                }
+                                                else
+                                                {
+                                                    int v = (int)value.pixel.r();
+                                                    ImGui::Text("  (%d)", v);
+                                                    ImGui::Text("  (%#.8X)", v);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                ImGui::Text("%s", _imageLayerValueUnderMouse->message());
+                                            }
                                         }
                                         else
                                         {
-                                            ImGui::Text("  (--, --, --, --)"); ImGui::Text("  (-- -- -- --)");
+                                            ImGui::Text("  (searching)");
+                                            ImGui::Text("");
                                         }
                                     }
                                 }
@@ -909,22 +933,26 @@ namespace osgEarth {
                     if (tile)
                     {
                         GeoPoint p = _mapNode->getGeoPointUnderMouse(view, x, y);
-                        TileKey key = _mapNode->getMap()->getProfile()->createTileKey(p.x(), p.y(), tile->getKey().getLOD());
-                        key = _queryLayer->getBestAvailableTileKey(key, false);
+                        TileKey key = _queryLayer->getProfile()->createTileKey(p, tile->getKey().getLOD());
+                        key = _queryLayer->getBestAvailableTileKey(key);
 
                         if (key.valid())
                         {
-                            _imageLayerValueUnderMouse = Job().dispatch<osg::Vec4>([this, key, p](Cancelable* c)
+                            _imageLayerValueUnderMouse = Job().dispatch<Result<ValueUnderMouse>>([this, key, p](Cancelable* c)
                                 {
-                                    osg::Vec4 result(0, 0, 0, 1);
+                                    ValueUnderMouse value;
                                     osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(c);
-                                    auto g = _queryLayer->createImage(key, prog.get());
+                                    GeoImage g = _queryLayer->createImage(key, prog.get());
                                     if (g.valid())
                                     {
                                         g.getReader().setBilinear(false);
-                                        g.read(result, p);
+                                        if (g.read(value.pixel, p))
+                                        {
+                                            value.pixelFormat = g.getImage()->getPixelFormat();
+                                            return Result<ValueUnderMouse>(value);
+                                        }
                                     }
-                                    return result;
+                                    return Result<ValueUnderMouse>(Status::Error("No value"));
                                 });
                         }
                     }
