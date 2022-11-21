@@ -439,7 +439,6 @@ GroundCoverFeatureGenerator::getFeatures(const TileKey& key, FeatureList& output
 
         // check the land cover
         const LandCoverGroup* group = NULL;
-        //const GroundCoverBiome* biome = NULL;
         const LandCoverClass* lcclass = NULL;
         if (lcTex)
         {
@@ -448,9 +447,11 @@ GroundCoverFeatureGenerator::getFeatures(const TileKey& key, FeatureList& output
             if (lcclass == NULL)
                 continue;
             group = zone.getLandCoverGroup(lcclass);
-            if (!group)
-                continue;
         }
+
+        // if we could not resolve a group - skip.
+        if (!group)
+            continue;
 
         // check the mask
         if (maskTex)
