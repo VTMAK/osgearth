@@ -107,6 +107,60 @@ void oe_chonk_default_vertex_model(inout vec4 vertex)
     }
 }
 
+
+[break]
+#pragma vp_function oe_chonk_default_vertex_view, vertex_view, 0.0
+
+layout(location = 2) in uint normal_technique;
+#define NT_DEFAULT 0
+#define NT_ZAXIS 1
+#define NT_HEMISPHERE 2 
+
+// stage global
+mat3 xform3; // set in model stage
+uint chonk_lod; // set in model stage
+
+// output
+out vec3 vp_Normal;
+//out vec3 oe_tangent;
+out vec3 oe_position_vec;
+flat out uint oe_normal_technique;
+flat out uint64_t oe_normal_tex;
+
+// amount to warp billboarded normals away from the eye [0..1]
+const float oe_chonk_billboarded_normal_threshold = 0.65;
+
+void oe_chonk_default_vertex_view(inout vec4 vertex)
+{
+    // propagate to frag shader:
+    oe_normal_technique = normal_technique;
+
+    // for the hemispheric normals we need a 2D position vector.
+    if (oe_normal_technique == NT_HEMISPHERE)
+    {
+        oe_position_vec = gl_NormalMatrix * oe_position_vec;
+    }
+
+#if 0
+    if (oe_normal_tex > 0)
+    {
+        if (oe_normal_technique == NT_DEFAULT)
+        {
+            vec3 ZAXIS = gl_NormalMatrix * vec3(0, 0, 1);
+            if (dot(ZAXIS, vp_Normal) > 0.95)
+                oe_tangent = gl_NormalMatrix * (xform3 * vec3(1, 0, 0));
+            else
+                oe_tangent = cross(ZAXIS, vp_Normal);
+        }
+
+        else
+        {
+            oe_tangent = gl_NormalMatrix * (xform3 * vec3(1, 0, 0));
+        }
+    }
+#endif
+}
+
 [break]
 #pragma vp_function oe_chonk_default_fragment, fragment
 #pragma import_defines(OE_IS_SHADOW_CAMERA)
@@ -126,6 +180,7 @@ struct OE_PBR {
 
 // inputs
 in vec3 vp_Normal;
+//in vec3 oe_tangent;
 in vec3 oe_position_vec;
 in vec3 oe_position_view;
 in vec2 oe_tex_uv;
@@ -167,10 +222,10 @@ void oe_chonk_default_fragment(inout vec4 color)
 {
     // When simulating normals, we invert the texture coordinates
     // for backfacing geometry
-    if (!gl_FrontFacing && oe_normal_technique != NT_DEFAULT)
-    {
-        oe_tex_uv.s = 1.0 - oe_tex_uv.s;
-    }
+    //if (oe_normal_technique != NT_DEFAULT && !gl_FrontFacing)
+    //{
+        //oe_tex_uv.s = 1.0 - oe_tex_uv.s;
+    //}
 
     // Apply the base color:
     if (oe_albedo_tex > 0)
@@ -225,8 +280,18 @@ void oe_chonk_default_fragment(inout vec4 color)
 
 #endif
 
-    vec3 normal_view = vp_Normal;
+#ifdef OE_CHONK_SINGLE_SIDED
+    bool flip_backfacing_normal = false;
+#else
+    bool flip_backfacing_normal = true;
+#endif
 
+    vec3 face_normal = vp_Normal;
+    vec3 face_up = gl_NormalMatrix * vec3(0, 0, 1);
+
+    // for billboarded normals, adjust the normal so its coverage
+    // is a hemisphere facing the viewer. Should we recalculate the TBN here?
+    // Probably, but let's not if it already looks good enough.
     if (oe_normal_technique == NT_HEMISPHERE)
     {
         // for billboarded normals, adjust the normal so its coverage
@@ -236,28 +301,40 @@ void oe_chonk_default_fragment(inout vec4 color)
         vec3 v2d = vec3(v3d.x, v3d.y, 0.0);
         float size2d = length(v2d) * 1.2021; // adjust for radius, bbox diff
         size2d = mix(0.0, oe_normal_attenuation, clamp(size2d, 0.0, 1.0));
-        normal_view = mix(vec3(0, 0, 1), normalize(v2d), size2d);
+        face_normal = mix(vec3(0, 0, 1), normalize(v2d), size2d);
     }
 
+    vec3 face_tangent = cross(face_up, face_normal);
     vec3 pixel_normal = vec3(0, 0, 1);
 
     if (oe_normal_tex > 0)
     {
         vec4 n = texture(sampler2D(oe_normal_tex), oe_tex_uv);
 
-        if (n.a == 0) // swizzled in GLUtils::storage2D to indicate a compressed normal
-        {
-            n.xy = n.xy*2.0 - 1.0;
-            n.z = 1.0 - abs(n.x) - abs(n.y);
-            float t = clamp(-n.z, 0, 1);
-            n.x += (n.x > 0) ? -t : t;
-            n.y += (n.y > 0) ? -t : t;
-            pixel_normal = n.xyz;
-        }
-        else
-        {
-            pixel_normal = normalize(n.xyz*2.0 - 1.0);
-        }
+      #ifdef OE_GL_RG_COMPRESSED_NORMALS
+        n.xy = n.xy*2.0 - 1.0;
+        n.z = 1.0 - abs(n.x) - abs(n.y);
+        float t = clamp(-n.z, 0, 1);
+        n.x += (n.x > 0) ? -t : t;
+        n.y += (n.y > 0) ? -t : t;
+        pixel_normal = n.xyz;
+      #else
+        pixel_normal = normalize(n.xyz*2.0 - 1.0);
+      #endif
+    }
+
+    //pixel_normal = vec3(0, 0, 1); // testing
+
+    mat3 tbn = mat3(
+        normalize(face_tangent),
+        -normalize(cross(face_normal, face_tangent)),
+        normalize(face_normal));
+
+    vp_Normal = normalize(tbn * pixel_normal);
+
+    if (flip_backfacing_normal && vp_Normal.z < 0.0)
+    {
+        vp_Normal.z = -vp_Normal.z;
     }
 
     //pixel_normal = vec3(0, 0, 1); // testing
@@ -271,8 +348,6 @@ void oe_chonk_default_fragment(inout vec4 color)
 
     if (oe_normal_technique == NT_ZAXIS)
     {
-        // attenuate the normal to a z-up orientation
-        vec3 face_up = TBN[1].xyz;
         vp_Normal = normalize(mix(vp_Normal, face_up, oe_normal_attenuation));
     }
 

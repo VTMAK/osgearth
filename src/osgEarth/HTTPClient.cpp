@@ -21,6 +21,9 @@
 #include <osgEarth/Metrics>
 #include <osgEarth/Version>
 #include <osgEarth/ImageUtils>
+#include <osgEarth/Cache>
+#include <osgEarth/CacheBin>
+#include <osgEarth/URI>
 #include <osgDB/ReadFile>
 #include <osgDB/FileNameUtils>
 #include <curl/curl.h>
@@ -319,7 +322,8 @@ HTTPResponse::HTTPResponse( long _code ) :
 _response_code( _code ),
 _canceled(false),
 _duration_s(0.0),
-_lastModified(0u)
+_lastModified(0u),
+_fromCache(false)
 {
     _parts.reserve(1);
 }
@@ -330,7 +334,8 @@ _parts( rhs._parts ),
 _mimeType( rhs._mimeType ),
 _canceled( rhs._canceled ),
 _duration_s(0.0),
-_lastModified(0u)
+_lastModified(0u),
+_fromCache(rhs._fromCache)
 {
     //nop
 }
@@ -398,10 +403,22 @@ HTTPResponse::getHeadersAsConfig() const
     {
         for( Headers::const_iterator i = _parts[0]->_headers.begin(); i != _parts[0]->_headers.end(); ++i )
         {
-            conf.set(i->first, i->second);
+            conf.set(osgEarth::toLower(i->first), i->second);
         }
     }
     return conf;
+}
+
+void
+HTTPResponse::setHeadersFromConfig(const Config& conf)
+{
+    if (_parts.size() > 0)
+    {
+        for (auto& i : conf.children())
+        {
+            _parts[0]->_headers[i.key()] = i.value();
+        }
+    }
 }
 
 /****************************************************************************/
@@ -1500,12 +1517,83 @@ HTTPClient::doGet(const HTTPRequest&    request,
 
     initialize();
 
-    HTTPResponse response = _impl->doGet(request, options, progress);
+    URI uri(request.getURL());
 
-    OE_PROFILING_ZONE_TEXT(Stringify() << "response_code " << response.getCode());
-    if (response.isCanceled())
+    // URL caching
+    CacheBin* bin = nullptr;
+    CacheSettings* cacheSettings = CacheSettings::get(options);
+    osgEarth::optional<CachePolicy> cachePolicy;
+    if (cacheSettings)
     {
-        OE_PROFILING_ZONE_TEXT("cancelled");
+        cachePolicy = cacheSettings->cachePolicy();
+        if (cacheSettings->isCacheEnabled())
+        {
+            // Use the global bin instead of the defined cache bin so all URLs are cached to the same place
+            bin = cacheSettings->getCache()->getOrCreateDefaultBin();
+            //bin = cacheSettings->getCacheBin();
+        }
+    }
+
+    bool expired = false;
+
+    HTTPResponse response;
+
+    bool gotFromCache = false;
+
+    //Try to read result from the cache.
+    if (bin)
+    {
+        ReadResult result = bin->readString(uri.cacheKey(), options);
+        if (result.succeeded())
+        {
+            gotFromCache = true;
+
+            expired = cachePolicy->isExpired(result.lastModifiedTime());
+            result.setIsFromCache(true);
+
+            HTTPResponse cacheResponse(HTTPResponse::CATEGORY_SUCCESS);
+            osg::ref_ptr<HTTPResponse::Part> part = new HTTPResponse::Part();
+            part->_stream << result.getString();
+            std::string contentType = result.metadata().value("content-type");
+            cacheResponse.setMimeType(contentType);
+            cacheResponse.getParts().push_back(part);
+            cacheResponse.setHeadersFromConfig(result.metadata());
+            cacheResponse.setFromCache(true);
+            response = cacheResponse;
+        }
+    }
+
+    if ((expired || !gotFromCache) && cachePolicy->usage() != CachePolicy::USAGE_CACHE_ONLY)
+    {
+        HTTPResponse remoteResponse = _impl->doGet(request, options, progress);
+
+        if (remoteResponse.getCode() == ReadResult::RESULT_NOT_MODIFIED)
+        {
+            OE_DEBUG << LC << uri.full() << " not modified, using cached result" << std::endl;
+            // Touch the cached item to update it's last modified timestamp so it doesn't expire again immediately.
+            if (bin)
+                bin->touch(uri.cacheKey());
+        }
+        else
+        {
+            OE_DEBUG << LC << "Got remote result for " << uri.full() << std::endl;
+            response = remoteResponse;
+
+            if (response.isOK())
+            {
+                if (bin != nullptr)
+                {
+                    osg::ref_ptr< StringObject> stringObject = new StringObject(response.getPartAsString(0));
+                    bin->write(uri.cacheKey(), stringObject, response.getHeadersAsConfig(), options);
+                }
+            }
+        }
+
+        OE_PROFILING_ZONE_TEXT(Stringify() << "response_code " << response.getCode());
+        if (response.isCanceled())
+        {
+            OE_PROFILING_ZONE_TEXT("cancelled");
+        }        
     }
     return response;
 }
@@ -1703,6 +1791,7 @@ HTTPClient::doReadImage(const HTTPRequest&    request,
 
     // encode headers
     result.setMetadata( response.getHeadersAsConfig() );
+    result.setIsFromCache(response.getFromCache());
 
     // set the source name
     if ( result.getImage() )
@@ -1804,6 +1893,7 @@ HTTPClient::doReadNode(const HTTPRequest&    request,
 
     // encode headers
     result.setMetadata( response.getHeadersAsConfig() );
+    result.setIsFromCache(response.getFromCache());
 
     return result;
 }
@@ -1966,6 +2056,7 @@ HTTPClient::doReadString(const HTTPRequest&    request,
 
     // encode headers
     result.setMetadata( response.getHeadersAsConfig() );
+    result.setIsFromCache(response.getFromCache());
 
     // last-modified (file time)
     result.setLastModifiedTime( response._lastModified );

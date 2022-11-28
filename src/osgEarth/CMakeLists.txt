@@ -63,6 +63,7 @@ set(TARGET_GLSL
     GPUClamping.lib.glsl
     Instancing.glsl
     LineDrawable.glsl
+    MetadataNode.glsl
     WireLines.glsl
     PhongLighting.glsl
     PointDrawable.glsl
@@ -367,6 +368,7 @@ SET(LIB_PUBLIC_HEADERS
     GeometryUtils
     ImageToFeatureLayer
     InstanceCloud
+    MetadataNode
     MVT
     OgrUtils
     OGRFeatureSource
@@ -772,6 +774,7 @@ set(TARGET_SRC
     GeometryUtils.cpp
     ImageToFeatureLayer.cpp
     MVT.cpp
+    MetadataNode.cpp
     OgrUtils.cpp
     OGRFeatureSource.cpp
     PolygonizeLines.cpp
