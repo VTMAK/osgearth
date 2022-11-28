@@ -877,8 +877,6 @@ namespace osgEarth
                     }
                 }
 
-<<<<<<< HEAD
-=======
                 osgEarth::MetadataNode* metadata = dynamic_cast<osgEarth::MetadataNode*>(node);
                 if (metadata)
                 {
@@ -957,7 +955,6 @@ namespace osgEarth
                     }
                 }
 
->>>>>>> upstream-local/master
                 osg::StateSet* stateset = node->getStateSet();
                 if (stateset)
                 {
