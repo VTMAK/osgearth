@@ -39,10 +39,6 @@ layout(location = 6) in int albedo_index;
 layout(location = 7) in int normalmap_index;
 layout(location = 8) in int pbr_index;
 
-#define NT_DEFAULT 0
-#define NT_ZAXIS 1
-#define NT_HEMISPHERE 2 
-
 // stage global
 mat3 xform3;
 uint chonk_lod;
@@ -53,8 +49,6 @@ out vec4 vp_Color;
 out float oe_fade;
 out vec2 oe_tex_uv;
 out vec3 oe_position_vec;
-out vec3 oe_position_view;
-flat out uint oe_normal_technique;
 flat out float oe_alpha_cutoff;
 flat out uint64_t oe_albedo_tex;
 flat out uint64_t oe_normal_tex;
@@ -70,7 +64,6 @@ void oe_chonk_default_vertex_model(inout vec4 vertex)
     vp_Color = color;
     xform3 = mat3(instances[i].xform);
     vp_Normal = xform3 * normal;
-    oe_normal_technique = normal_technique;
     oe_tex_uv = uv;
     oe_alpha_cutoff = instances[i].alpha_cutoff;
     oe_fade = instances[i].visibility[chonk_lod];
@@ -83,15 +76,8 @@ void oe_chonk_default_vertex_model(inout vec4 vertex)
 
     // stuff we need only for a non-depth or non-shadow camera
 
-    if (oe_normal_technique == NT_HEMISPHERE)
-    {
-        // Position vector scaled by the (scaled) radius of the instance
-        oe_position_vec = gl_NormalMatrix *
-            ((xform3 * position.xyz) / instances[i].radius);
-    }
-
-    // FS needs this to make a TBN
-    oe_position_view = (gl_ModelViewMatrix * vertex).xyz;
+    // Position vector scaled by the (scaled) radius of the instance
+    oe_position_vec = (xform3 * position.xyz) / instances[i].radius;
 
     // disable/ignore normal maps as directed:
     oe_normal_tex = 0;
@@ -179,10 +165,10 @@ struct OE_PBR {
 } oe_pbr;
 
 // inputs
+in vec3 oe_UpVectorView;
 in vec3 vp_Normal;
 //in vec3 oe_tangent;
 in vec3 oe_position_vec;
-in vec3 oe_position_view;
 in vec2 oe_tex_uv;
 in float oe_fade;
 flat in uint64_t oe_albedo_tex;
@@ -195,28 +181,7 @@ flat in uint oe_normal_technique;
 #define NT_ZAXIS 1
 #define NT_HEMISPHERE 2 
 
-const float oe_normal_attenuation = 0.65;
-
-// make a TBN from normal, vertex position, and texture uv
-// https://gamedev.stackexchange.com/a/86543
-mat3 make_tbn(vec3 N, vec3 p, vec2 uv)
-{
-    // get edge vectors of the pixel triangle
-    vec3 dp1 = dFdx(p);
-    vec3 dp2 = dFdy(p);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
-
-    // solve the linear system
-    vec3 dp2perp = cross(dp2, N);
-    vec3 dp1perp = cross(N, dp1);
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-    // construct a scale-invariant frame 
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-    return mat3(T * invmax, B * invmax, N);
-}
+uniform float oe_normal_attenuation = 0.65;
 
 void oe_chonk_default_fragment(inout vec4 color)
 {
@@ -259,6 +224,7 @@ void oe_chonk_default_fragment(inout vec4 color)
     // https://tinyurl.com/fhu4zdxz
     if (oe_albedo_tex > 0UL)
     {
+        //color.a = (color.a - oe_veg_alphaCutoff) / max(fwidth(color.a), 0.0001) + 0.5;
         ivec2 tsize = textureSize(sampler2D(oe_albedo_tex), 0);
         vec2 cf = vec2(float(tsize.x)*oe_tex_uv.s, float(tsize.y)*oe_tex_uv.t);
         vec2 dx_vtc = dFdx(cf);
@@ -294,9 +260,6 @@ void oe_chonk_default_fragment(inout vec4 color)
     // Probably, but let's not if it already looks good enough.
     if (oe_normal_technique == NT_HEMISPHERE)
     {
-        // for billboarded normals, adjust the normal so its coverage
-        // is a hemisphere facing the viewer. Should we recalculate the TBN here?
-        // Probably, but let's not if it already looks good enough.
         vec3 v3d = oe_position_vec; // do not normalize!
         vec3 v2d = vec3(v3d.x, v3d.y, 0.0);
         float size2d = length(v2d) * 1.2021; // adjust for radius, bbox diff
@@ -337,25 +300,16 @@ void oe_chonk_default_fragment(inout vec4 color)
         vp_Normal.z = -vp_Normal.z;
     }
 
-    //pixel_normal = vec3(0, 0, 1); // testing
-
-    mat3 TBN = make_tbn(
-        normalize(normal_view),
-        oe_position_view,
-        oe_tex_uv);
-
-    vp_Normal = TBN * pixel_normal;
-
     if (oe_normal_technique == NT_ZAXIS)
     {
         vp_Normal = normalize(mix(vp_Normal, face_up, oe_normal_attenuation));
     }
 
+    // apply PBR maps:
     if (oe_pbr_tex > 0)
     {
-        // apply PBR maps:
         vec4 texel = texture(sampler2D(oe_pbr_tex), oe_tex_uv);
-        oe_pbr.metal = clamp(oe_pbr.metal + texel[0], 0, 1);
+        oe_pbr.metal *= texel[0];
         oe_pbr.roughness *= (1.0 - texel[1]);
         oe_pbr.ao *= texel[2];
     }
