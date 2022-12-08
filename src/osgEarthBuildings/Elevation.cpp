@@ -269,8 +269,12 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
         _walls.push_back( Wall() );
         Wall& wall = _walls.back();
 
+        float cornerOffset = 0.0;
+
         // Step 1 - Create the real corners and transform them into our target SRS.
         Corners corners;
+        osg::Vec3d lastCorner;
+        bool firstCorner = true;
         for(Geometry::const_iterator m = part->begin(); m != part->end(); ++m)
         {
             Corners::iterator corner = corners.insert(corners.end(), Corner());
@@ -304,57 +308,68 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
 
             // cache the length for later use.
             corner->height = (corner->upper - corner->lower).length();
+
+            if (!firstCorner)
+            {
+                float span = (corner->lower - lastCorner).length();
+                cornerOffset += span;
+            }            
+            firstCorner = false;
+            corner->offsetX = cornerOffset;
+            lastCorner = corner->lower;
         }
 
+        cornerOffset = 0.0f;
+
+#ifdef INSERT_VERTS
         // Step 2 - Insert intermediate Corners as needed to satisfy texturing
         // requirements (if necessary) and record each corner offset (horizontal distance
         // from the beginning of the part geometry to the corner.)
-        float cornerOffset    = 0.0;
         float nextTexBoundary = texWidthM;
 
-        for(Corners::iterator c = corners.begin(); c != corners.end(); ++c)
+        for (Corners::iterator c = corners.begin(); c != corners.end(); ++c)
         {
             Corners::iterator this_corner = c;
 
             Corners::iterator next_corner = c;
-			bool isLastEdge = false;
-			if ( ++next_corner == corners.end() )
-			{
-				isLastEdge = true;
-				next_corner = corners.begin();
-			}
+            bool isLastEdge = false;
+            if (++next_corner == corners.end())
+            {
+                isLastEdge = true;
+                next_corner = corners.begin();
+            }
 
             osg::Vec3f base_vec = next_corner->lower - this_corner->lower;
             float span = base_vec.length();
 
             this_corner->offsetX = cornerOffset;
 
-            if ( hasTexture )
+            if (hasTexture)
             {
                 base_vec /= span; // normalize
                 osg::Vec3f roof_vec = next_corner->upper - this_corner->upper;
                 roof_vec.normalize();
 
-                while(texWidthM > 0.0 && nextTexBoundary < cornerOffset+span)
+                while (texWidthM > 0.0 && nextTexBoundary < cornerOffset + span)
                 {
                     // insert a new fake corner.
-					Corners::iterator new_corner;
+                    Corners::iterator new_corner;
 
-                    if ( isLastEdge )
+                    if (isLastEdge)
                     {
-						corners.push_back(Corner());
-						new_corner = c;
-						new_corner++;
+                        corners.push_back(Corner());
+                        new_corner = c;
+                        new_corner++;
                     }
                     else
                     {
-						new_corner = corners.insert(next_corner, Corner());
-					}
+                        new_corner = corners.insert(next_corner, Corner());
+                    }
 
                     new_corner->isFromSource = false;
-                    float advance = nextTexBoundary-cornerOffset;
-                    new_corner->lower = this_corner->lower + base_vec*advance;
-                    new_corner->upper = this_corner->upper + roof_vec*advance;
+                    float advance = nextTexBoundary - cornerOffset;
+                    new_corner->lower = this_corner->lower + base_vec * advance;
+                    new_corner->upper = this_corner->upper + roof_vec * advance;
                     new_corner->height = (new_corner->upper - new_corner->lower).length();
                     new_corner->offsetX = cornerOffset + advance;
                     nextTexBoundary += texWidthM;
@@ -366,6 +381,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
 
             cornerOffset += span;
         }
+#endif
 
         // Step 3 - Calculate the angle of each corner.
         osg::Vec3f prev_vec;
@@ -429,7 +445,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
 
 void
 Elevation::resolveSkin(BuildContext& bc)
-{
+{    
     if ( getSkinSymbol() )
     {
         SkinResourceVector candidates;
@@ -439,9 +455,13 @@ Elevation::resolveSkin(BuildContext& bc)
             unsigned index = Random(bc.getSeed()).next( candidates.size() );
             SkinResource* skin = candidates.at(index).get();
             setSkinResource( skin );
-                    
-            unsigned numFloors = (unsigned)std::max(1.0f, osg::round(getHeight() / skin->imageHeight().get()));
-            setNumFloors( numFloors );
+            
+#ifdef INSERT_VERTS
+                unsigned numFloors = (unsigned)std::max(1.0f, osg::round(getHeight() / skin->imageHeight().get()));
+                setNumFloors(numFloors);
+#else
+                setNumFloors(1);
+#endif
         }
     }
     else if ( getParent() )
@@ -450,8 +470,12 @@ Elevation::resolveSkin(BuildContext& bc)
         if ( skin )
         {
             setSkinResource( skin );                    
+#ifdef INSERT_VERTS
             unsigned numFloors = (unsigned)std::max(1.0f, osg::round(getHeight() / skin->imageHeight().get()));
-            setNumFloors( numFloors );
+            setNumFloors(numFloors);
+#else
+            setNumFloors(1);
+#endif
         }
     }
 }

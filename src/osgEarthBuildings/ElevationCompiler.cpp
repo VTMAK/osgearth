@@ -196,18 +196,31 @@ ElevationCompiler::compile(CompilerOutput&       output,
                 {
                     // Calculate the texture coordinates at each corner. The structure builder
                     // will have spaced the verts correctly for this to work.
-                    float uL = fmod( f->left.offsetX,  texWidth ) / texWidth;
-                    float uR = fmod( f->right.offsetX, texWidth ) / texWidth;
+#ifdef INSERT_VERTS
+                    float uL = fmod(f->left.offsetX, texWidth) / texWidth;
+                    float uR = fmod(f->right.offsetX, texWidth) / texWidth;
+#else
+                    float uL = f->left.offsetX / texWidth;
+                    float uR = f->right.offsetX / texWidth;
+#endif
+                    
+                    //OE_NOTICE << "Offset left=" << f->left.offsetX << " right=" << f->right.offsetX << " texWidth= " << texWidth << std::endl;
 
                     // Correct for the case in which the rightmost corner is exactly on a
                     // texture boundary.
-                    if ( uR < uL || (uL == 0.0 && uR == 0.0))
-                        uR = 1.0f;
-
+                    if (uR < uL || (uL == 0.0 && uR == 0.0))
+                        uR = 1.0f;                    
+#ifdef INSERT_VERTS
                     osg::Vec2f texLL( uL, 0.0f );
                     osg::Vec2f texLR( uR, 0.0f );
                     osg::Vec2f texUL( uL, 1.0f );
                     osg::Vec2f texUR( uR, 1.0f );
+#else
+                    osg::Vec2f texLL(uL, 0.0f);
+                    osg::Vec2f texLR(uR, 0.0f);
+                    osg::Vec2f texUL(uL, f->left.height / texHeight);
+                    osg::Vec2f texUR(uR, f->right.height / texHeight);
+#endif
 
                     texUL = texBias + osg::componentMultiply(texUL, texScale);
                     texUR = texBias + osg::componentMultiply(texUR, texScale);
