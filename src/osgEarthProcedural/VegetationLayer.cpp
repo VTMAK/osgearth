@@ -91,7 +91,7 @@ VegetationLayer::Options::getConfig() const
     conf.set("lod_transition_padding", lodTransitionPadding());
     conf.set("use_impostor_normal_maps", useImpostorNormalMaps());
     conf.set("use_impostor_pbr_maps", useImpostorPBRMaps());
-    conf.set("use_rg_compressed_normal_maps", useRGCompressedNormalMaps());
+    conf.set("max_texture_size", maxTextureSize());
 
     //TODO: groups
 
@@ -141,6 +141,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     useImpostorNormalMaps().setDefault(true);
     useImpostorPBRMaps().setDefault(true);
     useRGCompressedNormalMaps().setDefault(true);
+    maxTextureSize().setDefault(INT_MAX);
 
     biomeLayer().get(conf, "biomes_layer");
 
@@ -152,7 +153,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     conf.get("lod_transition_padding", lodTransitionPadding());
     conf.get("use_impostor_normal_maps", useImpostorNormalMaps());
     conf.get("use_impostor_pbr_maps", useImpostorPBRMaps());
-    conf.get("use_rg_compressed_normal_maps", useRGCompressedNormalMaps());
+    conf.get("max_texture_size", maxTextureSize());
 
     // some nice default group settings
     groups()[GROUP_TREES].lod().setDefault(14);
@@ -742,8 +743,13 @@ VegetationLayer::prepareForRendering(TerrainEngine* engine)
     ss->setMode(GL_CULL_FACE, 0x0 | osg::StateAttribute::PROTECTED);
 
     // Install the texture arena:
-    TextureArena* textures = getBiomeLayer()->getBiomeManager().getTextures();
+    TextureArena* textures = getBiomeLayer()->getBiomeManager().getTextures();    
     ss->setAttribute(textures);
+
+    // Apply a maximum GPU texture size
+    textures->setMaxTextureSize(std::min(
+        (int)options().maxTextureSize().get(),
+        Registry::instance()->getMaxTextureSize()));
 
     // Custom shaders:
     VirtualProgram* vp = VirtualProgram::getOrCreate(ss);
