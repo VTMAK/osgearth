@@ -36,11 +36,6 @@
 #define OE_TEST OE_NULL
 //#define OE_TEST OE_NOTICE
 
-// Only uncomment this is you want to resize textures as they are loaded.
-// Don't uncomment this, ever. So many bad things will happen. Some images
-// like elevation, land cover, etc. are not meant to be resized.
-//#define SUPPORT_MAX_TEXTURE_SIZE
-
 using namespace osgEarth;
 using namespace osgEarth::Threading;
 
@@ -341,46 +336,6 @@ namespace
     //--------------------------------------------------------------------
     // Read functors (used by the doRead method)
 
-#ifdef SUPPORT_MAX_TEXTURE_SIZE
-    osg::Image* resize(osg::Image* image, int maxdim)
-    {
-        unsigned new_s, new_t;
-        float ar = (float)image->s() / (float)image->t();
-
-        if (image->s() >= image->t()) {
-            new_s = maxdim;
-            new_t = (int)((float)new_s * ar);
-        }
-        else {
-            new_t = maxdim;
-            new_s = (int)((float)new_t / ar);
-        }
-
-        osg::ref_ptr<osg::Image> new_image;
-        if (ImageUtils::resizeImage(image, new_s, new_t, new_image))
-            return new_image.release();
-        else
-            return image;
-    }
-
-    struct ShrinkTexturesVisitor : public TextureAndImageVisitor {
-        const osgDB::Options* options;
-        void apply(osg::Texture& texture) {
-            for (int i = 0; i < texture.getNumImages(); ++i) {
-                osg::Image* image = texture.getImage(i);
-                if (image) {
-                    optional<int> maxdim = ImageUtils::getMaxTextureSize(image, options);
-                    if (maxdim.isSet()) {
-                        image = resize(image, maxdim.value());
-                        if (image)
-                            texture.setImage(i, image);
-                    }
-                }
-            }
-        }
-    };
-#endif
-
     struct ReadObject
     {
         bool callbackRequestsCaching( URIReadCallback* cb ) const { return !cb || ((cb->cachingSupport() & URIReadCallback::CACHE_OBJECTS) != 0); }
@@ -421,18 +376,6 @@ namespace
             if (osgRR.validNode()) return ReadResult(osgRR.takeNode());
             else return ReadResult(osgRR.message());
         }
-        ReadResult postProcess(ReadResult& r, const osgDB::Options* opt) {
-#ifdef SUPPORT_MAX_TEXTURE_SIZE
-            if (r.getNode() == nullptr)
-                return r;
-            if (ImageUtils::getMaxTextureSize(nullptr, opt).isSet()) {
-                ShrinkTexturesVisitor v;
-                v.options = opt;
-                r.getNode()->accept(v);
-            }
-#endif
-            return r;
-        }
     };
 
     struct ReadImage
@@ -443,7 +386,7 @@ namespace
         ReadResult fromCallback( URIReadCallback* cb, const std::string& uri, const osgDB::Options* opt ) {
             ReadResult r = cb->readImage(uri, opt);
             if ( r.getImage() ) r.getImage()->setFileName(uri);
-            return postProcess(r, opt);
+            return r;
         }
         ReadResult fromHTTP(const URI& uri, const osgDB::Options* opt, ProgressCallback* p, TimeStamp lastModified ) {
             HTTPRequest req(uri.full());
@@ -455,38 +398,16 @@ namespace
             }
             ReadResult r = HTTPClient::readImage(req, opt, p);
             if ( r.getImage() ) r.getImage()->setFileName( uri.full() );
-            return postProcess(r, opt);
+            return r;
         }
         ReadResult fromFile( const std::string& uri, const osgDB::Options* opt ) {
             // Call readImageImplementation instead of readImage to bypass any readfile callbacks installed in the registry.
             osgDB::ReaderWriter::ReadResult osgRR = osgDB::Registry::instance()->readImageImplementation(uri, opt);
             if (osgRR.validImage()) {
                 osgRR.getImage()->setFileName(uri);
-                return postProcess(ReadResult(osgRR.takeImage()), opt);
+                return ReadResult(osgRR.takeImage());
             }
             else return ReadResult(osgRR.message());
-        }
-        ReadResult postProcess(ReadResult& r, const osgDB::Options* opt) const
-        {
-#ifdef SUPPORT_MAX_TEXTURE_SIZE
-            if (r.getImage() == nullptr)
-                return r;
-
-            auto maxdim = ImageUtils::getMaxTextureSize(r.getImage(), opt);
-            if (!maxdim.isSet())
-                return r;
-
-            if (r.getImage()->getPixelFormat() != GL_RGB && r.getImage()->getPixelFormat() != GL_RGBA)
-                return r;
-
-            auto new_image = resize(r.getImage(), maxdim.value());
-            if (new_image)
-                return ReadResult(new_image, r.metadata());
-            else
-                return r;
-#else
-            return r;
-#endif
         }
     };
 
