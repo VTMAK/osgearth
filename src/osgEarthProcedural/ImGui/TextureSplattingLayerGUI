@@ -183,14 +183,13 @@ namespace osgEarth {
 
                     ImGui::SliderFloat(_lifemap_direct ? "Dense" : "Dense multiplier", &_dense_power, 0.0f, lm_max);
                     stateset(ri)->getOrCreateUniform("dense_power", osg::Uniform::FLOAT)->set(_dense_power);
-
+                    
                     ImGui::SliderFloat(_lifemap_direct ? "Rugged" : "Rugged multiplier", &_rugged_power, 0.0f, lm_max);
                     stateset(ri)->getOrCreateUniform("rugged_power", osg::Uniform::FLOAT)->set(_rugged_power);
 
                     ImGui::SliderFloat(_lifemap_direct ? "Lush" : "Lush multiplier", &_lush_power, 0.0f, lm_max);
                     stateset(ri)->getOrCreateUniform("lush_power", osg::Uniform::FLOAT)->set(_lush_power);
 
-                    unsigned maxTex = _tslayer->getMaxTextureSize();
                     const char* maxTexItems[] = { "16", "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192" };
                     static int maxTexIndex = 9;
                     if (ImGui::BeginCombo("Max tex size", maxTexItems[maxTexIndex])) {
