@@ -405,25 +405,6 @@ VegetationLayer::getUseImpostorPBRMaps() const
 }
 
 void
-VegetationLayer::setUseRGCompressedNormalMaps(bool value)
-{
-    if (value != getUseRGCompressedNormalMaps())
-        options().useRGCompressedNormalMaps() = value;
-
-    auto ss = getOrCreateStateSet();
-    if (value == false)
-        ss->removeDefine("OE_GL_RG_COMPRESSED_NORMALS");
-    else
-        ss->setDefine("OE_GL_RG_COMPRESSED_NORMALS");
-}
-
-bool
-VegetationLayer::getUseRGCompressedNormalMaps() const
-{
-    return options().useRGCompressedNormalMaps().get();
-}
-
-void
 VegetationLayer::setImpostorLowAngle(const Angle& value)
 {
     if (value != getImpostorLowAngle())
@@ -651,6 +632,26 @@ VegetationLayer::getEnabled(const std::string& name) const
 }
 
 void
+VegetationLayer::setMaxTextureSize(unsigned value)
+{
+    if (value != options().maxTextureSize().value())
+    {
+        if (getBiomeLayer())
+        {
+            options().maxTextureSize() = clamp(value, 1u, 63356u);
+            auto arena = getBiomeLayer()->getBiomeManager().getTextures();
+            arena->setMaxTextureSize(options().maxTextureSize().value());
+        }
+    }
+}
+
+unsigned
+VegetationLayer::getMaxTextureSize() const
+{
+    return options().maxTextureSize().get();
+}
+
+void
 VegetationLayer::addedToMap(const Map* map)
 {
     PatchLayer::addedToMap(map);
@@ -773,7 +774,6 @@ VegetationLayer::prepareForRendering(TerrainEngine* engine)
     setImpostorHighAngle(options().impostorHighAngle().get());
     setLODTransitionPadding(options().lodTransitionPadding().get());
     setUseImpostorNormalMaps(options().useImpostorNormalMaps().get());
-    setUseRGCompressedNormalMaps(options().useRGCompressedNormalMaps().get());
 }
 
 namespace
