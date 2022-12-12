@@ -29,6 +29,11 @@
 #include <vector>
 #include <list>
 
+
+// When INSERT_VERTS is defined walls will be broken nto discrete pieces with their own geometry for each wall skin and will not use repeating texture coordinates.
+// This allows you to use texture atlasing but at the expense of potentially much more geometry due to the vertices that are inserted to break up the walls.
+//#define INSERT_VERTS
+
 namespace osgEarth { namespace Buildings
 {
     using namespace osgEarth;
