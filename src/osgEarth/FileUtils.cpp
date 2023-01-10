@@ -204,10 +204,16 @@ osgEarth::Util::getFullPath(const std::string& relativeTo, const std::string &re
     // result that will go into the cache:
     std::string result;
 
-	if (!isRelativePath(relativePath) || relativeTo.empty())
+    // If they passed in an absolute path, strip any relative paths that might be embedded in the path.
+    // So if they passed in c:/data/models/../../file.jpg this will return the resolved path of c:/file.jpg
+    if (!isRelativePath(relativePath))
     {
-        //OE_NOTICE << relativePath << " is not a relative path " << std::endl;
         result = stripRelativePaths(relativePath);
+    }
+    // They passed in a relative path but no relativeTo, so just return the relativePath as is.
+    else if (relativeTo.empty())
+    {
+        result = relativePath;
     }
 
     //If they didn't specify a relative path, just return the relativeTo
@@ -241,6 +247,12 @@ osgEarth::Util::getFullPath(const std::string& relativeTo, const std::string &re
 std::string
 osgEarth::Util::stripRelativePaths(const std::string& filename)
 {
+    // If they pass in a relative path just return it unmodified
+    if (isRelativePath(filename))
+    {
+        return filename;
+    }
+
     std::list<std::string> directories;
     int start = 0;
     for (unsigned int i = 0; i < filename.size(); ++i)
