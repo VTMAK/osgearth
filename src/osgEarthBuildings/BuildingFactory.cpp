@@ -205,14 +205,14 @@ BuildingFactory::create(Feature*               feature,
             for(auto& i : feature->getGeometry()->asVector())
                 points.push_back(i);
 
-            envelope.sampleMapCoords(points, progress);
+            envelope.sampleMapCoords(points.begin(), points.end(), progress);
 
             for(auto& i : points)
             {
                 if (i.z() != NO_DATA_VALUE)
                 {
-                    min = osg::minimum(min, (float)i.z());
-                    max = osg::maximum(max, (float)i.z());
+                    min = std::min(min, (float)i.z());
+                    max = std::max(max, (float)i.z());
                     terrainMinMaxValid = true;
                 }
             }
