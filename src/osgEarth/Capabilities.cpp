@@ -58,7 +58,7 @@ namespace
             // osgEarth::initialize() at the start of your application to avoid these issues altogether.
             if (osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() > 0 && osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() < 32)
             {
-                OE_WARN << "WARNING:  Call osgEarth::initialize() before realizing any graphics windows.  There are currently " << osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() << " graphics contexts." << std::endl;
+                OE_INFO << "NOTE: Call osgEarth::initialize() before realizing any graphics windows.  There are currently " << osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() << " graphics contexts." << std::endl;
             }
 
     	    osg::GraphicsContext::ScreenIdentifier si;
