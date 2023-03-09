@@ -718,7 +718,7 @@ VegetationLayer::addedToMap(const Map* map)
     }
 
     // prepare for querying constraints with holes
-    map->getLayers(_constraintQuery.layers(), [](const Layer* layer)
+    map->getLayers<TerrainConstraintLayer>(_constraintQuery.layers(), [](const TerrainConstraintLayer* layer)
         {
             auto clayer = static_cast<const TerrainConstraintLayer*>(layer);
             return clayer->getRemoveInterior() == true;

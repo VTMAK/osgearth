@@ -259,6 +259,7 @@ SET(LIB_PUBLIC_HEADERS
     TileKey
     TileLayer
     TileHandler
+    TileMesher
     TileRasterizer
     TiledFeatureModelGraph
     TiledFeatureModelLayer
@@ -476,6 +477,7 @@ if(OSGEARTH_ENABLE_IMGUI)
         ImGui/LayersGUI
         ImGui/NetworkMonitorGUI
         ImGui/NotifyGUI
+        ImGui/PickerGUI
         ImGui/SceneGraphGUI
         ImGui/SearchGUI
         ImGui/TextureInspectorGUI
@@ -676,6 +678,7 @@ set(TARGET_SRC
     TileKey.cpp
     TileLayer.cpp
     TileHandler.cpp
+    TileMesher.cpp
     TileRasterizer.cpp
     TiledFeatureModelGraph.cpp
     TiledFeatureModelLayer.cpp
