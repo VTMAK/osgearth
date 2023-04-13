@@ -531,11 +531,11 @@ namespace osgEarth
 
                     // If there's a coverage layer with a decal, find it.
                     auto coverage = lm->getLandCoverLayer();
-                    if (coverage)
-                    {
-                        _landcoverDecal = dynamic_cast<DecalImageLayer*>(coverage->getSourceLayerByName("decal"));
-                        _layersToRefresh.push_back(_landcoverDecal.get());
-                    }
+                    //if (coverage)
+                    //{
+                    //    _landcoverDecal = dynamic_cast<DecalImageLayer*>(coverage->getSourceLayerByName("decal"));
+                    //    _layersToRefresh.push_back(_landcoverDecal.get());
+                    //}
                 }
                 else
                 {
