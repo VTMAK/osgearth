@@ -120,7 +120,7 @@ namespace Bruneton
             setWrap(WRAP_R, CLAMP_TO_EDGE);
         }
         void apply(osg::State& state) const override {
-            auto cid = GLUtils::getSharedContextID(state);
+            auto cid = osgEarth::GLUtils::getSharedContextID(state);
             if (getTextureObject(cid) == nullptr) {
                 const_cast<WrapTexture2D*>(this)->setTextureObject(cid,
                     new osg::Texture::TextureObject(
@@ -148,7 +148,7 @@ namespace Bruneton
             setWrap(WRAP_R, CLAMP_TO_EDGE);
         }
         void apply(osg::State& state) const override {
-            auto cid = GLUtils::getSharedContextID(state);
+            auto cid = osgEarth::GLUtils::getSharedContextID(state);
             if (getTextureObject(cid) == nullptr) {
                 const_cast<WrapTexture3D*>(this)->setTextureObject(cid,
                     new osg::Texture::TextureObject(
