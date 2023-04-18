@@ -178,14 +178,14 @@ namespace
         Mapping() : _ptr(nullptr) { }
         const osg::State* _ptr;
     };
-    static Mapping s_mappings[1024];
+    static Mapping s_mappings[4096];
 }
 
 unsigned
 GLUtils::getUniqueStateID(const osg::State& state)
 {
     // in theory this should never need a mutex..
-    for (int i = 0; i < 1024; ++i)
+    for (int i = 0; i < 4096; ++i)
     {
         if (s_mappings[i]._ptr == &state)
         {
@@ -203,7 +203,11 @@ GLUtils::getUniqueStateID(const osg::State& state)
 unsigned 
 GLUtils::getSharedContextID(const osg::State& state)
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    return 0;
+#else
     return state.getContextID();
+#endif
 }
 
 void
@@ -508,7 +512,12 @@ Mutexed<std::vector<GLObjectPool*>> GLObjectPool::_pools;
 GLObjectPool*
 GLObjectPool::get(osg::State& state)
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    GLObjectPool* pool = osg::get<GLObjectPool>(0);
+#else
     GLObjectPool* pool = osg::get<GLObjectPool>(state.getContextID());
+#endif
+
     pool->track(state.getGraphicsContext());
     return pool;
 }
@@ -1093,8 +1102,13 @@ GLBuffer::release()
         ext()->glDeleteBuffers(1, &_name);
         _name = 0;
         _size = 0;
+
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+        _isResident = false;
+#else
         for (auto& i : _isResident)
             i.second = false;
+#endif
     }
 }
 
@@ -1113,7 +1127,11 @@ GLBuffer::address()
 void
 GLBuffer::makeResident(osg::State& state)
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    Resident& resident = _isResident;
+#else
     Resident& resident = _isResident[state.getGraphicsContext()];
+#endif
 
     if (address() != 0 && resident == false)
     {
@@ -1127,7 +1145,11 @@ GLBuffer::makeResident(osg::State& state)
 void
 GLBuffer::makeNonResident(osg::State& state)
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    Resident& resident = _isResident;
+#else
     Resident& resident = _isResident[state.getGraphicsContext()];
+#endif
 
     if (address() != 0 && resident == true)
     {
@@ -1279,7 +1301,11 @@ GLTexture::handle(osg::State& state)
 void
 GLTexture::makeResident(const osg::State& state, bool toggle)
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    Resident& resident = _isResident;
+#else
     Resident& resident = _isResident[state.getGraphicsContext()];
+#endif
 
     //TODO: does this stall??
     if (resident != toggle)
@@ -1300,7 +1326,12 @@ GLTexture::makeResident(const osg::State& state, bool toggle)
 bool
 GLTexture::isResident(const osg::State& state) const
 {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+    Resident& resident = _isResident;
+#else
     Resident& resident = _isResident[state.getGraphicsContext()];
+#endif
+
     return resident == true;
 }
 
@@ -1310,8 +1341,12 @@ GLTexture::release()
     OE_DEVEL << LC << "GLTexture::release, name=" << name() << std::endl;
     if (_handle != 0)
     {
+#ifdef OSGEARTH_SINGLE_GL_CONTEXT
+        _isResident = false;
+#else
         for (auto& i : _isResident)
             i.second = false;
+#endif
 
         _handle = 0;
     }
