@@ -117,9 +117,18 @@ AerodromeLayer::createSceneGraph()
         osg::ref_ptr<AerodromeFactory> factory = new AerodromeFactory(
             map.get(),
             _catalog.get(),
-            options().range().get(),
-            getSceneGraphCallbacks(),
-            getReadOptions());
+            getSceneGraphCallbacks());
+
+        if (options().range().isSet())
+            factory->setRange(options().range().get());
+
+        if (options().buildTerminals().isSet())
+            factory->setBuildTerminals(options().buildTerminals().get());
+
+        for (auto& icao : options().icaoExclusions())
+            factory->icaoExclusions().insert(toLower(icao));
+
+        factory->init(getReadOptions());
 
         _root->addChild(factory.get());
 

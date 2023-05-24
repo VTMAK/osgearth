@@ -205,30 +205,13 @@ osg::ref_ptr<AerodromeRenderer> AerodromeFactory::s_renderer = 0L;
 AerodromeFactory::AerodromeFactory(
     const Map* map,
     AerodromeCatalog* catalog,
-    SceneGraphCallbacks* callbacks,
-    const osgDB::Options* options) :
+    SceneGraphCallbacks* callbacks) :
     
     _map(map),
     _catalog(catalog),
-    _sceneGraphCallbacks(callbacks),
-    _lodRange(Distance(15000.0f, Units::METERS))
+    _sceneGraphCallbacks(callbacks)
 {
-    init(options);
-}
-
-AerodromeFactory::AerodromeFactory(
-    const Map* map,
-    AerodromeCatalog* catalog,
-    const Distance& lodRange,
-    SceneGraphCallbacks* callbacks,
-    const osgDB::Options* options) :
-    
-    _map(map),
-    _catalog(catalog), 
-    _sceneGraphCallbacks(callbacks),
-    _lodRange(lodRange)
-{
-    init(options);
+    //nop
 }
 
 void
@@ -449,7 +432,11 @@ void AerodromeFactory::processStopwayNode(StopwayNode* stopway, AerodromeNode* a
 }
 
 AerodromeNode*
-AerodromeFactory::createAerodrome(AerodromeCatalog* catalog, const std::string& icao, const osgDB::Options* options)
+AerodromeFactory::createAerodrome(
+    AerodromeCatalog* catalog, 
+    const std::string& icao, 
+    bool buildTerminals,
+    const osgDB::Options* options)
 {
     osg::ref_ptr<AerodromeNode> aerodrome = new AerodromeNode(icao);
 
@@ -489,8 +476,11 @@ AerodromeFactory::createAerodrome(AerodromeCatalog* catalog, const std::string& 
     for(AerodromeOptionsSet::const_iterator i = catalog->windsockOptions().begin(); i != catalog->windsockOptions().end(); ++i)
         AerodromeFactory::createFeatureNodes<WindsockNode, WindsockGroup, AerodromeFeatureOptions>(*i, aerodrome.get(), options);
 
-    for(TerminalOptionsSet::const_iterator i = catalog->terminalOptions().begin(); i != catalog->terminalOptions().end(); ++i)
-        AerodromeFactory::createFeatureNodes<TerminalNode, TerminalGroup, TerminalFeatureOptions>(*i, aerodrome.get(), options);
+    if (buildTerminals)
+    {
+        for (TerminalOptionsSet::const_iterator i = catalog->terminalOptions().begin(); i != catalog->terminalOptions().end(); ++i)
+            AerodromeFactory::createFeatureNodes<TerminalNode, TerminalGroup, TerminalFeatureOptions>(*i, aerodrome.get(), options);
+    }
 
     return aerodrome.release();
 }
@@ -506,7 +496,7 @@ AerodromeNode* AerodromeFactory::getAerodromeNode(const std::string& icao)
 
     // create AerodromeNode
     OE_START_TIMER(create);
-    osg::ref_ptr<AerodromeNode> node = createAerodrome(_catalog.get(), icao, _dbOptions.get());
+    osg::ref_ptr<AerodromeNode> node = createAerodrome(_catalog.get(), icao, _buildTerminals, _dbOptions.get());
     float createTime = OE_STOP_TIMER(create);
 
     // render
@@ -573,7 +563,8 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
 
             std::string icao = f->getString(i->icaoAttr().value());
 
-            if (!icao.empty())
+            // skip the aerodrome if it is in the exclusions list..
+            if (!icao.empty() && _icaoExclusions.count(toLower(icao)) == 0)
             {
                 // create PagedLOD for this aerodrome
                 std::string uri = s_makeURI( _uid, icao );

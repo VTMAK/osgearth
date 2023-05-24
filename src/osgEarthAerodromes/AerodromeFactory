@@ -29,6 +29,7 @@
 #include "StopwayNode"
 #include <osgEarth/Map>
 #include <osgEarth/SceneGraphCallback>
+#include <unordered_set>
 
 
 namespace osgEarth { namespace Aerodrome
@@ -41,43 +42,53 @@ namespace osgEarth { namespace Aerodrome
     class OSGEARTHAERODROME_EXPORT AerodromeFactory : public osg::Group
     {
     public:
-
         //! Construct a factory
         AerodromeFactory(
             const Map* map,
             AerodromeCatalog* catalog,
-            SceneGraphCallbacks* callbacks,
-            const osgDB::Options* options);
+            SceneGraphCallbacks* callbacks);
 
-        //! Construct a factory
-        AerodromeFactory(
-            const Map* map,
-            AerodromeCatalog* catalog,
-            const Distance& range,
-            SceneGraphCallbacks* callbacks,
-            const osgDB::Options* options);
-
+        //! Destructor
         virtual ~AerodromeFactory();
 
+        //! Initialize the factory (after setting any options below)
+        void init(const osgDB::Options* options);
+
+        //! Page-in range. Call before init().
+        void setRange(const Distance& value) { _lodRange = value; }
+        const Distance& getRange() const { return _lodRange; }
+
+        //! Whether to include airport terminals in the geometry (default = true)
+        void setBuildTerminals(bool value) { _buildTerminals = value; }
+        bool getBuildTerminals() const { return _buildTerminals; }
+
+        //! Collection of ICAOs to exclude
+        //! Call before init();
+        std::unordered_set<std::string>& icaoExclusions() { return _icaoExclusions; };
+        const std::unordered_set<std::string>& icaoExclusions() const { return _icaoExclusions; };
+
+
+        //! Map to reference for geometry generation
         const Map* getMap() const { return _map.get(); }
 
+        //! Object that creates aerodrome geometries
         AerodromeRenderer* getRenderer() { return _renderer.get(); }
         void setRenderer(AerodromeRenderer* renderer) { _renderer = renderer; }
 
-        // creates an AerodromeNode from AerodromeCatalog
-        static AerodromeNode* createAerodrome(AerodromeCatalog* catalog, const std::string& icao, const osgDB::Options* options=0L);
+        //! creates an AerodromeNode from AerodromeCatalog
+        static AerodromeNode* createAerodrome(AerodromeCatalog* catalog, const std::string& icao, bool buildTerminals, const osgDB::Options* options=0L);
 
+        //! gets the aerodrome scene graph assocaited with the provided ICAO (airport code)
         AerodromeNode* getAerodromeNode(const std::string& icao);
 
-        /** Access a global AerodromeFactory singleton. */
+        //! Access a global AerodromeRenderer singleton
         static void setDefaultRenderer(AerodromeRenderer* renderer);
         static AerodromeRenderer* getDefaultRenderer() { return s_renderer.get(); }
 
+        //! Callbacks for adds and removes
         SceneGraphCallbacks* getSceneGraphCallbacks() const { return _sceneGraphCallbacks.get(); }
 
     protected:
-
-        void init(const osgDB::Options* options);
 
         // creates PagedLODs for delayed aerodrome creation from an AerodromeCatalog
         void seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options* options=0L);
@@ -98,8 +109,11 @@ namespace osgEarth { namespace Aerodrome
         osg::ref_ptr<AerodromeRenderer> _renderer;
         osg::ref_ptr<SceneGraphCallbacks> _sceneGraphCallbacks;
         mutable Threading::ReadWriteMutex _mutex;
-        Distance _lodRange;
         int _lodSSE;
+
+        bool _buildTerminals = true;
+        std::unordered_set<std::string> _icaoExclusions;
+        Distance _lodRange = Distance(15000.0f, Units::METERS);
     };
 
 } } // namespace osgEarth::Aerodrome

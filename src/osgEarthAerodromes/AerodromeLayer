@@ -40,7 +40,7 @@ namespace osgEarth { namespace Aerodrome
         {
             // init properties here
             range().setDefault(Distance("15000m"));
-
+            buildTerminals().setDefault(true);
             fromConfig( _conf );
         }
 
@@ -49,6 +49,12 @@ namespace osgEarth { namespace Aerodrome
 
         //! Range at which aerodromes whould appear
         OE_OPTION(Distance, range);
+
+        //! Whether to build terminal buildings (default is true)
+        OE_OPTION(bool, buildTerminals);
+
+        //! ICAO codes to exclude
+        OE_OPTION_VECTOR(std::string, icaoExclusions);
 
         //! Render bin number
         OE_OPTION(int, renderOrder);
@@ -62,8 +68,11 @@ namespace osgEarth { namespace Aerodrome
             Config conf = VisibleLayer::Options::getConfig();
             conf.set("catalog", catalog());
             conf.set("range", range());
+            conf.set("build_terminals", buildTerminals());
             conf.set("render_order", renderOrder());
             conf.set("render_bin", renderBin());
+            if (!icaoExclusions().empty())
+                conf.set("exclude_icaos", joinStrings(icaoExclusions(), ','));
             return conf;
         }
 
@@ -79,8 +88,10 @@ namespace osgEarth { namespace Aerodrome
         {
             conf.get("catalog", catalog());
             conf.get("range", range());
+            conf.get("build_terminals", buildTerminals());
             conf.get("render_order", renderOrder());
             conf.get("render_bin", renderBin());
+            StringTokenizer(conf.value("exclude_icaos"), _icaoExclusions, ", ", "", false, true);
         }
     };
 
