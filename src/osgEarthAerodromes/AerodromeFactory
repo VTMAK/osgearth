@@ -62,6 +62,10 @@ namespace osgEarth { namespace Aerodrome
         void setBuildTerminals(bool value) { _buildTerminals = value; }
         bool getBuildTerminals() const { return _buildTerminals; }
 
+        //! Whether to clamp elements to the terrain instead of using the flattened elevation
+        void setClampToTerrain(bool value) { _clampToTerrain = value; }
+        bool getClampToTerrain() const { return _clampToTerrain; }
+
         //! Collection of ICAOs to exclude
         //! Call before init();
         std::unordered_set<std::string>& icaoExclusions() { return _icaoExclusions; };
@@ -114,6 +118,7 @@ namespace osgEarth { namespace Aerodrome
         bool _buildTerminals = true;
         std::unordered_set<std::string> _icaoExclusions;
         Distance _lodRange = Distance(15000.0f, Units::METERS);
+        bool _clampToTerrain = false;
     };
 
 } } // namespace osgEarth::Aerodrome

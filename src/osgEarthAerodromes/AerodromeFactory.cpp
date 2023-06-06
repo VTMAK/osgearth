@@ -226,6 +226,7 @@ AerodromeFactory::init(const osgDB::Options* options)
 
     // create and initialize a renderer
     _renderer = s_renderer.valid() ? (osgEarth::Aerodrome::AerodromeRenderer*)s_renderer.get() : new AerodromeRenderer();
+    _renderer->setClampToTerrain(_clampToTerrain);
     _renderer->initialize(_map.get(), _dbOptions.get());
 
     // setup the PagedLODs
