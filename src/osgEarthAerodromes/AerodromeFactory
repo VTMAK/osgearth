@@ -85,9 +85,10 @@ namespace osgEarth { namespace Aerodrome
         //! gets the aerodrome scene graph assocaited with the provided ICAO (airport code)
         AerodromeNode* getAerodromeNode(const std::string& icao);
 
-        //! Access a global AerodromeRenderer singleton
-        static void setDefaultRenderer(AerodromeRenderer* renderer);
-        static AerodromeRenderer* getDefaultRenderer() { return s_renderer.get(); }
+        //! Set a creator object for aerodrome renderer implementations.
+        using RendererFactory = std::function<AerodromeRenderer*()>;
+        static void setRendererFactory(RendererFactory);
+        static RendererFactory getRendererFactory() { return s_renderer_factory; }
 
         //! Callbacks for adds and removes
         SceneGraphCallbacks* getSceneGraphCallbacks() const { return _sceneGraphCallbacks.get(); }
@@ -104,7 +105,7 @@ namespace osgEarth { namespace Aerodrome
         static void processStopwayNode(StopwayNode* stopway, AerodromeNode* aerodrome);
 
 
-        static osg::ref_ptr<AerodromeRenderer> s_renderer;
+        static RendererFactory s_renderer_factory;
 
         UID _uid;
         osg::observer_ptr<const Map> _map;
