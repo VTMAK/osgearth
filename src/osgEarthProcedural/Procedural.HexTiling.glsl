@@ -267,7 +267,8 @@ void ht_hex2colTex_optimized(
     in sampler2D material_tex,
     in vec2 st,
     out vec4 color,
-    out vec4 material)
+    out vec4 material,
+    inout vec3 weighting)
 {
     // Get triangle info
     vec3 weights;
@@ -322,13 +323,19 @@ void ht_hex2colTex_optimized(
     vec4 m3 = textureGrad(material_tex, st3, ddx, ddy);
 #endif
 
-    // Use color's luminance as weighting factor
-    const vec3 Lw = vec3(0.299, 0.587, 0.114);
-    vec3 Dw = vec3(dot(c1.xyz, Lw), dot(c2.xyz, Lw), dot(c3.xyz, Lw));
-    Dw = mix(vec3(1.0), Dw, ht_g_fallOffContrast);
-    vec3 W = Dw * pow(weights, vec3(ht_g_exp));
-    W /= (W.x + W.y + W.z);
+    vec3 W = weighting;
+    if (W == vec3(0.0))
+    {
+        // Use color's luminance as weighting factor
+        const vec3 Lw = vec3(0.299, 0.587, 0.114);
+        vec3 Dw = vec3(dot(c1.xyz, Lw), dot(c2.xyz, Lw), dot(c3.xyz, Lw));
+        Dw = mix(vec3(1.0), Dw, ht_g_fallOffContrast);
+        
+        W = Dw * pow(weights, vec3(ht_g_exp));
+        W /= (W.x + W.y + W.z);
+    }
 
+    weighting = W;
     color = W.x * c1 + W.y * c2 + W.z * c3;
     material = W.x * m1 + W.y * m2 + W.z * m3;
 }
