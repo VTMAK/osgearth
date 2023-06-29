@@ -196,6 +196,7 @@ MapNode::Options::getConfig() const
     conf.set( "proxy",                    proxySettings() );
     conf.set( "lighting",                 enableLighting() );
     conf.set( "overlay_blending",         overlayBlending() );
+    conf.set( "overlay_blending_source",  overlayBlendingSource());
     conf.set( "overlay_texture_size",     overlayTextureSize() );
     conf.set( "overlay_mipmapping",       overlayMipMapping() );
     conf.set( "overlay_resolution_ratio", overlayResolutionRatio() );
@@ -215,6 +216,7 @@ MapNode::Options::fromConfig(const Config& conf)
     proxySettings().init(ProxySettings());
     enableLighting().init(true);
     overlayBlending().init(true);
+    overlayBlendingSource().init("alpha");
     overlayMipMapping().init(false);
     overlayTextureSize().init(4096);
     overlayResolutionRatio().init(3.0f);
@@ -226,6 +228,7 @@ MapNode::Options::fromConfig(const Config& conf)
     conf.get( "proxy",                    proxySettings() );
     conf.get( "lighting",                 enableLighting() );
     conf.get( "overlay_blending",         overlayBlending() );
+    conf.get( "overlay_blending_source",  overlayBlendingSource());
     conf.get( "overlay_texture_size",     overlayTextureSize() );
     conf.get( "overlay_mipmapping",       overlayMipMapping() );
     conf.get( "overlay_resolution_ratio", overlayResolutionRatio() );
@@ -333,26 +336,21 @@ MapNode::open()
     // load and attach the terrain engine.
     _terrainEngine = TerrainEngineNode::create(options().terrain().get());
 
-    // Callback listens for changes in the Map:
+    // Install a callback that lets this MapNode know about any changes
+    // to the map, and invoke it manually now so they start out in sync.
     _mapCallback = new MapNodeMapCallbackProxy(this);
     _map->addMapCallback( _mapCallback.get() );
+    _mapCallback->invokeOnLayerAdded(_map.get());
 
     // Give the terrain engine a map to render.
     if ( _terrainEngine )
     {
         _terrainEngine->setMap(_map.get(), options().terrain().get());
-
-        // Define PBR lighting on the terrain engine
-        //_terrainEngine->getNode()->getOrCreateStateSet()->setDefine("OE_USE_PBR");
     }
     else
     {
         OE_WARN << "FAILED to create a terrain engine for this map" << std::endl;
     }
-
-    // Invoke the callback manually to add all existing layers to this node.
-    // This needs to happen AFTER calling _terrainEngine->setMap().
-    _mapCallback->invokeOnLayerAdded(_map.get());
 
     // initialize terrain-level lighting:
     if ( options().terrain()->enableLighting().isSet() )
@@ -362,7 +360,7 @@ MapNode::open()
             options().terrain()->enableLighting().get() ? 1 : 0 );
     }
 
-    // a decorator for overlay models:
+    // a decorator for draped geometry (projected texturing)
     OverlayDecorator* overlayDecorator = new OverlayDecorator();
     _terrainGroup->addChild(overlayDecorator);
 
@@ -390,6 +388,11 @@ MapNode::open()
 
         if ( options().overlayBlending().isSet() )
             draping->setOverlayBlending( options().overlayBlending().get() );
+
+        if (options().overlayBlendingSource().isSetTo("color"))
+            draping->setOverlayBlendingParams(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+        else if (options().overlayBlendingSource().isSetTo("alpha"))
+            draping->setOverlayBlendingParams(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         if ( envOverlayTextureSize )
             draping->setTextureSize( as<int>(envOverlayTextureSize, 1024) );
@@ -765,8 +768,7 @@ MapNode::onLayerAdded(Layer* layer, unsigned index)
 {
     if (!layer || !layer->isOpen())
         return;
-    
-    // Communicate terrain resources to the layer:
+
     layer->invoke_prepareForRendering(getTerrainEngine());
 
     // Create the layer's node, if it has one:

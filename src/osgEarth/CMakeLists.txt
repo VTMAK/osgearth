@@ -247,6 +247,7 @@ SET(LIB_PUBLIC_HEADERS
     TerrainOptions
     TerrainEngineNode
     TerrainEngineRequirements
+    TerrainMeshLayer
     TerrainResources
     TerrainTileModel
     TerrainTileModelFactory
@@ -473,6 +474,7 @@ if(OSGEARTH_ENABLE_IMGUI)
     set(LIB_PUBLIC_HEADERS_IMGUI
         ImGui/ImGui
         ImGui/ImGuiApp
+        ImGui/AnnotationsGUI
         ImGui/ContentBrowserGUI
         ImGui/LayersGUI
         ImGui/NetworkMonitorGUI
@@ -513,7 +515,7 @@ ENDIF (NOT TINYXML_FOUND)
 
 
 SET(VERSION_GIT_SOURCE "")
-find_package(git)
+find_package(Git)
 if (GIT_FOUND)
     option(OSGEARTH_EMBED_GIT_SHA "Encode the SHA in the Version header code" OFF)
     if(OSGEARTH_EMBED_GIT_SHA)
@@ -664,6 +666,7 @@ set(TARGET_SRC
     Terrain.cpp
     TerrainOptions.cpp
     TerrainEngineNode.cpp
+    TerrainMeshLayer.cpp
     TerrainResources.cpp
     TerrainTileModel.cpp
     TerrainTileModelFactory.cpp

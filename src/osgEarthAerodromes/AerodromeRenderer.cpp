@@ -83,7 +83,7 @@ AerodromeRenderer::AerodromeRenderer()
     _baseRenderBinNum(1),
     _elevation(0.0)
 {
- setUseReverseZBuffer(false);
+    setUseReverseZBuffer(false);
 }
 
 
@@ -168,8 +168,7 @@ AerodromeRenderer::apply(LightIndicatorNode& node)
 void
 AerodromeRenderer::apply(LinearFeatureNode& node)
 {
-    osg::ref_ptr<osgEarth::Feature> feature = osg::clone( node.getFeature(), osg::CopyOp::DEEP_COPY_ALL );
-
+    osg::ref_ptr<osgEarth::Feature> feature = osg::clone(node.getFeature(), osg::CopyOp::DEEP_COPY_ALL);
     osg::ref_ptr<osg::Node> geom;
 
     GeometryIterator iter( feature->getGeometry() );
@@ -177,11 +176,9 @@ AerodromeRenderer::apply(LinearFeatureNode& node)
     {
         Geometry* part = iter.next();
 
-        for(unsigned i=0; i<part->size(); ++i)
-        {
-            (*part)[i].z() = _elevation;
-        }
-
+        for (auto& vert : *part)
+            vert.z() = _elevation;
+        
         osg::ref_ptr<osg::Vec3Array> verts = new osg::Vec3Array();
         transformAndLocalize( part->asVector(), feature->getSRS(), verts.get(), 0L );
         for(int j=0; j<verts->size(); ++j)
@@ -635,8 +632,15 @@ AerodromeRenderer::apply(TerminalNode& node)
 
         // Clamp the buildings to the terrain.
         AltitudeSymbol* alt = buildingStyle.getOrCreate<AltitudeSymbol>();
-        alt->clamping() = AltitudeSymbol::CLAMP_NONE;
-        alt->verticalOffset() = _elevation;
+        if (_clampToTerrain)
+        {
+            alt->clamping() = AltitudeSymbol::CLAMP_TO_TERRAIN;
+        }
+        else
+        {
+            alt->clamping() = AltitudeSymbol::CLAMP_NONE;
+            alt->verticalOffset() = _elevation;
+        }
 
         // a style for the wall textures:
         Style wallStyle;
@@ -1033,8 +1037,14 @@ AerodromeRenderer::featureModelRenderer(osgEarth::Feature* feature, const ModelO
         }
     }
 
-    style.getOrCreate<AltitudeSymbol>()->clamping() = AltitudeSymbol::CLAMP_NONE;
-    style.getOrCreate<AltitudeSymbol>()->verticalOffset() = _elevation;
+    auto alt = style.getOrCreate<AltitudeSymbol>();
+    if (_clampToTerrain) {
+        alt->clamping() = alt->CLAMP_TO_TERRAIN;
+    }
+    else {
+        alt->clamping() = alt->CLAMP_NONE;
+        alt->verticalOffset() = _elevation;
+    }
 
     return defaultFeatureRenderer(feature, style);
 }
@@ -1077,8 +1087,14 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Colo
         style.getOrCreate<ExtrusionSymbol>()->height() = height;
     }
 
-    style.getOrCreate<AltitudeSymbol>()->clamping() = AltitudeSymbol::CLAMP_NONE;
-    style.getOrCreate<AltitudeSymbol>()->verticalOffset() = _elevation;
+    auto alt = style.getOrCreate<AltitudeSymbol>();
+    if (_clampToTerrain) {
+        alt->clamping() = alt->CLAMP_TO_TERRAIN;
+    }
+    else {
+        alt->clamping() = alt->CLAMP_NONE;
+        alt->verticalOffset() = _elevation;
+    }
 
     return defaultFeatureRenderer(feature, style);
 }
@@ -1117,16 +1133,20 @@ AerodromeRenderer::createLocalizations(const osgEarth::Bounds& bounds, BoundaryN
       GeoPoint anchor(boundary->getFeature()->getSRS(), bounds.center().x(), bounds.center().y());
       anchor = anchor.transform(refMap->getSRS());
 
-      // get a common elevation for the aerodrome
-      if (boundary && boundary->hasElevation())
+      _elevation = 0.0;
+      if (!_clampToTerrain)
       {
-         _elevation = boundary->elevation();
-      }
-      else
-      {
-         ElevationQuery eq(refMap.get());
-         eq.getElevation(anchor, _elevation);
-         OE_WARN << LC << "No elevation data in boundary; using an elevation query" << std::endl;
+          // get a common elevation for the aerodrome
+          if (boundary && boundary->hasElevation())
+          {
+              _elevation = boundary->elevation();
+          }
+          else
+          {
+              ElevationQuery eq(refMap.get());
+              eq.getElevation(anchor, _elevation);
+              OE_WARN << LC << "No elevation data in boundary; using an elevation query" << std::endl;
+          }
       }
 
       // create a w2l matrix for the aerodrome
@@ -1210,4 +1230,25 @@ void AerodromeRenderer::setUseReverseZBuffer(bool useReverseZ)
 bool AerodromeRenderer::getUseReverseZBuffer()
 {
    return _useReverseZBuffer;
+}
+
+double AerodromeRenderer::calculateZ(const SpatialReference* srs, double x, double y, double overrideZ)
+{
+    // Either clamp to the terrain, OR use the flat elevation value to place the object.
+    // _elevation in meters
+    double z = overrideZ > -DBL_MAX ? overrideZ : _elevation;
+
+    if (getClampToTerrain())
+    {
+        OE_SOFT_ASSERT_AND_RETURN(_map.valid(), z);
+
+        GeoPoint p(srs, x, y, 0.0, ALTMODE_ABSOLUTE);
+        auto sample = _map->getElevationPool()->getSample(p, nullptr, nullptr);
+        if (sample.hasData())
+        {
+            z = sample.elevation().as(Units::METERS);
+        }
+    }
+
+    return z;
 }

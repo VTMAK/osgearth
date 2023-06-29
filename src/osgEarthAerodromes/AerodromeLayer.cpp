@@ -128,6 +128,9 @@ AerodromeLayer::createSceneGraph()
         for (auto& icao : options().icaoExclusions())
             factory->icaoExclusions().insert(toLower(icao));
 
+        if (options().clampToTerrain().isSet())
+            factory->setClampToTerrain(options().clampToTerrain().get());
+
         factory->init(getReadOptions());
 
         _root->addChild(factory.get());

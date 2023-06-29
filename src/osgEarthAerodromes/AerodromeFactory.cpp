@@ -200,7 +200,7 @@ REGISTER_OSGPLUGIN(osgearth_pseudo_amf, osgEarthAerodromeModelPseudoLoader);
 #endif
 
 
-osg::ref_ptr<AerodromeRenderer> AerodromeFactory::s_renderer = 0L;
+AerodromeFactory::RendererFactory AerodromeFactory::s_renderer_factory = nullptr;
 
 AerodromeFactory::AerodromeFactory(
     const Map* map,
@@ -221,11 +221,11 @@ AerodromeFactory::init(const osgDB::Options* options)
     _uid = osgEarthAerodromeModelPseudoLoader::registerFactory( this );
 #endif
 
-    _dbOptions = options; //new osgDB::Options( *options );
-    //_dbOptions->setObjectCacheHint( osgDB::Options::CACHE_IMAGES );
+    _dbOptions = options;
 
     // create and initialize a renderer
-    _renderer = s_renderer.valid() ? (osgEarth::Aerodrome::AerodromeRenderer*)s_renderer.get() : new AerodromeRenderer();
+    _renderer = s_renderer_factory ? s_renderer_factory() : new AerodromeRenderer();
+    _renderer->setClampToTerrain(_clampToTerrain);
     _renderer->initialize(_map.get(), _dbOptions.get());
 
     // setup the PagedLODs
@@ -516,9 +516,9 @@ AerodromeNode* AerodromeFactory::getAerodromeNode(const std::string& icao)
 }
 
 void 
-AerodromeFactory::setDefaultRenderer(AerodromeRenderer* renderer)
+AerodromeFactory::setRendererFactory(RendererFactory value)
 {
-    s_renderer = renderer;
+    s_renderer_factory = value;
 }
 
 void

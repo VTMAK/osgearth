@@ -101,6 +101,15 @@ namespace osgEarth { namespace Aerodrome
         // Are we using the reverse Z buffer?
         bool getUseReverseZBuffer();
 
+        //! Whether to clamp aerodrome elements to the terrain,
+        //! versus placing them all at _elevation.
+        void setClampToTerrain(bool value) {
+            _clampToTerrain = value;
+        }
+        bool getClampToTerrain() const {
+            return _clampToTerrain;
+        }
+
     protected:
 
         friend class AerodromeFactory;
@@ -135,9 +144,14 @@ namespace osgEarth { namespace Aerodrome
         // vs. reverse Z buffer)
         void setDepthState(osg::ref_ptr<osg::Node> geom);
 
+        // Return an Z value (in meters) for the given point, taking into account the "clamp to terrain"
+        // settings and an optional elevation override to use if terrain clamping is off.
+        double calculateZ(const SpatialReference* srs, double x, double y, double overrideZ = -DBL_MAX);
+
         osg::observer_ptr<const Map> _map;
         osg::ref_ptr<osgDB::Options> _dbOptions;
         double _elevation;
+        bool _clampToTerrain = false;
         osg::Matrixd _world2local;
         osg::Matrixd _local2world;
         osg::Vec3d _localMin;

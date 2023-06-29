@@ -41,6 +41,7 @@ namespace osgEarth { namespace Aerodrome
             // init properties here
             range().setDefault(Distance("15000m"));
             buildTerminals().setDefault(true);
+            clampToTerrain().setDefault(false);
             fromConfig( _conf );
         }
 
@@ -55,6 +56,11 @@ namespace osgEarth { namespace Aerodrome
 
         //! ICAO codes to exclude
         OE_OPTION_VECTOR(std::string, icaoExclusions);
+
+        //! Whether to clamp aerodrome elements to the terrain. Defaults to FALSE.
+        //! If false, catalog elements will place using a single global elevation 
+        //! for the associated aerodrome.
+        OE_OPTION(bool, clampToTerrain);
 
         //! Render bin number
         OE_OPTION(int, renderOrder);
@@ -73,6 +79,7 @@ namespace osgEarth { namespace Aerodrome
             conf.set("render_bin", renderBin());
             if (!icaoExclusions().empty())
                 conf.set("exclude_icaos", joinStrings(icaoExclusions(), ','));
+            conf.set("clamp_to_terrain", clampToTerrain());
             return conf;
         }
 
@@ -92,6 +99,7 @@ namespace osgEarth { namespace Aerodrome
             conf.get("render_order", renderOrder());
             conf.get("render_bin", renderBin());
             StringTokenizer(conf.value("exclude_icaos"), _icaoExclusions, ", ", "", false, true);
+            conf.get("clamp_to_terrain", clampToTerrain());
         }
     };
 
