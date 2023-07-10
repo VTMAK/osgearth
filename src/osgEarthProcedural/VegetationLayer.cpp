@@ -1651,9 +1651,7 @@ VegetationLayer::createDrawable(
 }
 
 void
-VegetationLayer::cull(
-    const TileBatch& batch,
-    osg::NodeVisitor& nv) const
+VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
 {
     if (_assets.empty())
         return;
@@ -1862,18 +1860,5 @@ VegetationLayer::releaseGLObjects(osg::State* state) const
 {
     PatchLayer::releaseGLObjects(state);
 
-    ScopedMutexLock lock(_tiles);
-
-    for (auto& tile : _tiles)
-    {
-        auto drawable = tile.second->_drawable.get();
-        if (drawable.valid())
-            drawable->releaseGLObjects(state);
-    }
-
-    if (getBiomeLayer())
-    {
-        auto textures = getBiomeLayer()->getBiomeManager().getTextures();
-        textures->releaseGLObjects(state);
-    }
+    const_cast<VegetationLayer*>(this)->dirty();
 }

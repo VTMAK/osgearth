@@ -209,6 +209,7 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile, bool useNVG
 
         // Texture arena for the entire layer
         _textures = new TextureArena();
+        _textures->setName("BuildingPager");
         _textures->setBindingPoint(1);
         _textures->setAutoRelease(true);
         ss->setAttribute(_textures);

@@ -55,6 +55,7 @@ EngineContext::EngineContext(
     // create a bindless texture arena and set it to automatically
     // release textures that the terrain no longer references.
     _textures = new TextureArena();
+    _textures->setName("REX Terrain Engine");
     _textures->setBindingPoint(29); // TODO
     _textures->setAutoRelease(true);
 

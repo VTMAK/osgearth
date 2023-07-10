@@ -568,3 +568,19 @@ BiomeLayer::objectDeleted(void* value)
             _tracker.erase(token);
         });
 }
+
+void
+BiomeLayer::resizeGLObjectBuffers(unsigned maxsize)
+{
+    auto textures = _biomeMan.getTextures();
+    if (textures)
+        textures->resizeGLObjectBuffers(maxsize);
+}
+
+void
+BiomeLayer::releaseGLObjects(osg::State* state) const
+{
+    auto textures = _biomeMan.getTextures();
+    if (textures)
+        textures->releaseGLObjects(state);
+}

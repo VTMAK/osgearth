@@ -187,25 +187,29 @@ namespace osgEarth
 
         public: // Layer
 
-            virtual void addedToMap(const Map*) override;
+            void addedToMap(const Map*) override;
 
-            virtual void removedFromMap(const Map*) override;
+            void removedFromMap(const Map*) override;
 
         protected: // Layer
 
-            virtual void init() override;
+            void init() override;
 
-            virtual Status openImplementation() override;
+            Status openImplementation() override;
 
-            virtual Status closeImplementation() override;
+            Status closeImplementation() override;
+
+            void resizeGLObjectBuffers(unsigned) override;
+
+            void releaseGLObjects(osg::State*) const override;
 
         protected: // ImageLayer
 
-            virtual GeoImage createImageImplementation(
+            GeoImage createImageImplementation(
                 const TileKey& key, 
                 ProgressCallback* progress) const override;
 
-            virtual void postCreateImageImplementation(
+            void postCreateImageImplementation(
                 GeoImage& createdImage,
                 const TileKey& key,
                 ProgressCallback* progress) const override;

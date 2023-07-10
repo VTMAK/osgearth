@@ -198,15 +198,14 @@ namespace osgEarth
         // GL objects that can be shared across contexts
         struct GLObjects : public BindlessShareableGLObjects
         {
-            GLObjects() : _inUse(false), _lastAppliedFrame(-1) { }
-            bool _inUse;
+            bool _inUse = false;
+            bool _handleBufferDirty = true;
+            int _lastAppliedFrame = -1;
+
             std::queue<int> _toCompile;
             TextureVector _toRemove;
-
             GLBuffer::Ptr _handleBuffer;
             std::vector<GLuint64> _handles;
-            bool _dirty;
-            int _lastAppliedFrame;
         };
         mutable osg::buffered_object<GLObjects> _globjects;
 

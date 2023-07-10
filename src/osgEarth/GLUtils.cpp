@@ -43,6 +43,8 @@ using namespace osgEarth;
 
 #define LC "[GLUtils] "
 
+//#define USE_RECYCLING
+
 #define OE_DEVEL OE_DEBUG 
 
 #ifndef GL_LINE_SMOOTH
@@ -919,6 +921,7 @@ GLBuffer::create(
     osg::State& state,
     GLsizei sizeHint)
 {
+#ifdef USE_RECYCLING
     const GLObject::Compatible comp = [sizeHint](GLObject* obj) {
         return
             obj->ns() == GL_BUFFER &&
@@ -938,6 +941,9 @@ GLBuffer::create(
         object->_recyclable = true;
     }
     return object;
+#else
+    return create(target, state);
+#endif
 }
 
 void
@@ -1250,6 +1256,7 @@ GLTexture::create(
     osg::State& state, 
     const Profile& profileHint)
 {
+#ifdef USE_RECYCLING
     const GLObject::Compatible comp = [profileHint](GLObject* obj) {
         return
             obj->ns() == GL_TEXTURE &&
@@ -1268,6 +1275,9 @@ GLTexture::create(
         object->_recyclable = true;
     }
     return object;
+#else
+    return create(target, state);
+#endif
 }
 
 void

@@ -279,6 +279,12 @@ namespace osgEarth
                                 stateset(ri)->setDefine("OE_GPUCULL_DEBUG", "0");
                         }
                     }
+
+                    ImGui::Separator();
+                    if (ImGui::Button("RGLO") && _mapNode.valid())
+                    {
+                        _mapNode->releaseGLObjects(ri.getState());
+                    }
                 }
                 ImGui::End();
             }

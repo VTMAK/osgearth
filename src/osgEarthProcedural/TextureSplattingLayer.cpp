@@ -419,10 +419,16 @@ void
 TextureSplattingLayer::resizeGLObjectBuffers(unsigned maxSize)
 {
     VisibleLayer::resizeGLObjectBuffers(maxSize);
+
+    if (_materials && _materials->_arena.valid())
+        _materials->_arena->resizeGLObjectBuffers(maxSize);
 }
 
 void
 TextureSplattingLayer::releaseGLObjects(osg::State* state) const
 {
     VisibleLayer::releaseGLObjects(state);
+
+    if (_materials && _materials->_arena.valid())
+        _materials->_arena->releaseGLObjects(state);
 }

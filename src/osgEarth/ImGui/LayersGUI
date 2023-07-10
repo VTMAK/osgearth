@@ -912,6 +912,12 @@ namespace osgEarth {
                                         {
                                             layer->close();
                                         }
+
+                                        ImGui::SameLine();
+                                        if (ImGui::Button("RGLO"))
+                                        {
+                                            layer->releaseGLObjects(ri.getState());
+                                        }
                                     }
 
                                     ImGui::SameLine();

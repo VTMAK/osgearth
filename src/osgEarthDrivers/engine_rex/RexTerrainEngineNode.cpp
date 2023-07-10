@@ -220,6 +220,9 @@ RexTerrainEngineNode::releaseGLObjects(osg::State* state) const
         }
     }
 
+    if (_engineContext.valid())
+        _engineContext->_textures->releaseGLObjects(state);
+
     TerrainEngineNode::releaseGLObjects(state);
 }
 
