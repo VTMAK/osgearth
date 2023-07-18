@@ -106,7 +106,7 @@ namespace osgEarth
 
             bool operator < (const BiomeSample& rhs) const
             {
-                OE_OPTION_LESS(biomeid, rhs.biomeid);            
+                OE_OPTION_LESS(biomeid, rhs.biomeid);
                 return false;
             }
 
@@ -115,20 +115,20 @@ namespace osgEarth
 
 
         /**
-         * BiomeLayer creates rasters that encode Biome indices. 
+         * BiomeLayer creates rasters that encode Biome indices.
          *
          * Each Biome has an associated integer index, corresponding to the order
          * in which it appears in the biome catalog. (NB: This index is totally
          * transparent to the user, and has no relationship to the Biome ID.)
-         * For a given TileKey, this layer will create a raster for which each 
+         * For a given TileKey, this layer will create a raster for which each
          * pixel holds an index corresponding to a specific Biome.
          *
          * At runtime this object will scan each raster, determine which Biomes
          * are currently visible, and tell the BiomeManager to load the corresponding
          * assets.
          */
-        class OSGEARTHPROCEDURAL_EXPORT BiomeLayer : 
-            public ImageLayer, 
+        class OSGEARTHPROCEDURAL_EXPORT BiomeLayer :
+            public ImageLayer,
             public osg::Observer
         {
         public:
@@ -206,7 +206,7 @@ namespace osgEarth
         protected: // ImageLayer
 
             GeoImage createImageImplementation(
-                const TileKey& key, 
+                const TileKey& key,
                 ProgressCallback* progress) const override;
 
             void postCreateImageImplementation(

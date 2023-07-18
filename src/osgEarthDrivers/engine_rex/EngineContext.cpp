@@ -28,14 +28,14 @@ using namespace osgEarth;
 #define LC "[EngineContext] "
 
 EngineContext::EngineContext(
-    const Map*                     map,
-    TerrainEngineNode*             terrainEngine,
-    GeometryPool*                  geometryPool,
-    Merger*                        merger,
+    const Map* map,
+    TerrainEngineNode* terrainEngine,
+    GeometryPool* geometryPool,
+    Merger* merger,
     TileNodeRegistry::Ptr          tiles,
-    const RenderBindings&          renderBindings,
-    const SelectionInfo&           selectionInfo,
-    const FrameClock*              clock) :
+    const RenderBindings& renderBindings,
+    const SelectionInfo& selectionInfo,
+    const FrameClock* clock) :
 
     _map(map),
     _terrainEngine(terrainEngine),
@@ -65,7 +65,7 @@ EngineContext::EngineContext(
         Registry::instance()->getMaxTextureSize());
 
     _textures->setMaxTextureSize(maxSize);
-    
+
 }
 
 osg::ref_ptr<const Map>

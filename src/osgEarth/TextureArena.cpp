@@ -45,9 +45,9 @@ using namespace osgEarth;
 //#define DEEP_CLONE_IMAGE
 
 #ifdef OSGEARTH_SINGLE_GL_CONTEXT
-  #define MAX_CONTEXTS 1
+#define MAX_CONTEXTS 1
 #else
-  #define MAX_CONTEXTS 16
+#define MAX_CONTEXTS 16
 #endif
 
 Texture::Ptr
@@ -486,7 +486,8 @@ Texture::releaseGLObjects(osg::State* state, bool force) const
                 //<< "' name=" << gc._gltexture->name()
                 //<< " handle=" << gc._gltexture->handle(*state) << std::endl;
 
-            // will activate the releaser
+        // will activate the releaser
+            gc._gltexture->release(); // redundant?
             gc._gltexture->release(); // redundant?
             gc._gltexture = nullptr;
         }
@@ -494,7 +495,7 @@ Texture::releaseGLObjects(osg::State* state, bool force) const
     else
     {
         // rely on the Releaser to get around to it
-        for(unsigned i=0; i< _globjects.size(); ++i)
+        for (unsigned i = 0; i < _globjects.size(); ++i)
         {
             // will activate the releaser(s)
             _globjects[i]._gltexture = nullptr;
@@ -706,7 +707,7 @@ TextureArena::add(Texture::Ptr tex, const osgDB::Options* readOptions)
     }
 
     // add to all existing GCs:
-    for(unsigned i=0; i< _globjects.size(); ++i)
+    for (unsigned i = 0; i < _globjects.size(); ++i)
     {
         if (_globjects[i]._inUse)
             _globjects[i]._toCompile.push(index);
@@ -783,7 +784,7 @@ TextureArena::flush()
 
     ScopedMutexLock lock(_m);
 
-    for(unsigned i=0; i<_textures.size(); ++i)
+    for (unsigned i = 0; i < _textures.size(); ++i)
     {
         purgeTextureIfOrphaned_no_lock(i);
     }
@@ -966,7 +967,7 @@ TextureArena::resizeGLObjectBuffers(unsigned maxSize)
         _globjects.resize(maxSize);
     }
 
-    for(auto& tex : _textures)
+    for (auto& tex : _textures)
     {
         if (tex)
             tex->resizeGLObjectBuffers(maxSize);
@@ -1016,7 +1017,7 @@ TextureArena::releaseGLObjects(osg::State* state, bool force) const
         for (unsigned i = 0; i < _globjects.size(); ++i)
         {
             GLObjects& gc = _globjects[i];
-            if(gc._inUse)
+            if (gc._inUse)
             {
                 gc._handleBuffer = nullptr;
                 gc._handles.resize(0);
