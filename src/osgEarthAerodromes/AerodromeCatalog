@@ -55,6 +55,9 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet& lightIndicatorOptions() { return _lightIndicatorOptions; }
         const AerodromeOptionsSet& lightIndicatorOptions() const { return _lightIndicatorOptions; }
 
+        AerodromeOptionsSet& taxiWayLightOptions() { return _taxiWayLightOptions; }
+        const AerodromeOptionsSet& taxiWayLightOptions() const { return _taxiWayLightOptions; }
+
         AerodromeOptionsSet& linearFeatureOptions() { return _linearFeatureOptions; }
         const AerodromeOptionsSet& linearFeatureOptions() const { return _linearFeatureOptions; }
 
@@ -104,6 +107,7 @@ namespace osgEarth { namespace Aerodrome
         BoundaryOptionsSet _boundaryOptions;
         AerodromeOptionsSet _lightBeaconOptions;
         AerodromeOptionsSet _lightIndicatorOptions;
+        AerodromeOptionsSet _taxiWayLightOptions;
         AerodromeOptionsSet _linearFeatureOptions;
         AerodromeOptionsSet _pavementOptions;
         AerodromeOptionsSet _runwayOptions;

@@ -52,6 +52,10 @@ AerodromeCatalog::fromConfig(const Config& conf)
     for (ConfigSet::const_iterator i = lightIndicators.begin(); i != lightIndicators.end(); i++)
         _lightIndicatorOptions.push_back(AerodromeFeatureOptions(*i));
 
+    ConfigSet taxiwayLights = conf.children("taxiway_lights");
+    for (ConfigSet::const_iterator i = taxiwayLights.begin(); i != taxiwayLights.end(); i++)
+        _taxiWayLightOptions.push_back(AerodromeFeatureOptions(*i));
+
     ConfigSet linearFeatures = conf.children("linear_features");
     for (ConfigSet::const_iterator i = linearFeatures.begin(); i != linearFeatures.end(); i++)
         _linearFeatureOptions.push_back(AerodromeFeatureOptions(*i));
@@ -107,6 +111,9 @@ AerodromeCatalog::getConfig() const
 
     for(AerodromeOptionsSet::const_iterator i = _lightIndicatorOptions.begin(); i != _lightIndicatorOptions.end(); ++i)
         conf.add("light_indicators", i->getConfig());
+
+    for (AerodromeOptionsSet::const_iterator i = _taxiWayLightOptions.begin(); i != _taxiWayLightOptions.end(); ++i)
+        conf.add("taxiway_lights", i->getConfig());
 
     for(AerodromeOptionsSet::const_iterator i = _linearFeatureOptions.begin(); i != _linearFeatureOptions.end(); ++i)
         conf.add("linear_features", i->getConfig());
