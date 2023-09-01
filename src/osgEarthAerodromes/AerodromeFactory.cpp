@@ -225,6 +225,7 @@ AerodromeFactory::init(const osgDB::Options* options)
 
     // create and initialize a renderer
     _renderer = s_renderer_factory ? s_renderer_factory() : new AerodromeRenderer();
+    _renderer->setStyleSheet(_catalog->styleSheet());
     _renderer->setClampToTerrain(_clampToTerrain);
     _renderer->initialize(_map.get(), _dbOptions.get());
 

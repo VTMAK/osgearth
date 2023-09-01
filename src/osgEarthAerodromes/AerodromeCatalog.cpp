@@ -95,6 +95,13 @@ AerodromeCatalog::fromConfig(const Config& conf)
     ConfigSet windsocks = conf.children("windsocks");
     for (ConfigSet::const_iterator i = windsocks.begin(); i != windsocks.end(); i++)
         _windsockOptions.push_back(AerodromeFeatureOptions(*i));
+
+    if (conf.hasChild("styles"))
+    {
+        Config stylesConf = conf.child("styles");
+        StyleSheet::Options styleSheetOptions(stylesConf);
+        _styleSheet = new StyleSheet(styleSheetOptions);
+    }
 }
 
 Config
@@ -144,6 +151,8 @@ AerodromeCatalog::getConfig() const
 
     for(AerodromeOptionsSet::const_iterator i = _windsockOptions.begin(); i != _windsockOptions.end(); ++i)
         conf.add("windsocks", i->getConfig());
+
+    conf.add("styles", _styleSheet);
 
     return conf;
 }

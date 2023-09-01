@@ -110,6 +110,16 @@ namespace osgEarth { namespace Aerodrome
             return _clampToTerrain;
         }
 
+        StyleSheet* getStyleSheet() const
+        {
+            return _styleSheet.get();
+        }
+
+        void setStyleSheet(StyleSheet* styleSheet)
+        {
+            _styleSheet = styleSheet;
+        }
+
     protected:
 
         friend class AerodromeFactory;
@@ -160,6 +170,8 @@ namespace osgEarth { namespace Aerodrome
 
         // For reverse Z support - set up initially like normal Z buffer
         bool _useReverseZBuffer;
+
+        osg::ref_ptr< StyleSheet > _styleSheet;
     };
 
 } } // namespace osgEarth::Aerodrome

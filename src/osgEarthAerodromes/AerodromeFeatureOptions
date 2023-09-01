@@ -78,11 +78,22 @@ namespace osgEarth { namespace Aerodrome
     class TextureOptions : public ConfigOptions
     {
     public:
-        optional<URI>& url() { return _imageURI; }
-        const optional<URI>& url() const { return _imageURI; }    
+        optional<StringExpression>& url() { return _imageURI; }
+        const optional<StringExpression>& url() const { return _imageURI; }
 
         optional<float>& length() { return _length; }
         const optional<float>& length() const { return _length; }
+
+        URI getURI(Feature* feature, Session* session) const
+        {
+            if (_imageURI.isSet())
+            {
+                StringExpression expr = *_imageURI;
+                URI textureURI(feature->eval(expr, session), expr.uriContext());
+                return textureURI;
+            }
+            return URI();
+        }
 
     public:
         TextureOptions( const ConfigOptions& opt =ConfigOptions() ) :
@@ -113,7 +124,7 @@ namespace osgEarth { namespace Aerodrome
             conf.get( "length", _length );
         }
      
-        optional<URI>    _imageURI;
+        optional<StringExpression> _imageURI;
         optional<float> _length;
     };
 } }

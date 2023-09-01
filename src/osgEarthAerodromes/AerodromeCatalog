@@ -28,6 +28,7 @@
 #include <osg/Referenced>
 #include <osgEarth/URI>
 #include <osgEarth/FeatureSource>
+#include <osgEarth/StyleSheet>
 
 namespace osgEarth { namespace Aerodrome
 {
@@ -88,6 +89,9 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet& windsockOptions() { return _windsockOptions; }
         const AerodromeOptionsSet& windsockOptions() const { return _windsockOptions; }
 
+        StyleSheet* styleSheet() { return _styleSheet.get(); }
+        const StyleSheet* styleSheet() const { return _styleSheet.get(); }
+
     public: // serialization
 
         // populate this object from a Config
@@ -118,6 +122,7 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet _taxiwaySignOptions;
         TerminalOptionsSet _terminalOptions;
         AerodromeOptionsSet _windsockOptions;
+        osgEarth::optional<osg::ref_ptr< StyleSheet> >_styleSheet;
     };
 
 } } // namespace osgEarth::Aerodrome

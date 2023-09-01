@@ -99,7 +99,7 @@ void AerodromeRenderer::initialize(const Map* map, const osgDB::Options* options
     _dbOptions->setObjectCacheHint( (osgDB::Options::CacheHintOptions)(osgDB::Options::CACHE_IMAGES | osgDB::Options::CACHE_NODES) );
 
     // Global session with a resource cache
-    _session = new Session(map, 0L, 0L, options );
+    _session = new Session(map, _styleSheet.get(), 0L, options );
     _session->setResourceCache( new ResourceCache() );
 }
 
@@ -235,7 +235,8 @@ AerodromeRenderer::apply(PavementNode& node)
 
     if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
     {
-        geom = featureSingleTextureRenderer(feature.get(), node.getOptions().textureOptions()->url().value(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
+        URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
+        geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
     }
     else
     {
@@ -288,7 +289,8 @@ AerodromeRenderer::apply(RunwayNode& node)
 
         if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
         {
-            osg::Image* tex = node.getOptions().textureOptions()->url()->getImage(_dbOptions.get());
+            URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
+            osg::Image* tex = url.getImage(_dbOptions.get());
             if (tex)
             {
                 osg::Texture2D* _texture = new osg::Texture2D(tex);
@@ -329,7 +331,7 @@ AerodromeRenderer::apply(RunwayNode& node)
             }
             else
             {
-                OE_WARN << LC << "Error reading texture file: " << node.getOptions().textureOptions()->url()->full() << std::endl;
+                OE_WARN << LC << "Error reading texture file: " << url.full() << std::endl;
             }
 
 
@@ -438,7 +440,8 @@ AerodromeRenderer::apply(StopwayNode& node)
 
         if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
         {
-            osg::Image* tex = node.getOptions().textureOptions()->url()->getImage(_dbOptions.get());
+            URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
+            osg::Image* tex = url.getImage(_dbOptions.get());
             if (tex)
             {
                 osg::Texture2D* _texture = new osg::Texture2D(tex);
@@ -511,7 +514,7 @@ AerodromeRenderer::apply(StopwayNode& node)
             }
             else
             {
-                OE_WARN << LC << "Error reading texture file: " << node.getOptions().textureOptions()->url()->full() << std::endl;
+                OE_WARN << LC << "Error reading texture file: " << url.full() << std::endl;
             }
 
 
@@ -568,7 +571,8 @@ AerodromeRenderer::apply(TaxiwayNode& node)
 
     if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
     {
-        geom = featureSingleTextureRenderer(feature.get(), node.getOptions().textureOptions()->url().value(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
+        URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
+        geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
     }
     else
     {
