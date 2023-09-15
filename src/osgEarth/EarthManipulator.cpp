@@ -127,7 +127,7 @@ namespace
                 const osg::Camera* cam = dynamic_cast<const osg::Camera*>(*i);
                 if (cam)
                 {
-                    if( cam->getReferenceFrame() != osg::Transform::RELATIVE_RF || cam->getParents().empty())
+                    if( cam->getReferenceFrame() != osg::Transform::RELATIVE_RF || cam->getNumParents() == 0)
                         break;
                 }
                 else if (dynamic_cast<MapNode*>(*i))
