@@ -32,6 +32,8 @@ namespace osgEarth
 
             osg::ref_ptr<osg::LOD> elevationsLOD;
             osg::Matrixd xform;
+
+            osg::BoundingSphere computeBound() const override;
         };
     }
 }

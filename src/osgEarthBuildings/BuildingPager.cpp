@@ -186,7 +186,8 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile, bool useNVG
     SimplePager(map, profile),
     _index(nullptr),
     _filterUsage(FILTER_USAGE_NORMAL),
-    _verboseWarnings(false)
+    _verboseWarnings(false),
+    _residentTiles(0)
 {
     _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != nullptr;
 
@@ -545,6 +546,11 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
 
             output.writeToCache(node.get(), readOptions.get(), progress);
         }
+
+        if (node.valid() && node->getBound().valid())
+        {
+            node->getOrCreateUserDataContainer()->addUserObject(new Util::TrackerTag(_residentTiles));
+        }
     }
 
     Registry::instance()->endActivity(activityName);
@@ -560,7 +566,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
         {
             metadata->addChild(node);
             metadata->finalize();
-            return  metadata;
+            return metadata;
         }
         else
         {

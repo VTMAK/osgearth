@@ -50,6 +50,8 @@ namespace osgEarth
             _extrusionGroup = 0;
         }
 
+        osg::BoundingSphere computeBound() const override;
+
     private:
         osg::ref_ptr<osg::Group> _extrusionGroup;
         osg::Matrixd _xform;

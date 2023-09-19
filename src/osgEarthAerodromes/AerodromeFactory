@@ -120,6 +120,9 @@ namespace osgEarth { namespace Aerodrome
         std::unordered_set<std::string> _icaoExclusions;
         Distance _lodRange = Distance(15000.0f, Units::METERS);
         bool _clampToTerrain = false;
+
+        std::atomic_int _residentTiles = 0;
+        friend class AerodromeLayer;
     };
 
 } } // namespace osgEarth::Aerodrome

@@ -115,11 +115,14 @@ namespace osgEarth { namespace Buildings
         bool _usingNVGL;
         osg::ref_ptr<TextureArena> _textures;
         ResidentData::Ptr _residentData;
+        std::atomic_int _residentTiles;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;
 
         void applyRenderSymbology(osg::Node*, const Style& style) const;
+
+        friend class BuildingLayer;
     };
 
 } } // namespace

@@ -20,6 +20,7 @@
 #include "AerodromeFactory"
 #include "AerodromeCatalog"
 #include <osgEarth/Registry>
+#include <osgEarth/NodeUtils>
 
 using namespace osgEarth;
 using namespace osgEarth::Aerodrome;
@@ -85,6 +86,17 @@ AerodromeLayer::removedFromMap(const Map* map)
     destroySceneGraph();
 }
 
+Layer::Stats
+AerodromeLayer::reportStats() const
+{
+    Layer::Stats report;
+    auto factory = osgEarth::findTopMostNodeOfType<AerodromeFactory>(_root.get());
+    if (factory)
+    {
+        report.push_back({ "Resident aerodromes", std::to_string(factory->_residentTiles) });
+    }
+    return report;
+}
 
 void
 AerodromeLayer::createSceneGraph()

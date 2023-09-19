@@ -20,6 +20,11 @@ namespace osgEarth
         _xform = rhs._xform;
     }
 
+    osg::BoundingSphere ExtrudeGeometryFilterNode::computeBound() const
+    {
+        return _extrusionGroup.valid() ? _extrusionGroup->computeBound() : osg::BoundingSphere();
+    }
+
 
     REGISTER_OBJECT_WRAPPER(ExtrudeGeometryFilterNode,
         new ExtrudeGeometryFilterNode,

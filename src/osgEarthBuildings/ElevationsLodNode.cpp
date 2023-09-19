@@ -29,6 +29,12 @@ namespace osgEarth {
          elevationsLOD = lod; 
       }
 
+      osg::BoundingSphere ElevationsLodNode::computeBound() const
+      {
+          return elevationsLOD.valid() ? elevationsLOD->computeBound() : osg::BoundingSphere();
+      }
+
+
       REGISTER_OBJECT_WRAPPER(ElevationsLodNode,
          new ElevationsLodNode,
          osgEarth::Buildings::ElevationsLodNode,

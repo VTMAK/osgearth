@@ -72,6 +72,19 @@ BuildingLayer::setFeatureSource(FeatureSource* source)
     }
 }
 
+Layer::Stats
+BuildingLayer::reportStats() const
+{    
+    auto pager = findTopMostNodeOfType<BuildingPager>(_root);
+    if (pager)
+    {
+        Stats report;
+        report.push_back({ "Resident tiles", std::to_string((unsigned)pager->_residentTiles) });
+        return report;
+    }
+    else return {};
+}
+
 osg::Node*
 BuildingLayer::getNode() const
 {

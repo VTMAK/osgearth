@@ -42,6 +42,7 @@
 #include <osgEarth/Registry>
 #include <osgEarth/HTM>
 #include <osgEarth/ElevationRanges>
+#include <osgEarth/Utils>
 
 #include <osgDB/FileNameUtils>
 #include <osgDB/Registry>
@@ -515,6 +516,12 @@ AerodromeNode* AerodromeFactory::getAerodromeNode(const std::string& icao)
 
     float s = OE_STOP_TIMER(getAerodromeNode);
     OE_INFO << LC << std::setprecision(3) << "Built \"" << icao << "\" - create=" << createTime << "s, render=" << renderTime << "s, total=" << s << "s\n";
+
+    if (node.valid() && node->getBound().valid())
+    {
+        node->getOrCreateUserDataContainer()->addUserObject(
+            new osgEarth::Util::TrackerTag(_residentTiles));
+    }
 
     return node.release();
 }

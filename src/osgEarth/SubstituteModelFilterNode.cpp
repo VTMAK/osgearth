@@ -16,6 +16,16 @@ namespace osgEarth
         _modelSymbolList = rhs._modelSymbolList;
     }
 
+    osg::BoundingSphere SubstituteModelFilterNode::computeBound() const
+    {
+        osg::BoundingSphere bs;
+        for (auto& entry : _modelSymbolList)
+        {
+            bs.expandBy(osg::Vec3d(0, 0, 0) * entry.xform);
+        }
+        return bs;
+    }
+
     static bool check_modelSymbolList(const SubstituteModelFilterNode& node)
     {
         return node.modelSymbolList().size() > 0;

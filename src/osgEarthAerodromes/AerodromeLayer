@@ -117,6 +117,8 @@ namespace osgEarth { namespace Aerodrome
         //! The root node of this layer's scene graph
         virtual osg::Node* getNode() const;
 
+        Stats reportStats() const override;
+
     protected: // Layer
 
         //! Opens any data stores associated with the layer
@@ -133,7 +135,6 @@ namespace osgEarth { namespace Aerodrome
 
         // post-ctor initialization
         virtual void init() override;
-
     protected:
 
         /** DTOR is protected to prevent this object from being allocated on the stack */
