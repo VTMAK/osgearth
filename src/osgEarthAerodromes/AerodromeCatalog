@@ -122,7 +122,7 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet _taxiwaySignOptions;
         TerminalOptionsSet _terminalOptions;
         AerodromeOptionsSet _windsockOptions;
-        osgEarth::optional<osg::ref_ptr< StyleSheet> >_styleSheet;
+        osg::ref_ptr<StyleSheet> _styleSheet;
     };
 
 } } // namespace osgEarth::Aerodrome

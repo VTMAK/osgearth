@@ -152,7 +152,10 @@ AerodromeCatalog::getConfig() const
     for(AerodromeOptionsSet::const_iterator i = _windsockOptions.begin(); i != _windsockOptions.end(); ++i)
         conf.add("windsocks", i->getConfig());
 
-    conf.add("styles", _styleSheet);
+    if (_styleSheet.valid())
+    {
+        conf.add("styles", _styleSheet->getConfig());
+    }
 
     return conf;
 }

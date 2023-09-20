@@ -210,7 +210,8 @@ AerodromeFactory::AerodromeFactory(
     
     _map(map),
     _catalog(catalog),
-    _sceneGraphCallbacks(callbacks)
+    _sceneGraphCallbacks(callbacks),
+    _residentTiles(0)
 {
     //nop
 }
