@@ -924,7 +924,6 @@ namespace osgEarth
 
             void drawAddLayerMenu(osg::RenderInfo& ri)
             {
-                osg::Camera* camera = ri.getCurrentCamera();
                 if (ImGui::BeginMenuBar())
                 {
                     if (ImGui::BeginMenu("Add Layer"))
