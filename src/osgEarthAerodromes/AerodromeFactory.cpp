@@ -447,7 +447,8 @@ AerodromeFactory::createAerodrome(
         AerodromeFactory::createBoundaryNodes(*i, aerodrome.get(), options);
     
     for(AerodromeOptionsSet::const_iterator i = catalog->pavementOptions().begin(); i != catalog->pavementOptions().end(); ++i)
-        AerodromeFactory::createMergedFeatureNodes<PavementNode, PavementGroup, AerodromeFeatureOptions>(*i, aerodrome.get(), options);
+        //AerodromeFactory::createMergedFeatureNodes<PavementNode, PavementGroup, AerodromeFeatureOptions>(*i, aerodrome.get(), options);
+        AerodromeFactory::createFeatureNodes<PavementNode, PavementGroup, AerodromeFeatureOptions>(*i, aerodrome.get(), options);
     
     for(AerodromeOptionsSet::const_iterator i = catalog->taxiwayOptions().begin(); i != catalog->taxiwayOptions().end(); ++i)
         AerodromeFactory::createMergedFeatureNodes<TaxiwayNode, TaxiwayGroup, AerodromeFeatureOptions>(*i, aerodrome.get(), options);
