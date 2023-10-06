@@ -20,6 +20,7 @@
 #include <osgEarth/Metrics>
 #include <osgEarth/NodeUtils>
 #include <osgEarth/TerrainMeshLayer>
+#include <osgEarth/TerrainConstraintLayer>
 #include <cstdlib> // for getenv
 
 using namespace osgEarth;
@@ -89,7 +90,8 @@ GeometryPool::getPooledGeometry(
         auto meshlayer = map->getLayer<TerrainMeshLayer>();
         if (meshlayer)
         {
-            auto mesh = meshlayer->createTile(tileKey, nullptr);
+            osg::ref_ptr<ProgressCallback> p = new ProgressCallback(progress);
+            auto mesh = meshlayer->createTile(tileKey, p);
             out = convertTileMeshToSharedGeometry(mesh);
             if (out.valid())
             {
@@ -104,8 +106,10 @@ GeometryPool::getPooledGeometry(
     createKeyForTileKey(tileKey, tileSize, geomKey);
 
     // see if there are any constraints:
-    TileMesher::Edits edits;
-    mesher.getEdits(tileKey, map, edits, progress);
+    TerrainConstraintQuery query(map);
+    MeshConstraints edits;
+    query.getConstraints(tileKey, edits, nullptr);
+    //mesher.getEdits(tileKey, map, edits, progress);
 
     if ( _enabled )
     {

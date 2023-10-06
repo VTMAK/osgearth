@@ -168,82 +168,8 @@ TileMesher::getOrCreateStandardIndices() const
     return _standardIndices.get();
 }
 
-bool
-TileMesher::getEdits(
-    const TileKey& key,
-    const Map* map,
-    Edits& out_edits,
-    Cancelable* progress) const
-{
-    out_edits.clear();
-
-    if (map)
-    {
-        const GeoExtent& keyExtent = key.getExtent();
-        
-        // collect all the constraint layers that intersect our key
-        ConstraintLayers layers;
-
-        map->getLayers<TerrainConstraintLayer>(layers,
-            [&](const TerrainConstraintLayer* layer)
-            {
-                return
-                    layer->isOpen() &&
-                    layer->getVisible() &&
-                    layer->getMinLevel() <= key.getLOD() &&
-                    layer->getExtent().intersects(keyExtent);
-            }
-        );
-
-        FilterContext context(new Session(map));
-
-        std::vector<Edit> edits;
-
-        for (auto& layer : layers)
-        {
-            // For each feature, check that it intersects the tile key,
-            // and then xform it to the correct SRS and store it as an edit
-            FeatureSource* fs = layer->getFeatureSource();
-            if (fs)
-            {
-                Edit edit;
-                
-                osg::ref_ptr<FeatureCursor> cursor = fs->createFeatureCursor(
-                    key,
-                    layer->getFilters(),
-                    &context,
-                    nullptr);
-
-                while (cursor.valid() && cursor->hasMore())
-                {
-                    if (progress && progress->isCanceled())
-                        return { };
-
-                    Feature* f = cursor->nextFeature();
-
-                    if (f->getExtent().intersects(keyExtent))
-                    {
-                        edit.features.push_back(osg::clone(f, osg::CopyOp::DEEP_COPY_ALL));
-                        edit.features.back()->transform(map->getSRS()); // keyExtent.getSRS()->getGeocentricSRS());
-                        //edit.features.push_back(f);
-                    }
-                }
-
-                if (!edit.features.empty())
-                {
-                    edit.hasElevation = layer->getHasElevation();
-                    edit.removeInterior = layer->getRemoveInterior();
-                    edit.removeExterior = layer->getRemoveExterior();
-                    out_edits.emplace_back(std::move(edit));
-                }
-            }
-        }
-    }
-    return !out_edits.empty();
-}
-
 TileMesh
-TileMesher::createMesh(const TileKey& key, const Edits& edits, Cancelable* progress) const
+TileMesher::createMesh(const TileKey& key, const MeshConstraints& edits, Cancelable* progress) const
 {
     if (edits.empty())
     {
@@ -251,12 +177,12 @@ TileMesher::createMesh(const TileKey& key, const Edits& edits, Cancelable* progr
     }
     else
     {
-        return createMeshWithEdits(key, {}, edits, progress);
+        return createMeshWithConstraints(key, {}, edits, progress);
     }
 }
 
 TileMesh
-TileMesher::createMesh(const TileKey& key, const TileMesh& mesh, const Edits& edits, Cancelable* progress) const
+TileMesher::createMesh(const TileKey& key, const TileMesh& mesh, const MeshConstraints& edits, Cancelable* progress) const
 {
     if (edits.empty())
     {
@@ -264,7 +190,7 @@ TileMesher::createMesh(const TileKey& key, const TileMesh& mesh, const Edits& ed
     }
     else
     {
-        return createMeshWithEdits(key, mesh, edits, progress);
+        return createMeshWithConstraints(key, mesh, edits, progress);
     }
 }
 
@@ -415,7 +341,7 @@ namespace
         mesh.set_constraint_marker(VERTEX_CONSTRAINT);
         mesh.set_has_elevation_marker(VERTEX_HAS_ELEVATION);
 
-        mesh._verts.reserve(tileSize * tileSize);
+        mesh.verts.reserve(tileSize * tileSize);
 
         for (unsigned row = 0; row < tileSize; ++row)
         {
@@ -455,7 +381,7 @@ namespace
         mesh.set_constraint_marker(VERTEX_CONSTRAINT);
         mesh.set_has_elevation_marker(VERTEX_HAS_ELEVATION);
 
-        mesh._verts.reserve(input.verts->getNumElements());
+        mesh.verts.reserve(input.verts->getNumElements());
 
         for (unsigned i = 0; i < input.indices->getNumIndices(); i += 3)
         {
@@ -477,11 +403,11 @@ namespace
 }
 
 TileMesh
-TileMesher::createMeshWithEdits(
+TileMesher::createMeshWithConstraints(
     const TileKey& key,
     const TileMesh& input_mesh,
-    const Edits& edits,
-    Cancelable* progress) const
+    const MeshConstraints& edits,
+    Cancelable* cancelable) const
 {
     auto& keyExtent = key.getExtent();
     auto tileSRS = keyExtent.getSRS();
@@ -529,7 +455,7 @@ TileMesher::createMeshWithEdits(
     }
 
     // keep it real
-    int max_num_triangles = mesh._triangles.size() * 100;
+    int max_num_triangles = mesh.triangles.size() * 100;
     
     bool have_any_removal_requests = false;
 
@@ -539,6 +465,8 @@ TileMesher::createMeshWithEdits(
         osg::Vec3d world;
         for (auto& feature : edit.features)
         {
+            feature->transform(tileSRS);
+
             GeometryIterator geom_iter(feature->getGeometry(), true);
             while (geom_iter.hasMore())
             {
@@ -578,7 +506,7 @@ TileMesher::createMeshWithEdits(
             osg::Vec3d world, unit;
             while (geom_iter.hasMore())
             {
-                if (mesh._triangles.size() >= max_num_triangles)
+                if (mesh.triangles.size() >= max_num_triangles)
                 {
                     // just stop it
                     //OE_WARN << "WARNING, breaking out of the meshing process. Too many tris bro!" << std::endl;
@@ -597,8 +525,7 @@ TileMesher::createMeshWithEdits(
                         {
                             const weemesh::vert_t v((*part)[i].ptr());
 
-                            if (v.x() >= xmin && v.x() <= xmax &&
-                                v.y() >= ymin && v.y() <= ymax)
+                            if (v.x >= xmin && v.x <= xmax && v.y >= ymin && v.y <= ymax)
                             {
                                 mesh.insert(v, marker);
                             }
@@ -625,16 +552,19 @@ TileMesher::createMeshWithEdits(
                             const weemesh::vert_t p1((*part)[j].ptr());
 
                             // cull segment to tile
-                            if ((p0.x() >= xmin || p1.x() >= xmin) &&
-                                (p0.x() <= xmax || p1.x() <= xmax) &&
-                                (p0.y() >= ymin || p1.y() >= ymin) &&
-                                (p0.y() <= ymax || p1.y() <= ymax))
+                            if ((p0.x >= xmin || p1.x >= xmin) &&
+                                (p0.x <= xmax || p1.x <= xmax) &&
+                                (p0.y >= ymin || p1.y >= ymin) &&
+                                (p0.y <= ymax || p1.y <= ymax))
                             {
                                 mesh.insert(weemesh::segment_t(p0, p1), marker);
                             }
                         }
                     }
                 }
+
+                if (cancelable && cancelable->isCanceled())
+                    return {};
             }
         }
     }
@@ -652,6 +582,9 @@ TileMesher::createMeshWithEdits(
         std::unordered_set<weemesh::triangle_t*> insiders;
         std::unordered_set<weemesh::triangle_t*> insiders_to_remove;
         std::unordered_set<weemesh::triangle_t*> outsiders_to_possibly_remove;
+        weemesh::vert_t centroid;
+        const double one_third = 1.0 / 3.0;
+        std::vector<weemesh::triangle_t*> tris;
 
         for (auto& edit : edits)
         {
@@ -667,29 +600,50 @@ TileMesher::createMeshWithEdits(
 
                         // Note: the part was already transformed in a previous step.
 
-                        if (part->isPolygon() && part->getBounds().intersects(localBounds))
+                        auto& bb = part->getBounds();
+                        if (part->isPolygon() && bb.intersects(localBounds))
                         {
-                            for (auto& tri_iter : mesh._triangles)
+                            if (edit.removeExterior)
                             {
-                                weemesh::triangle_t& tri = tri_iter.second;
-                                weemesh::vert_t c = (tri.p0 + tri.p1 + tri.p2) * (1.0 / 3.0);
-
-                                bool inside = part->contains2D(c.x(), c.y());
-
-                                if (inside)
+                                // expensive path, much check ALL triangles when removing exterior.
+                                for (auto& tri_iter : mesh.triangles)
                                 {
-                                    insiders.insert(&tri);
-                                    if (edit.removeInterior)
+                                    weemesh::triangle_t* tri = &tri_iter.second;
+
+                                    bool inside = part->contains2D(tri->centroid.x, tri->centroid.y);
+
+                                    if (inside)
                                     {
-                                        insiders_to_remove.insert(&tri);
+                                        insiders.insert(tri);
+                                        if (edit.removeInterior)
+                                        {
+                                            insiders_to_remove.insert(tri);
+                                        }
+                                    }
+                                    else if (edit.removeExterior)
+                                    {
+                                        outsiders_to_possibly_remove.insert(tri);
                                     }
                                 }
-                                else if (edit.removeExterior)
+                            }
+                            else // removeInterior ONLY
+                            {
+                                // fast path when we are NOT removing exterior tris.
+                                mesh.get_triangles(bb.xMin(), bb.yMin(), bb.xMax(), bb.yMax(), tris);
+
+                                for (auto tri : tris)
                                 {
-                                    outsiders_to_possibly_remove.insert(&tri);
+                                    bool inside = part->contains2D(tri->centroid.x, tri->centroid.y);
+                                    if (inside)
+                                    {
+                                        insiders_to_remove.insert(tri);
+                                    }
                                 }
                             }
                         }
+
+                        if (cancelable && cancelable->isCanceled())
+                            return {};
                     }
                 }
             }
@@ -710,7 +664,7 @@ TileMesher::createMeshWithEdits(
     }
 
     // if ALL triangles are gone, it's an empty tile.
-    if (mesh._triangles.empty())
+    if (mesh.triangles.empty())
     {
         geom.hasConstraints = true;
         return geom;
@@ -737,14 +691,14 @@ TileMesher::createMeshWithEdits(
 
             // find every vertex without elevation, and set its elevation to the same value
             // as that of the closest point on the nearest constrained edge
-            for (int i = 0; i < mesh._verts.size(); ++i)
+            for (int i = 0; i < mesh.verts.size(); ++i)
             {
-                if ((mesh._markers[i] & VERTEX_HAS_ELEVATION) == 0)
+                if ((mesh.markers[i] & VERTEX_HAS_ELEVATION) == 0)
                 {
-                    if (elevated_edges.point_on_any_edge_closest_to(mesh._verts[i], mesh, closest))
+                    if (elevated_edges.point_on_any_edge_closest_to(mesh.verts[i], mesh, closest))
                     {
-                        mesh._verts[i].z() = closest.z();
-                        mesh._markers[i] |= (VERTEX_CONSTRAINT | VERTEX_HAS_ELEVATION);
+                        mesh.verts[i].z = closest.z;
+                        mesh.markers[i] |= (VERTEX_CONSTRAINT | VERTEX_HAS_ELEVATION);
                     }
                 }
             }
@@ -759,21 +713,21 @@ TileMesher::createMeshWithEdits(
     // of space and we should compress it down.
 
     geom.verts = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-    geom.verts->reserve(mesh._verts.size());
+    geom.verts->reserve(mesh.verts.size());
 
     geom.normals = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-    geom.normals->reserve(mesh._verts.size());
+    geom.normals->reserve(mesh.verts.size());
 
     geom.uvs = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-    geom.uvs->reserve(mesh._verts.size());
+    geom.uvs->reserve(mesh.verts.size());
 
     if (_options.getMorphTerrain())
     {
         geom.vert_neighbors = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-        geom.vert_neighbors->reserve(mesh._verts.size());
+        geom.vert_neighbors->reserve(mesh.verts.size());
 
         geom.normal_neighbors = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-        geom.normal_neighbors->reserve(mesh._verts.size());
+        geom.normal_neighbors->reserve(mesh.verts.size());
     }
 
     osg::Vec3d world;
@@ -783,11 +737,11 @@ TileMesher::createMeshWithEdits(
     int original_grid_size = tileSize * tileSize;
 
     // generate UVs and neighbor data:
-    for (auto& vert : mesh._verts)
+    for (auto& vert : mesh.verts)
     {
         int marker = mesh.get_marker(vert);
 
-        osg::Vec3d v(vert.x(), vert.y(), vert.z());
+        osg::Vec3d v(vert.x, vert.y, vert.z);
         osg::Vec3d unit;
         geom.verts->push_back(v);
         world = v * local2world;
@@ -840,8 +794,8 @@ TileMesher::createMeshWithEdits(
     // the index set, discarding any degenerate triangles.
     auto mode = _options.getGPUTessellation() == true ? GL_PATCHES : GL_TRIANGLES;
     geom.indices = new osg::DrawElementsUInt(mode);
-    geom.indices->reserveElements(mesh._triangles.size() * 3);
-    for (const auto& tri : mesh._triangles)
+    geom.indices->reserveElements(mesh.triangles.size() * 3);
+    for (const auto& tri : mesh.triangles)
     {
         if (!tri.second.is_2d_degenerate)
         {
