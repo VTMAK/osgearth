@@ -22,7 +22,7 @@
 #include "Common"
 #include "CompilerSettings"
 #include "FilterUsage"
-#include <osgEarth/Layer>
+#include <osgEarth/TiledModelLayer>
 #include <osgEarth/FeatureSource>
 #include <osgEarth/FeatureModelSource>
 #include <osgEarth/StyleSheet>
@@ -32,7 +32,7 @@ namespace osgEarth { namespace Buildings
 {
     using namespace osgEarth;
 
-    class BuildingLayerOptions : public VisibleLayer::Options
+    class BuildingLayerOptions : public TiledModelLayer::Options
     {
     public:
         /** Location of the building template catalog */
@@ -81,7 +81,7 @@ namespace osgEarth { namespace Buildings
         OE_OPTION_LAYER(FeatureSource, featureSource);
 
     public:
-        BuildingLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt )
+        BuildingLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : TiledModelLayer::Options( opt )
         {
             _lod.init( 14u );
             _additiveLODs.init(false);
@@ -98,7 +98,7 @@ namespace osgEarth { namespace Buildings
     public:
         Config getConfig() const
         {
-            Config conf = VisibleLayer::Options::getConfig();
+            Config conf = TiledModelLayer::Options::getConfig();
             conf.set("building_catalog", _buildingCatalogURI);
             conf.set("additive_lods",    _additiveLODs);
             conf.set("settings",         _settings);

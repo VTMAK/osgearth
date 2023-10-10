@@ -22,7 +22,7 @@
 #include "Common"
 #include "BuildingLayerOptions"
 #include "BuildingCatalog"
-#include <osgEarth/VisibleLayer>
+#include <osgEarth/TiledModelLayer>
 #include <osgEarth/SimplePager>
 #include <osgEarth/FeatureSource>
 #include <osgEarth/Session>
@@ -33,10 +33,10 @@ namespace osgEarth { namespace Buildings
 
     class BuildingPager;
 
-    class OSGEARTHBUILDINGS_EXPORT BuildingLayer : public VisibleLayer
+    class OSGEARTHBUILDINGS_EXPORT BuildingLayer : public TiledModelLayer
     {
     public:
-        META_Layer(osgEarthBuildings, BuildingLayer, BuildingLayerOptions, VisibleLayer, Buildings);
+        META_Layer(osgEarthBuildings, BuildingLayer, BuildingLayerOptions, TiledModelLayer, Buildings);
 
         //! Sets the source of buildings data - call before opening layer
         void setFeatureSource(FeatureSource*);
@@ -55,19 +55,32 @@ namespace osgEarth { namespace Buildings
         //! Report debugging stats
         Stats reportStats() const override;
 
+        //! Minimum available LOD
+        unsigned getMinLevel() const override;
+
+        //! Maximum available LOD
+        unsigned getMaxLevel() const override;
+
+        //! Profile of underlying data source
+        const Profile* getProfile() const override;
+        
+
     protected: // Layer
 
         // opens the layer and returns the status
-        virtual Status openImplementation() override;
+        Status openImplementation() override;
         
         // called by the map when this layer is added
-        virtual void addedToMap(const class Map*) override;
+        void addedToMap(const class Map*) override;
 
         // called by the map when this layer is removed
-        virtual void removedFromMap(const class Map*) override;
+        void removedFromMap(const class Map*) override;
 
         // post-ctor initialization
-        virtual void init() override;
+        void init() override;
+
+        //! from TiledModelLayer
+        osg::ref_ptr<osg::Node> createTileImplementation(const TileKey& key, ProgressCallback* progress) const override;
 
     private:
 

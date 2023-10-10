@@ -44,7 +44,7 @@ BuildingLayer::~BuildingLayer()
 void
 BuildingLayer::init()
 {
-    VisibleLayer::init();
+    TiledModelLayer::init();
 
     // Create the root group
     _root = new osg::Group();
@@ -119,7 +119,7 @@ BuildingLayer::openImplementation()
         return Status(Status::ConfigurationError, "Missing required catalog");
     }
 
-    return VisibleLayer::openImplementation();
+    return TiledModelLayer::openImplementation();
 }
 
 void
@@ -291,4 +291,35 @@ BuildingLayer::getExtent() const
     }
 
     return GeoExtent::INVALID;
+}
+
+unsigned
+BuildingLayer::getMinLevel() const
+{
+    auto pager = osgEarth::findTopMostNodeOfType<BuildingPager>(_root.get());
+    return pager ? pager->getMinLevel() : 0u;
+}
+
+unsigned
+BuildingLayer::getMaxLevel() const
+{
+    auto pager = osgEarth::findTopMostNodeOfType<BuildingPager>(_root.get());
+    return pager ? pager->getMaxLevel() : 99u;
+}
+
+const Profile*
+BuildingLayer::getProfile() const
+{
+    auto pager = osgEarth::findTopMostNodeOfType<BuildingPager>(_root.get());
+    return pager ? pager->getProfile() : nullptr;
+}
+
+osg::ref_ptr<osg::Node>
+BuildingLayer::createTileImplementation(const TileKey& key, ProgressCallback* progress) const
+{
+    osg::ref_ptr<osg::Node> node;
+    auto pager = osgEarth::findTopMostNodeOfType<BuildingPager>(_root.get());
+    if (pager)
+        node = pager->createNode(key, progress);
+    return node;
 }
