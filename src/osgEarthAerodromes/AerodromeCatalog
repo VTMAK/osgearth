@@ -59,6 +59,9 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet& taxiWayLightOptions() { return _taxiWayLightOptions; }
         const AerodromeOptionsSet& taxiWayLightOptions() const { return _taxiWayLightOptions; }
 
+        AerodromeOptionsSet& runwayAccessLightOptions() { return _runwayAccessLightOptions; }
+        const AerodromeOptionsSet& runwayAccessLightOptions() const { return _runwayAccessLightOptions; }
+
         AerodromeOptionsSet& linearFeatureOptions() { return _linearFeatureOptions; }
         const AerodromeOptionsSet& linearFeatureOptions() const { return _linearFeatureOptions; }
 
@@ -120,6 +123,7 @@ namespace osgEarth { namespace Aerodrome
         AerodromeOptionsSet _stopwayOptions;
         AerodromeOptionsSet _taxiwayOptions;
         AerodromeOptionsSet _taxiwaySignOptions;
+        AerodromeOptionsSet _runwayAccessLightOptions;
         TerminalOptionsSet _terminalOptions;
         AerodromeOptionsSet _windsockOptions;
         osg::ref_ptr<StyleSheet> _styleSheet;
