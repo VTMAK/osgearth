@@ -444,7 +444,7 @@ TileMesher::createMeshWithConstraints(
 
     weemesh::mesh_t mesh;
 
-
+    // if we have an input mesh, use it. Otherwise, build a regular gridded mesh.
     if (input_mesh.verts.valid())
     {
         load_mesh(mesh, input_mesh);
@@ -600,7 +600,7 @@ TileMesher::createMeshWithConstraints(
 
                         // Note: the part was already transformed in a previous step.
 
-                        auto& bb = part->getBounds();
+                        const auto& bb = part->getBounds();
                         if (part->isPolygon() && bb.intersects(localBounds))
                         {
                             if (edit.removeExterior)

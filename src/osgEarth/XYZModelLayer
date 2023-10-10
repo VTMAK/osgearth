@@ -22,12 +22,10 @@
 #include <osgEarth/Common>
 #include <osgEarth/Layer>
 #include <osgEarth/LayerReference>
+#include <osgEarth/TiledModelLayer>
 
 namespace osgEarth {
     class Map;
-    namespace Util {
-        class SimplePager;
-    }
 }
 
 namespace osgEarth
@@ -35,37 +33,31 @@ namespace osgEarth
     /**
      * Layer that loads a pregenerated quadtree of model files
      */
-    class OSGEARTH_EXPORT XYZModelLayer : public VisibleLayer
+    class OSGEARTH_EXPORT XYZModelLayer : public TiledModelLayer
     {
     public: // serialization
-        class OSGEARTH_EXPORT Options : public VisibleLayer::Options
-                                        
+        struct OSGEARTH_EXPORT Options : public TiledModelLayer::Options                         
         {
-        public:
-            // constructors
-            Options();
-            Options(const ConfigOptions& options);
+            META_LayerOptions(osgEarth, Options, TiledModelLayer::Options);
             OE_OPTION(URI, url);
             OE_OPTION(bool, additive);
             OE_OPTION(bool, invertY);
             OE_OPTION(int, minLevel);
             OE_OPTION(int, maxLevel);
             OE_OPTION(ProfileOptions, profile);
-            virtual Config getConfig() const;
-        protected: // LayerOptions
-            virtual void mergeConfig(const Config& conf);        
-        private:
+            Config getConfig() const override;
             void fromConfig(const Config& conf);
         };
 
     public:
-        META_Layer(osgEarth, XYZModelLayer, Options, VisibleLayer, XYZModel);
+        META_Layer(osgEarth, XYZModelLayer, Options, TiledModelLayer, XYZModel);
 
         //! Tiling profile (required)
         void setProfile(const Profile* profile);
-        const Profile* getProfile() const { return _profile.get(); }
+        const Profile* getProfile() const override { return _profile.get(); }
 
         //! Whether to flip the Y axis for tile indexing
+        //! TODO: do we need this? Since the URL supports ${-y}?
         void setInvertY(const bool& value);
         const bool& getInvertY() const;
 
@@ -73,47 +65,50 @@ namespace osgEarth
         void setURL(const URI& value);
         const URI& getURL() const;
 
+        //! Whether new LODs should be added to the scene (true) or replace existing ones (false)
         void setAdditive(const bool& value);
         const bool& getAdditive() const;
 
         //! Minimum level of detail to access
-        void setMinLevel(const int& value);
-        const int& getMinLevel() const;
+        void setMinLevel(unsigned value);
+        unsigned getMinLevel() const override;
 
         //! Maximum level of detail to access
-        void setMaxLevel(const int& value);
-        const int& getMaxLevel() const;
+        void setMaxLevel(unsigned value);
+        unsigned getMaxLevel() const override;
 
         //! Forces a rebuild on this layer.
         void dirty();
 
-        //! Access the underlying node pager
-        SimplePager* getPager() const;
-
     public: // Layer
 
-        // opens the layer and returns the status
-        virtual Status openImplementation();
+        //! opens the layer and returns the status
+        Status openImplementation() override;
 
-        // closes the layer
-        virtual Status closeImplementation();
+        //! closes the layer
+        Status closeImplementation() override;
 
-        // The Node representing this layer.
-        virtual osg::Node* getNode() const;
+        //! The Node representing this layer.
+        osg::Node* getNode() const override;
 
         //! Serialization
-        virtual Config getConfig() const;
+        Config getConfig() const override;
 
     public: // Layer
         
-        // called by the map when this layer is added
-        virtual void addedToMap(const Map*);
+        //! called by the map when this layer is added
+        void addedToMap(const Map*) override;
 
-        // called by the map when this layer is removed
-        virtual void removedFromMap(const Map*);
+        //! called by the map when this layer is removed
+        void removedFromMap(const Map*) override;
 
-        // post-ctor initialization
-        virtual void init();
+        //! post-ctor initialization
+        void init() override;
+
+    protected: // TiledModelLayer
+
+        //! Creates an OSG node from a tile key.
+        osg::ref_ptr<osg::Node> createTileImplementation(const TileKey&, ProgressCallback*) const override;
 
     protected:
 

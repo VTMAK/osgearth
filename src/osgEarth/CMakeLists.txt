@@ -187,7 +187,6 @@ SET(LIB_PUBLIC_HEADERS
     MapboxGLImageLayer
     MapboxGLGlyphManager
     MapCallback
-    MapInfo
     MapModelChange
     MapNode
     MapNodeObserver
@@ -265,6 +264,7 @@ SET(LIB_PUBLIC_HEADERS
     TileRasterizer
     TiledFeatureModelGraph
     TiledFeatureModelLayer
+    TiledModelLayer
     TileSource
     TileSourceElevationLayer
     TileSourceImageLayer
@@ -331,7 +331,7 @@ SET(LIB_PUBLIC_HEADERS
     TerrainProfile
     TextureArena
     TileIndex
-    TileIndexBuilder
+    TileIndexBuilder    
     TFSPackager
     TMSBackFiller
     TopologyGraph
@@ -618,7 +618,6 @@ set(TARGET_SRC
     MapboxGLImageLayer.cpp
     MapboxGLGlyphManager.cpp
     MapCallback.cpp
-    MapInfo.cpp
     MapNode.cpp
     MaterialLoader.cpp
     MemCache.cpp
@@ -684,6 +683,7 @@ set(TARGET_SRC
     TileRasterizer.cpp
     TiledFeatureModelGraph.cpp
     TiledFeatureModelLayer.cpp
+    TiledModelLayer.cpp
     TileVisitor.cpp
     TileSource.cpp
     TileSourceElevationLayer.cpp
