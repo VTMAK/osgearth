@@ -10,6 +10,12 @@ if(OSGEARTH_BUILD_PROCEDURAL_NODEKIT)
     add_subdirectory(osgEarthProcedural)
 endif()
 
+if (CESIUM_NATIVE_FOUND)
+    add_subdirectory(osgEarthCesium)
+    add_definitions(-DHAVE_OSGEARTHCESIUM)
+    set(OSGEARTHCESIUM_LIBRARY osgEarthCesium)
+endif()
+
 #mak-specific
 add_subdirectory(osgEarthAerodromes)
 add_subdirectory(osgEarthBuildings)
