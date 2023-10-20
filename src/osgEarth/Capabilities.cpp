@@ -225,37 +225,31 @@ Capabilities::Capabilities() :
 
     if (gc != nullptr)
     {
-        OE_INFO << LC << "Capabilities: " << std::endl;
-
         const osg::GL2Extensions* GL2 = osg::GL2Extensions::Get( id, true );
 
-        OE_INFO << LC << "  osgEarth Version:  " << osgEarthGetVersion() << std::endl;
+        OE_INFO << LC << "osgEarth Version:  " << osgEarthGetVersion() << std::endl;
 
 #ifdef OSGEARTH_EMBED_GIT_SHA
-        OE_INFO << LC << "  osgEarth HEAD SHA: " << osgEarthGitSHA1() << std::endl;
+        OE_INFO << LC << "osgEarth HEAD SHA: " << osgEarthGitSHA1() << std::endl;
 #endif
 
-        OE_INFO << LC << "  OSG Version:       " << osgGetVersion() << std::endl;
+        OE_INFO << LC << "OSG Version:       " << osgGetVersion() << std::endl;
 
 #ifdef GDAL_RELEASE_NAME
-        OE_INFO << LC << "  GDAL Version:      " << GDAL_RELEASE_NAME << std::endl;
-#endif
-
-#ifdef GEOS_VERSION
-        OE_INFO << LC << "  GEOS Version:      " << GEOS_VERSION << std::endl;
+        OE_INFO << LC << "GDAL Version:      " << GDAL_RELEASE_NAME << std::endl;
 #endif
 
         _supportsGLSL = GL2->isGlslSupported;
         _GLSLversion = GL2->glslLanguageVersion;
 
         _vendor = std::string( reinterpret_cast<const char*>(glGetString(GL_VENDOR)) );
-        OE_INFO << LC << "  GPU Vendor:        " << _vendor << std::endl;
+        OE_INFO << LC << "GPU Vendor:        " << _vendor << std::endl;
 
         _renderer = std::string( reinterpret_cast<const char*>(glGetString(GL_RENDERER)) );
-        OE_INFO << LC << "  GPU Renderer:      " << _renderer << std::endl;
+        OE_INFO << LC << "GPU Renderer:      " << _renderer << std::endl;
 
         _version = std::string( reinterpret_cast<const char*>(glGetString(GL_VERSION)) );
-        OE_INFO << LC << "  GL/Driver Version: " << _version << 
+        OE_INFO << LC << "GL/Driver Version: " << _version << 
             " (" << getGLSLVersionInt() << ")" << std::endl;
 
         // Detect core profile by investigating GL_CONTEXT_PROFILE_MASK
@@ -269,7 +263,7 @@ Capabilities::Capabilities() :
             glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profileMask);
             _isCoreProfile = ((profileMask & GL_CONTEXT_CORE_PROFILE_BIT) != 0);
         }
-        OE_INFO << LC << "  GL Core Profile:   " << SAYBOOL(_isCoreProfile) << std::endl;
+        OE_INFO << LC << "GL Core Profile:   " << SAYBOOL(_isCoreProfile) << std::endl;
 
         // if blend2d is available, say so.
 #ifdef OSGEARTH_HAVE_BLEND2D
@@ -285,11 +279,11 @@ Capabilities::Capabilities() :
             osg::isGLExtensionSupported(id, "GL_NV_bindless_multi_draw_indirect");
 
         glGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS_ARB, &_maxGPUTextureUnits );
-        OE_DEBUG << LC << "  Max GPU texture units = " << _maxGPUTextureUnits << std::endl;
+        OE_DEBUG << LC << "Max GPU texture units = " << _maxGPUTextureUnits << std::endl;
 
         GLint mvoc;
         glGetIntegerv(GL_MAX_VERTEX_VARYING_COMPONENTS_EXT, &mvoc);
-        OE_DEBUG << LC << "  Max varyings = " << mvoc << std::endl;
+        OE_DEBUG << LC << "Max varyings = " << mvoc << std::endl;
 
         glGetIntegerv( GL_MAX_TEXTURE_SIZE, &_maxTextureSize );
 #if !defined(OSG_GLES1_AVAILABLE) && !defined(OSG_GLES2_AVAILABLE) && !defined(OSG_GLES3_AVAILABLE)
@@ -306,11 +300,11 @@ Capabilities::Capabilities() :
             }
         }
 #endif
-        OE_DEBUG << LC << "  Max texture size = " << _maxTextureSize << std::endl;
+        OE_DEBUG << LC << "Max texture size = " << _maxTextureSize << std::endl;
 
         if ( _supportsGLSL )
         {
-            OE_DEBUG << LC << "  GLSL Version = " << getGLSLVersionInt() << std::endl;
+            OE_DEBUG << LC << "GLSL Version = " << getGLSLVersionInt() << std::endl;
         }
 
         _supportsDepthPackedStencilBuffer = osg::isGLExtensionSupported( id, "GL_EXT_packed_depth_stencil" ) ||
@@ -319,7 +313,7 @@ Capabilities::Capabilities() :
         _supportsDrawInstanced =
             _supportsGLSL &&
             osg::isGLExtensionOrVersionSupported( id, "GL_EXT_draw_instanced", 3.1f );
-        OE_DEBUG << LC << "  draw instanced = " << SAYBOOL(_supportsDrawInstanced) << std::endl;
+        OE_DEBUG << LC << "draw instanced = " << SAYBOOL(_supportsDrawInstanced) << std::endl;
 
 #if !defined(OSG_GLES3_AVAILABLE)
         _supportsNonPowerOfTwoTextures =
@@ -350,7 +344,7 @@ Capabilities::Capabilities() :
 
         // tetxure compression
         std::stringstream buf;
-        buf << "  Compression = ";
+        buf << "Compression = ";
         _supportsARBTC = osg::isGLExtensionSupported( id, "GL_ARB_texture_compression" );
         if (_supportsARBTC) buf << "ARB ";
 

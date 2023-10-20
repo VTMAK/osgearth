@@ -277,6 +277,32 @@ namespace ImGuiLTable
         return ImGui::SliderFloat(s.c_str(), v, v_min, v_max, format, flags);
     }
 
+    static bool SliderDouble(const char* label, double* v, double v_min, double v_max, const char* format = nullptr)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        std::string s("##" + std::string(label));
+        float temp = *v;
+        bool ok = ImGui::SliderFloat(s.c_str(), &temp, (float)v_min, (float)v_max, format);
+        if (ok) *v = (double)temp;
+        return ok;
+    }
+
+    static bool SliderDouble(const char* label, double* v, double v_min, double v_max, const char* format, ImGuiSliderFlags flags)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        std::string s("##" + std::string(label));
+        float temp = *v;
+        bool ok = ImGui::SliderFloat(s.c_str(), &temp, (float)v_min, (float)v_max, format, flags);
+        if (ok) *v = (double)temp;
+        return ok;
+    }
+
     static bool SliderInt(const char* label, int* v, int v_min, int v_max)
     {
         ImGui::TableNextColumn();
@@ -349,6 +375,16 @@ namespace ImGuiLTable
         ImGui::TableNextColumn();
     }
 
+    static bool InputScalar(const char* label, ImGuiDataType data_type, void* p_data, const void* p_step, const void* p_step_fast, const char* format, ImGuiInputTextFlags flags = 0)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        std::string s("##" + std::string(label));
+        return ImGui::InputScalar(s.c_str(), data_type, p_data, p_step, p_step_fast, format, flags);
+    }
+
     static void End()
     {
         ImGui::EndTable();
@@ -357,6 +393,15 @@ namespace ImGuiLTable
 
 namespace ImGuiUtil
 {
+    template<typename... Args>
+    static void TextCentered(const char* format, Args&&... args)
+    {
+        char buf[1024];
+        sprintf(buf, format, args...);
+        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - ImGui::CalcTextSize(buf).x) * 0.5f);
+        ImGui::Text(buf);
+    }
+
     static void Texture(osg::Texture2D* texture, osg::RenderInfo& renderInfo, unsigned int width = 0, unsigned int height = 0)
     {
         // Get the context id

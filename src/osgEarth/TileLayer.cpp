@@ -32,7 +32,7 @@ namespace
     using DataExtentsIndex = RTree<DataExtent, double, 2>;
 }
 
-#define LC "[TileLayer] \"" << getName() << "\" "
+#define LC "[" << className() << "] " << getName() << "\" "
 
 //------------------------------------------------------------------------
 
@@ -398,7 +398,7 @@ TileLayer::setUpL2Cache(unsigned minSize)
     if (l2env)
     {
         l2CacheSize = as<int>(std::string(l2env), 0);
-        OE_INFO << LC << "L2 cache size set from environment = " << l2CacheSize << "\n";
+        OE_INFO << LC << "L2 cache size set from environment = " << l2CacheSize << std::endl;
     }
 
     // Env cache-only mode also disables the L2 cache.
@@ -480,7 +480,7 @@ TileLayer::getCacheBin(const Profile* profile)
 {
     if ( !isOpen() )
     {
-        OE_WARN << LC << "Illegal- called getCacheBin() before layer is open.. did you call open()?\n";
+        OE_WARN << LC << "Illegal- called getCacheBin() before layer is open.. did you call open()?" << std::endl;
         return 0L;
     }
 
@@ -537,7 +537,7 @@ TileLayer::getCacheBin(const Profile* profile)
         }
         else
         {
-            OE_WARN << LC << "Metadata appears to be corrupt.\n";
+            OE_WARN << LC << "Metadata appears to be corrupt" << std::endl;
         }
     }
 
@@ -899,7 +899,7 @@ TileLayer::getBestAvailableTileKey(
         ScopedWriteLock lock(_data_mutex);
         if (!_dataExtentsIndex) // Double check
         {
-            OE_INFO << LC << "Building data extents index with " << _dataExtents.size() << " extents" << std::endl;
+            OE_DEBUG << LC << "Building data extents index with " << _dataExtents.size() << " extents" << std::endl;
             DataExtentsIndex* dataExtentsIndex = new DataExtentsIndex();
             for (auto de = _dataExtents.begin(); de != _dataExtents.end(); ++de)
             {

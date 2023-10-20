@@ -7,7 +7,8 @@
 #pragma import_defines(OE_USE_PBR)
 
 uniform float oe_sky_exposure = 3.3; // HDR scene exposure (ground level)
-uniform float oe_sky_ambientBoostFactor; // ambient sunlight booster for daytime
+uniform float oe_sky_ambientBoostFactor; // ambient sunlight booster for daytime (material mode only)
+uniform float oe_sky_maxAmbientIntensity = 0.75; // maximum daytime ambient intensity (PBR mode only)
 
 in vec3 atmos_lightDir;    // light direction (view coords)
 in vec3 atmos_color;       // atmospheric lighting color
@@ -120,6 +121,7 @@ void atmos_fragment_main_pbr(inout vec4 color)
     F0 = mix(F0, albedo, vec3(oe_pbr.metal));
 
     vec3 Lo = vec3(0.0);
+    float ai = 0.0; // ambient intensity (based on time of day)
 
     for (int i = 0; i < OE_NUM_LIGHTS; ++i)
     {
@@ -148,17 +150,17 @@ void atmos_fragment_main_pbr(inout vec4 color)
         vec3 specular = numerator / max(denominator, 0.001);
 
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+
+        ai = max(ai, NdotL * oe_sky_maxAmbientIntensity);
     }
 
-    vec3 ambient = osg_LightSource[0].ambient.rgb * albedo * oe_pbr.ao;
+    //ai = 1.0 - (1.0 - ai) * (1.0 - ai);
+    vec3 ambient = clamp(osg_LightSource[0].ambient.rgb + vec3(ai), 0.0, 1.0) * albedo * oe_pbr.ao;
 
     color.rgb = ambient + Lo;
 
     // tone map:
     color.rgb = color.rgb / (color.rgb + vec3(1.0));
-
-    // boost:
-    //color.rgb *= 2.2;
 
     // add in the haze
     color.rgb += pow(atmos_color, vec3(2.2)); // add in the (SRGB) color

@@ -491,10 +491,10 @@ TileMesher::createMeshWithConstraints(
             have_any_removal_requests = true;
         }
 
-        // we're marking all verts CONSTRAINT in order to disable morphing.
+        // we're marking all new verts CONSTRAINT in order to disable morphing.
         int default_marker = VERTEX_VISIBLE | VERTEX_CONSTRAINT;
 
-        // this will preserve a "burned-in" Z value.
+        // this will preserve a "burned-in" Z value in the shader.
         if (edit.hasElevation)
         {
             default_marker |= VERTEX_HAS_ELEVATION;
@@ -517,8 +517,6 @@ TileMesher::createMeshWithConstraints(
 
                 if (part->getBounds().intersects(localBounds))
                 {
-                    int marker = default_marker;
-
                     if (part->isPointSet())
                     {
                         for (int i = 0; i < part->size(); ++i)
@@ -527,7 +525,7 @@ TileMesher::createMeshWithConstraints(
 
                             if (v.x >= xmin && v.x <= xmax && v.y >= ymin && v.y <= ymax)
                             {
-                                mesh.insert(v, marker);
+                                mesh.insert(v, default_marker);
                             }
                         }
                     }
@@ -536,6 +534,7 @@ TileMesher::createMeshWithConstraints(
                     {
                         // marking as BOUNDARY will allow skirt generation on this part
                         // for polygons with removed interior/exteriors
+                        int marker = default_marker;
                         if (part->isRing() && (edit.removeInterior || edit.removeExterior))
                         {
                             marker |= VERTEX_BOUNDARY;
@@ -675,7 +674,7 @@ TileMesher::createMeshWithConstraints(
     {
         if (edit.hasElevation && edit.fillElevations)
         {
-            // This algorithm looks for verts with no elevation data, and assigned each
+            // This algorithm looks for verts with no elevation data, and assigns each
             // one an elevation based on the closest edge that HAS elevation data.
             // Typical use case: remove exterior polygons, leaving you with an interior
             // mesh in which the edge points have set elevations. This will then interpolate
