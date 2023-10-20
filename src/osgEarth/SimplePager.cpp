@@ -19,19 +19,19 @@ using namespace osgEarth::Util;
 #define LC "[SimplerPager] "
 
 
-SimplePager::SimplePager(const osgEarth::Map* map, const osgEarth::Profile* profile):
-_map(map),
-_profile( profile ),
-_rangeFactor( 6.0 ),
-_additive(false),
-_minLevel(0),
-_maxLevel(30),
-_priorityScale(1.0f),
-_priorityOffset(0.0f),
-_canCancel(true),
-_done(false),
-_clusterCullingEnabled(true),
-_mutex("SimplePager(OE)")
+SimplePager::SimplePager(const osgEarth::Map* map, const osgEarth::Profile* profile) :
+    _map(map),
+    _profile(profile),
+    _rangeFactor(6.0),
+    _additive(false),
+    _minLevel(0),
+    _maxLevel(30),
+    _priorityScale(1.0f),
+    _priorityOffset(0.0f),
+    _canCancel(true),
+    _done(false),
+    _clusterCullingEnabled(true),
+    _mutex("SimplePager(OE)")
 {
     if (map)
     {
@@ -70,7 +70,7 @@ void SimplePager::setDone()
 
 void SimplePager::build()
 {
-    addChild( buildRootNode() );
+    addChild(buildRootNode());
 }
 
 osg::BoundingSphered SimplePager::getBounds(const TileKey& key) const
@@ -122,13 +122,13 @@ osg::ref_ptr<osg::Node> SimplePager::buildRootNode()
     osg::ref_ptr<osg::Group> root = new osg::Group();
 
     std::vector<TileKey> keys;
-    _profile->getRootKeys( keys );
+    _profile->getRootKeys(keys);
     osg::ref_ptr<ProgressCallback> prog = new ObserverProgressCallback(this);
     for (unsigned int i = 0; i < keys.size(); i++)
     {
         osg::ref_ptr<osg::Node> node = createPagedNode(keys[i], prog.get());
-        if ( node.valid() )
-            root->addChild( node );
+        if (node.valid())
+            root->addChild(node);
     }
 
     return root;
@@ -136,14 +136,14 @@ osg::ref_ptr<osg::Node> SimplePager::buildRootNode()
 
 osg::ref_ptr<osg::Node> SimplePager::createNode(const TileKey& key, ProgressCallback* progress)
 {
-    osg::BoundingSphered bounds = getBounds( key );
+    osg::BoundingSphered bounds = getBounds(key);
 
     osg::MatrixTransform* mt = new osg::MatrixTransform;
-    mt->setMatrix(osg::Matrixd::translate( bounds.center() ) );
+    mt->setMatrix(osg::Matrixd::translate(bounds.center()));
     osg::Geode* geode = new osg::Geode;
-    osg::ShapeDrawable* sd = new osg::ShapeDrawable( new osg::Sphere(osg::Vec3f(0,0,0), bounds.radius()) );
-    sd->setColor( osg::Vec4(1,0,0,1 ) );
-    geode->addDrawable( sd );
+    osg::ShapeDrawable* sd = new osg::ShapeDrawable(new osg::Sphere(osg::Vec3f(0, 0, 0), bounds.radius()));
+    sd->setColor(osg::Vec4(1, 0, 0, 1));
+    geode->addDrawable(sd);
     mt->addChild(geode);
     return mt;
 }
@@ -200,13 +200,13 @@ SimplePager::createPagedNode(const TileKey& key, ProgressCallback* progress)
 
     float loadRange = FLT_MAX;
 
+    if (getName().empty())
+        pagedNode->setName(key.str());
+    else
+        pagedNode->setName(getName() + " " + key.str());
+
     if (hasChildren)
     {
-        if (getName().empty())
-            pagedNode->setName(key.str());
-        else
-            pagedNode->setName(getName() + " " + key.str());
-
         // Now setup a filename on the PagedLOD that will load all of the children of this node.
         pagedNode->setPriorityScale(_priorityScale);
         //pager->setPriorityOffset(_priorityOffset);
@@ -253,12 +253,12 @@ SimplePager::loadKey(const TileKey& key, ProgressCallback* progress)
 
     for (unsigned int i = 0; i < 4; i++)
     {
-        TileKey childKey = key.createChildKey( i );
+        TileKey childKey = key.createChildKey(i);
 
         osg::ref_ptr<osg::Node> plod = createPagedNode(childKey, progress);
         if (plod.valid())
         {
-            group->addChild( plod );
+            group->addChild(plod);
         }
     }
     if (group->getNumChildren() > 0)
