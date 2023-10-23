@@ -2,6 +2,7 @@
 #include "Common"
 
 #include <osgEarth/ModelSource>
+#include <osgEarth/ObjectIndex>
 
 #include <string>
 #include <vector>
@@ -29,9 +30,12 @@ namespace osgEarth
 
 
             typedef std::vector<osg::Matrixd> MatrixdVector;
+            typedef std::vector<osgEarth::ObjectID> ObjectIdVector;
+
             struct Instances
             {
                 MatrixdVector matrices;
+                ObjectIdVector objectIds;
                 float minRange;
                 float maxRange;
             };

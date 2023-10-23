@@ -205,6 +205,7 @@ namespace osgEarth { namespace Buildings
             calls to addDrawable or addInstance will prompt the indexer to tag the new
             data with this feature. */
         void setCurrentFeature(Feature* f) { _currentFeature = f; }
+        Feature* getCurrentFeature() { return _currentFeature; }
 
         /** Run on the result of cretaeSceneGraph or readFromCache to install VPs. */
         void postProcess(osg::Node* node, const CompilerSettings& settings, ProgressCallback* progress) const;

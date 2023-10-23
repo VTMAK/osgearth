@@ -3,6 +3,7 @@
 #include "Common"
 
 #include <osgEarth/URI>
+#include <osgEarth/ObjectIndex>
 #include <osg/Matrixd>
 
 namespace osgEarth {
@@ -14,16 +15,14 @@ namespace osgEarth {
       {
       public:
 
-         ExternalModel() { ; }
+         ExternalModel();
          ExternalModel(const ExternalModel& rhs, const osg::CopyOp& copyop);
-         ExternalModel& operator=(const ExternalModel& rhs) { 
-            modelName = rhs.modelName;
-            xform = rhs.xform;
-            return *this;
-         }
+         ExternalModel& operator=(const ExternalModel& rhs);
 
          std::string modelName;
          osg::Matrixd xform;
+         osgEarth::ObjectID objectId;
+
          META_Object(osgEarth::Buildings, ExternalModel);
 
          const std::string & getmodelName() const { return modelName; }
@@ -31,6 +30,9 @@ namespace osgEarth {
 
          const osg::Matrixd & getxform() const { return xform; }
          void setxform(const osg::Matrixd & mat) { xform = mat; }
+
+         const osgEarth::ObjectID& getobjectId() const { return objectId; }
+         void setobjectId(const osgEarth::ObjectID& id) { objectId = id; }
       };
 
       /**
