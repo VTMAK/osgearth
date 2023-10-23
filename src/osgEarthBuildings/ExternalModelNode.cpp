@@ -55,10 +55,23 @@ namespace ExternalModelNodeSerializer
    }
 }
 
+ExternalModel::ExternalModel()
+   : objectId(0)
+{}
+
 ExternalModel::ExternalModel(const ExternalModel& rhs, const osg::CopyOp& copyop)
 {
    modelName = rhs.modelName;
    xform = rhs.xform;
+   objectId = rhs.objectId;
+}
+
+ExternalModel& ExternalModel::operator=(const ExternalModel& rhs)
+{
+   modelName = rhs.modelName;
+   xform = rhs.xform;
+   objectId = rhs.objectId;
+   return *this;
 }
 
 namespace ExternalModelSerializer
@@ -70,5 +83,6 @@ namespace ExternalModelSerializer
    {
       ADD_STRING_SERIALIZER(modelName, "");
       ADD_MATRIX_SERIALIZER(xform, osg::Matrixd::identity());
+      ADD_REF_UINT_SERIALIZER(objectId, osgEarth::ObjectID(0));
    }
 }

@@ -308,8 +308,8 @@ void CompilerOutput::addInstancesNormal(osg::MatrixTransform* root, Session* ses
                 _index->tagNode(modelxform, m->second.get());
             }
 
-            if (_metadata && _currentFeature)
-            {            
+            if (_metadata && m->second.valid())
+            {
                 auto id = _metadata->add(m->second.get(), true);
                 _metadata->tagNode(modelxform, id);
             }
@@ -370,6 +370,7 @@ void CompilerOutput::addInstancesZeroWorkCallbackBased(osg::MatrixTransform* roo
 
       InstancedModelNode::Instances& dstInstances = instancedModelNode->_mapModelToInstances[uri.full()];
       InstancedModelNode::MatrixdVector& dstMatrices = dstInstances.matrices;
+      InstancedModelNode::ObjectIdVector& dstObjectIds = dstInstances.objectIds;
 
       dstInstances.minRange = 0.0f;
       dstInstances.maxRange = maxRange;
@@ -377,6 +378,13 @@ void CompilerOutput::addInstancesZeroWorkCallbackBased(osg::MatrixTransform* roo
       for (int matrixIndex = 0; matrixIndex < srcMatricees.size(); ++matrixIndex)
       {
          dstMatrices.push_back(srcMatricees[matrixIndex].first);
+
+         if (_metadata)
+         {
+            osg::ref_ptr< Feature > feature = srcMatricees[matrixIndex].second;
+            ObjectID id = feature.valid() ? _metadata->add(feature.get(), true) : ObjectID(0);
+            dstObjectIds.push_back(id);
+         }
       }
    }
 

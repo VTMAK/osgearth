@@ -100,6 +100,15 @@ BuildingCompiler::addExternalModel(CompilerOutput&       output,
       {
          osg::MatrixTransform* xform = new osg::MatrixTransform(building->getReferenceFrame() * world2local);
          xform->addChild(node.get());
+
+         MetadataNode* metadataNode = output.getMetadata();
+         Feature* feature = output.getCurrentFeature();
+         if(metadataNode && feature)
+         {
+            auto id = metadataNode->add(feature, true);
+            metadataNode->tagNode(xform, id);
+         }
+
          output.getExternalModelsGroup()->addChild(xform);
       }
       return node.valid();
@@ -124,10 +133,17 @@ BuildingCompiler::addExternalModel(CompilerOutput&       output,
 
       externalModel->modelName = building->getExternalModelURI().full();
       externalModel->xform = building->getReferenceFrame()/* * world2local*/;
-      
+
+      MetadataNode* metadataNode = output.getMetadata();
+      Feature* feature = output.getCurrentFeature();
+      if (metadataNode && feature)
+      {
+         externalModel->objectId = metadataNode->add(feature, true);
+      }
+
       externalModelNode->vectorExternalModels.push_back(externalModel);
       return true;
-   } 
+   }
 }
 
 bool
