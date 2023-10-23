@@ -19,8 +19,8 @@ import sys, os
 #sys.path.insert(0, os.path.abspath('.'))
 
 # Markdown support
-from recommonmark.parser import CommonMarkParser
-from recommonmark.transform import AutoStructify
+#from recommonmark.parser import CommonMarkParser
+#from recommonmark.transform import AutoStructify
 
 # -- General configuration -----------------------------------------------------
 
@@ -31,15 +31,16 @@ from recommonmark.transform import AutoStructify
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
     'sphinx_markdown_tables',
+    'myst_parser'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
 # Add support for MarkDown
-source_parsers = {
-    '.md': CommonMarkParser,
-}
+#source_parsers = {
+#    '.md': CommonMarkParser,
+#}
 
 # The suffix of source filenames.
 source_suffix = ['.rst', '.md']
@@ -239,7 +240,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'osgEarth', u'osgEarth Documentation',
-   u'Pelican Mapping', 'osgEarth', 'One line description of project.',
+   u'Pelican Mapping', 'osgEarth', 'Geospatial SDK for OpenSceneGraph',
    'Miscellaneous'),
 ]
 
@@ -255,7 +256,7 @@ texinfo_documents = [
 # Custom setup
 def setup(app):
     app.add_css_file('styles.css')
-    app.add_config_value('recommonmark_config', {
-        'enable_auto_toc_tree': True,
-    }, True)
-    app.add_transform(AutoStructify)
+    #app.add_config_value('recommonmark_config', {
+    #    'enable_auto_toc_tree': True,
+    #}, True)
+    #app.add_transform(AutoStructify)
