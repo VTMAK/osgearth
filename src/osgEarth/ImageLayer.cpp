@@ -26,6 +26,7 @@
 #include <osgEarth/TimeSeriesImage>
 #include <osgEarth/Random>
 #include <osgEarth/MetaTile>
+#include <osgEarth/CoverageLayer>
 #include <osg/ImageStream>
 #include <cinttypes>
 
@@ -222,7 +223,7 @@ ImageLayer::create(const ConfigOptions& options)
 Status
 ImageLayer::openImplementation()
 {
-    Status parent = TileLayer::openImplementation();
+    Status parent = super::openImplementation();
     if (parent.isError())
         return parent;
 
@@ -245,6 +246,13 @@ ImageLayer::openImplementation()
                 << "\""
                 << std::endl;
         }
+    }
+
+    for (auto layer : _postLayers)
+    {
+        Status s = layer->open(getReadOptions());
+        if (s.isError())
+            return s;
     }
 
     return Status::NoError;
@@ -376,6 +384,7 @@ ImageLayer::createImage(
     return createImage(key, nullptr);
 }
 
+#include <osgDB/WriteFile>
 GeoImage
 ImageLayer::createImage(
     const TileKey& key,
@@ -399,13 +408,15 @@ ImageLayer::createImage(
     {
         for (auto& post : _postLayers)
         {
+            // if we didn't get a result from the actual key, try to fall back
+            // so we can apply the post to "something".
             if (!result.valid())
             {
                 TileKey bestKey = getBestAvailableTileKey(key);
                 result = createImageInKeyProfile(bestKey, progress);
             }
 
-            result = post->createImage(result, key, progress);
+            result = applyPostLayer(result, key, post.get(), progress);
         }
     }
 
@@ -415,6 +426,17 @@ ImageLayer::createImage(
     }
 
     return result;
+}
+
+GeoImage
+ImageLayer::applyPostLayer(const GeoImage& canvas, const TileKey& key, Layer* post, ProgressCallback* progress) const
+{
+    auto post_imageLayer = dynamic_cast<ImageLayer*>(post);
+    if (post_imageLayer)
+    {
+        return post_imageLayer->createImage(canvas, key, progress);
+    }
+    else return canvas;
 }
 
 GeoImage
@@ -594,8 +616,7 @@ ImageLayer::createImageInKeyProfile(
 
         // If we got a result, the cache is valid and we are caching in the map profile,
         // write to the map cache.
-        if (cacheBin        &&
-            policy.isCacheWriteable())
+        if (cacheBin && policy.isCacheWriteable())
         {
             if ( key.getExtent() != result.getExtent() )
             {
@@ -850,7 +871,7 @@ ImageLayer::removeCallback(ImageLayer::Callback* c)
 }
 
 void
-ImageLayer::addPostLayer(ImageLayer* layer)
+ImageLayer::addPostLayer(Layer* layer)
 {
     ScopedMutexLock lock(_postLayers);
     _postLayers.push_back(layer);

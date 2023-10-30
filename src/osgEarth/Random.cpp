@@ -34,31 +34,30 @@ namespace
     {
         // note: this is not a "good" PRNG, but it is good enough for some applications
         // and it is wicked fast.
-        //next = next * 1103515245 + 1234;
         next = ((214013*next+2531011));
     }
 }
 
 //------------------------------------------------------------------------
 
-Random::Random( Random::Method method ) :
-_method( method ),
-_seed  ( (unsigned)::time(0L) )
+Random::Random(Random::Method method) :
+    _method(method),
+    _seed((unsigned)::time(0L))
 {
     _next = _seed;
 }
 
-Random::Random( unsigned seed, Random::Method method ) :
-_method( method ),
-_seed  ( seed )
+Random::Random(unsigned seed, Random::Method method) :
+    _method(method),
+    _seed(seed)
 {
     _next = _seed;
 }
 
-Random::Random( const Random& rhs ) :
-_method( rhs._method ),
-_seed  ( rhs._seed ),
-_next  ( rhs._next )
+Random::Random(const Random& rhs) :
+    _method(rhs._method),
+    _seed(rhs._seed),
+    _next(rhs._next)
 {
     //nop
 }

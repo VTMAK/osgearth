@@ -194,7 +194,7 @@ namespace osgEarth
         void removeCallback(Callback* callback);
 
         //! Add a post-processing layer
-        void addPostLayer(ImageLayer* layer);
+        void addPostLayer(Layer* layer);
 
 
     public: // Texture support
@@ -209,8 +209,9 @@ namespace osgEarth
 
         //! Subclass overrides this to generate image data for the key.
         //! The key will always be in the same profile as the layer.
-        virtual GeoImage createImageImplementation(const TileKey&, ProgressCallback* progress) const
-            { return GeoImage::INVALID; }
+        virtual GeoImage createImageImplementation(const TileKey& key, ProgressCallback* progress) const {
+            return createImageImplementation(GeoImage::INVALID, key, progress);
+        }
 
     protected:
 
@@ -238,6 +239,12 @@ namespace osgEarth
             GeoImage& createdImage,
             const TileKey& key,
             ProgressCallback* progress) const { }
+
+        virtual GeoImage applyPostLayer(
+            const GeoImage& canvas,
+            const TileKey& key,
+            Layer* postLayer,
+            ProgressCallback* progress) const;
 
     protected: // Layer
 
@@ -283,7 +290,7 @@ namespace osgEarth
         typedef std::vector< osg::ref_ptr<Callback> > Callbacks;
         Threading::Mutexed<Callbacks> _callbacks;
 
-        Mutexed<std::vector<osg::ref_ptr<ImageLayer>>> _postLayers;
+        Mutexed<std::vector<osg::ref_ptr<Layer>>> _postLayers;
 
         Gate<TileKey> _sentry;
 

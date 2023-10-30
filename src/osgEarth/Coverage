@@ -267,6 +267,10 @@ namespace osgEarth
             return _coverage ? _coverage->empty() : true;
         }
 
+        inline bool hasDataAt(unsigned s, unsigned t) const {
+            return _coverage ? _coverage->hasDataAt(s, t) : false;
+        }
+
         void write(const T& value, unsigned s, unsigned t)
         {
             OE_SOFT_ASSERT_AND_RETURN(_coverage != nullptr, void());
@@ -307,6 +311,17 @@ namespace osgEarth
                 return true;
             }
             return false;
+        }
+        
+        const T* readAtCoords(double x, double y) const
+        {
+            unsigned xs = (unsigned)((double)(s() - 1) * (x - _extent.xMin()) / _extent.width());
+            unsigned yt = (unsigned)((double)(t() - 1) * (y - _extent.yMin()) / _extent.height());
+            if (xs >= 0 && xs < s() && yt >= 0 && yt < t())
+            {
+                return read(xs, yt);
+            }
+            return nullptr;
         }
 
         const GeoExtent& getExtent() const

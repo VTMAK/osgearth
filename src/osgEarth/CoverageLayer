@@ -90,6 +90,15 @@ namespace osgEarth
         //! @return The source layer, or nullptr if we cannot find it
         ImageLayer* getSourceLayerByName(const std::string& name) const;
 
+        //! Number of source image layers in the configuration
+        unsigned getNumSourceLayers() const;
+
+        //! Get the nth source image layer
+        ImageLayer* getSourceLayerByIndex(unsigned n) const;
+
+        //! Adds a source layer to the coverage along with a set of mappings.
+        void addSourceLayer(ImageLayer* layer, const Config& mappingsConf);
+
         /**
         * Factory is a utility class that initializes the mappings between the int values and 
         * the user-defined datastructure.  Initialize one of these first and call createCoverage on it.

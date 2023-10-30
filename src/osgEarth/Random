@@ -84,9 +84,9 @@ namespace osgEarth { namespace Util
         double next();
 
     private:
-        Method   _method;
-        unsigned _seed;
-        unsigned _next;
+        Method _method = METHOD_FAST;
+        unsigned _seed = 0u;
+        unsigned _next = 0u;
     };
 } }
 
