@@ -259,21 +259,40 @@ namespace osgEarth
                     if (!keyUnderMouse.valid())
                         getKeyUnderMouse(view, x, y, keyUnderMouse, pointUnderMouse);
 
-                    TileKey best_key = coverage->getBestAvailableTileKey(keyUnderMouse, false);
+                    TileKey best_key_base = coverage->getBestAvailableTileKey(keyUnderMouse, false);
+
+                    TileKey best_key_dynamic;
+                    auto dynamic_coverage = _mapNode->getMap()->getLayerByName<osgEarth::CoverageLayer>("mak:landcover_dynamic");
+                    if (dynamic_coverage)
+                        best_key_dynamic = dynamic_coverage->getBestAvailableTileKey(keyUnderMouse, false);
 
                     if (keyUnderMouse.valid())
                     {
-                        _landcoverUnderMouse = Job().dispatch<LandCoverSample>([this, best_key, pointUnderMouse](Cancelable* c)
+                        _landcoverUnderMouse = Job().dispatch<LandCoverSample>([this, dynamic_coverage, best_key_base, best_key_dynamic, pointUnderMouse](Cancelable* c)
                             {
                                 LandCoverSample result;
                                 osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(c);
-                                auto factory = LandCoverSample::Factory::create(_lifemap->getLandCoverLayer());
-                                for(TileKey key = best_key; key.valid() && !result.valid(); key.makeParent())
+
+                                // dynamic first
+                                if (dynamic_coverage && best_key_dynamic.valid())
                                 {
-                                    if (c && c->isCanceled()) break;
-                                    auto g = factory->createCoverage(key, prog.get());
+                                    auto factory = LandCoverSample::Factory::create(dynamic_coverage);
+                                    auto g = factory->createCoverage(best_key_dynamic, prog.get());
                                     if (g.valid())
                                         g.readAtCoords(result, pointUnderMouse.x(), pointUnderMouse.y());
+                                }
+
+                                // base second
+                                if (!result.valid())
+                                {
+                                    auto factory = LandCoverSample::Factory::create(_lifemap->getLandCoverLayer());
+                                    for (TileKey key = best_key_base; key.valid() && !result.valid(); key.makeParent())
+                                    {
+                                        if (c && c->isCanceled()) break;
+                                        auto g = factory->createCoverage(key, prog.get());
+                                        if (g.valid())
+                                            g.readAtCoords(result, pointUnderMouse.x(), pointUnderMouse.y());
+                                    }
                                 }
                                 return result;
                             });
