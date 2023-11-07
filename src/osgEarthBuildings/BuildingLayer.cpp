@@ -159,10 +159,9 @@ BuildingLayer::createSceneGraph()
 
     // assertion:
     FeatureSource* fs = options().featureSource().getLayer();
-    if (!fs || !_session.valid() || !map.valid())
+    if (!fs || !fs->isOpen() || !_session.valid() || !map.valid())
     {
-        //if (getStatus().isOK())
-        //    setStatus(Status(Status::ServiceUnavailable, "Internal assertion failure, call support"));
+        setStatus(Status(Status::ServiceUnavailable, "Feature source is unavailable"));
         return;
     }
     
