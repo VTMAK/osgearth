@@ -304,7 +304,13 @@ namespace osgEarth { namespace Util
                 newGroup->addChild( oldGroup->getChild(i) );
             }
 
-            osg::Node::ParentList parents = oldGroup->getParents();
+            osg::Node::ParentList parents;
+            {
+               //VRV_PATCH#
+               osg::NodeScopedLock lock(oldGroup->getParentListMutex());
+               parents = oldGroup->getParents();
+            }
+
             for(osg::Node::ParentList::iterator i = parents.begin(); i != parents.end(); ++i )
             {
                 (*i)->replaceChild( oldGroup, newGroup );

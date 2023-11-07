@@ -204,7 +204,7 @@ bool Dragger::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& 
                               for (ritr = nodePath.rbegin(); ritr != nodePath.rend(); ++ritr)
                               {
                                   osg::Camera* camera = dynamic_cast<osg::Camera*>(*ritr);
-                                  if (camera && (camera->getReferenceFrame()!=osg::Transform::RELATIVE_RF || camera->getParents().empty()))
+                                  if (camera && (camera->getReferenceFrame()!=osg::Transform::RELATIVE_RF || camera->getNumParents() == 0))
                                   {
                                        rootCamera = camera;
                                        break;
