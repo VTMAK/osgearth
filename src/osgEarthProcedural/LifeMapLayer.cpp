@@ -422,11 +422,10 @@ LifeMapLayer::createImageImplementation(const TileKey& key, ProgressCallback* pr
         ElevationPool* ep = map->getElevationPool();
         ep->getTile(key, true, elevTile, &_workingSet, progress);
 
-        // ensure we have a normal map for slopes and curvatures:
-        if (elevTile.valid())
-        {
-            elevTile->generateNormalMap(map.get(), &_workingSet, progress);
-        }
+    // ensure we have a normal map for slopes and curvatures:
+    if (elevTile.valid() && getTerrainWeight() > 0.0f)
+    {
+        elevTile->generateNormalMap(map.get(), &_workingSet, progress);
     }
 
     GeoExtent extent = key.getExtent();

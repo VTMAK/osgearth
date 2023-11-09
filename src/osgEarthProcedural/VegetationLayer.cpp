@@ -55,6 +55,8 @@
 
 #define LC "[VegetationLayer] " << getName() << ": "
 
+#define JOB_ARENA_VEGETATION "oe.vegetation"
+
 #define OE_DEVEL OE_DEBUG
 
 #ifndef GL_MULTISAMPLE
@@ -94,6 +96,7 @@ VegetationLayer::Options::getConfig() const
     conf.set("use_impostor_pbr_maps", useImpostorPBRMaps());
     conf.set("max_texture_size", maxTextureSize());
     conf.set("render_bin_number", renderBinNumber());
+    conf.set("threads", threads());
 
     Config layers("layers");
     for (auto group_name : { GROUP_TREES, GROUP_BUSHES, GROUP_UNDERGROWTH })
@@ -170,6 +173,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     useRGCompressedNormalMaps().setDefault(true);
     maxTextureSize().setDefault(INT_MAX);
     renderBinNumber().setDefault(3);
+    threads().setDefault(2u);
 
     biomeLayer().get(conf, "biomes_layer");
 
@@ -183,6 +187,7 @@ VegetationLayer::Options::fromConfig(const Config& conf)
     conf.get("use_impostor_pbr_maps", useImpostorPBRMaps());
     conf.get("max_texture_size", maxTextureSize());
     conf.get("render_bin_number", renderBinNumber());
+    conf.get("threads", threads());
 
     // some nice default group settings
     groups()[GROUP_TREES].lod().setDefault(14);
@@ -387,7 +392,7 @@ VegetationLayer::update(osg::NodeVisitor& nv)
 
         checkForNewAssets();
 
-        if (_newAssets.isAvailable())
+        if (_newAssets.available())
         {
             ScopedMutexLock lock(_assets);
             _assets = std::move(_newAssets.release());
@@ -824,6 +829,9 @@ VegetationLayer::prepareForRendering(TerrainEngine* engine)
     setImpostorHighAngle(options().impostorHighAngle().get());
     setLODTransitionPadding(options().lodTransitionPadding().get());
     setUseImpostorNormalMaps(options().useImpostorNormalMaps().get());
+
+    // configure the thread pool
+    JobArena::setConcurrency(JOB_ARENA_VEGETATION, options().threads().get());
 }
 
 namespace
@@ -1115,6 +1123,7 @@ VegetationLayer::checkForNewAssets() const
 
     Job job;
     job.setName("VegetationLayer asset loader");
+    job.setArena(JOB_ARENA_VEGETATION);
     _newAssets = job.dispatch<AssetsByGroup>(loadNewAssets);
 
     return true;
@@ -1180,6 +1189,7 @@ VegetationLayer::createDrawableAsync(
 
     Job job;
     job.setName("Vegetation create drawable");
+    job.setArena(JOB_ARENA_VEGETATION);
     job.setPriority(-range); // closer is sooner
     return job.dispatch<osg::ref_ptr<osg::Drawable>>(function);
 }
@@ -1987,7 +1997,7 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
 
                 if (view._placeholder)
                 {
-                    auto phcd = asChonkDrawable(view._placeholder->_drawable.get());
+                    auto phcd = asChonkDrawable(view._placeholder->_drawable.value());
                     if (phcd)
                         birthday = phcd->getBirthday();
                 }
@@ -2012,9 +2022,9 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
         }
 
         // if the data is ready, cull it:
-        if (view._tile->_drawable.isAvailable())
+        if (view._tile->_drawable.available())
         {
-            auto drawable = view._tile->_drawable.get();
+            auto drawable = view._tile->_drawable.value();
 
             if (drawable.valid())
             {
@@ -2058,7 +2068,7 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
 
         // If the job exists but was canceled for some reason,
         // Reset this view so it will try again later.
-        else if (view._tile->_drawable.isAbandoned())
+        else if (view._tile->_drawable.empty())
         {
             view._tile = nullptr;
         }
@@ -2070,7 +2080,7 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
             // push the matrix and accept the placeholder.
             view._matrix->set(entry->getModelViewMatrix());
             cv->pushModelViewMatrix(view._matrix.get(), osg::Transform::ABSOLUTE_RF);
-            view._placeholder->_drawable.get()->accept(nv);
+            view._placeholder->_drawable.value()->accept(nv);
             cv->popModelViewMatrix();
         }
 
@@ -2106,7 +2116,7 @@ VegetationLayer::resizeGLObjectBuffers(unsigned maxSize)
 
     for (auto& tile : _tiles)
     {
-        auto drawable = tile.second->_drawable.get();
+        auto drawable = tile.second->_drawable.value();
         if (drawable.valid())
             drawable->resizeGLObjectBuffers(maxSize);
     }
