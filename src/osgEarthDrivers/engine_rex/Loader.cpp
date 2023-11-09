@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 #include "Loader"
+#include "TileNode"
 
 #include <osgEarth/Utils>
 #include <osgEarth/NodeUtils>
@@ -97,14 +98,16 @@ Merger::merge(LoadTileDataOperationPtr data, osg::NodeVisitor& nv)
 
         if (!state->empty())
         {
-            static osg::ref_ptr<osg::Node> dummyNode = new osg::Node();
+            osg::ref_ptr<TileNode> node;
+            if (data->_tilenode.lock(node))
+            {
+                //static osg::ref_ptr<osg::Node> dummyNode = new osg::Node();
 
-            ToCompile toCompile;
-            toCompile._data = data;
-            toCompile._compiled = glcompiler.compileAsync(
-                dummyNode.get(), state.get(), &nv, nullptr);
-
-            _compileQueue.push_back(std::move(toCompile));
+                ToCompile toCompile;
+                toCompile._data = data;
+                toCompile._compiled = glcompiler.compileAsync(node, state.get(), &nv, nullptr);
+                _compileQueue.push_back(std::move(toCompile));
+            }
         }
         else
         {

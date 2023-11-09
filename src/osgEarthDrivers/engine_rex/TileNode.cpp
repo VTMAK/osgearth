@@ -76,6 +76,8 @@ TileNode::TileNode(
 {
     OE_HARD_ASSERT(context != nullptr);
 
+    setName("Terrain " + key.str());
+
     // build the actual geometry for this node
     createGeometry(progress);
 

@@ -962,6 +962,10 @@ FeatureModelGraph::load(
 
     OE_TEST << LC << "load " << lod << "_" << tileX << "_" << tileY << std::endl;
 
+    std::stringstream namebuf;
+    namebuf << std::to_string(lod) << "/" << std::to_string(tileX) << "/" << std::to_string(tileY)
+        << " " << getName();
+
     osg::ref_ptr<osg::Group> result;
 
     if (_useTiledSource)
@@ -1096,6 +1100,11 @@ FeatureModelGraph::load(
     // Not when using the PAGING_MANAGER - these are run in the PagedNode load function.
     runPreMergeOperations(result.get());
 #endif
+
+    if (result.valid())
+    {
+        result->setName(namebuf.str());
+    }
 
     return result;
 }

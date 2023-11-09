@@ -212,8 +212,7 @@ SimplePager::createPagedNode(const TileKey& key, ProgressCallback* progress)
         //pager->setPriorityOffset(_priorityOffset);
 
         osg::observer_ptr<SimplePager> pager_weakptr(this);
-        pagedNode->setLoadFunction(
-            [pager_weakptr, key](Cancelable* c)
+        pagedNode->setLoadFunction([pager_weakptr, key](Cancelable* c)
             {
                 osg::ref_ptr<osg::Node> result;
                 osg::ref_ptr<SimplePager> pager;

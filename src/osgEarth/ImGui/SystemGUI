@@ -125,7 +125,8 @@ namespace osgEarth
                             icojobs = ico->getToCompile().size();
                         }
                     }
-                    ImGui::Text(" ICO: %d", icojobs);
+                    ImGui::Text(" ICO: %d (OE: %d)", icojobs, GLObjectsCompiler::totalJobs());
+
                     ImGui::Checkbox("Advanced arena controls", &_showArenaControls);
 
                     ImGui::Separator();
