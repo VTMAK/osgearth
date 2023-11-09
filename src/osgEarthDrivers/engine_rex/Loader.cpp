@@ -90,24 +90,25 @@ Merger::merge(LoadTileDataOperationPtr data, osg::NodeVisitor& nv)
         osg::ref_ptr<osgUtil::StateToCompile> state = glcompiler.collectState(nullptr);
         OE_SOFT_ASSERT_AND_RETURN(state.valid(), void());
 
-        // populate it with the tile model contents:
+        // populate it with the tile model contents.
+        // passing in the tilenode observer_ptr as a cancelation token - the ICO will skip
+        // the compilation if the corresponding tilenode goes nullptr.
         bool bindless = GLUtils::useNVGL();
-        data->_result.join()->getStateToCompile(*state.get(), bindless);
+        data->_result.join()->getStateToCompile(*state.get(), bindless, data->_tilenode.get());
 
         ScopedMutexLock lock(_mutex);
 
         if (!state->empty())
         {
-            osg::ref_ptr<TileNode> node;
-            if (data->_tilenode.lock(node))
-            {
-                //static osg::ref_ptr<osg::Node> dummyNode = new osg::Node();
+            // make a fake node for the GL compiler to track - we are passing in the state directly
+            osg::ref_ptr<osg::Node> dummy = new osg::Node();
+            if (data->_tilenode.valid())
+                dummy->setName(data->_tilenode->getName());
 
-                ToCompile toCompile;
-                toCompile._data = data;
-                toCompile._compiled = glcompiler.compileAsync(node, state.get(), &nv, nullptr);
-                _compileQueue.push_back(std::move(toCompile));
-            }
+            ToCompile toCompile;
+            toCompile._data = data;
+            toCompile._compiled = glcompiler.compileAsync(dummy, state.get(), &nv, nullptr);
+            _compileQueue.push_back(std::move(toCompile));
         }
         else
         {
