@@ -115,7 +115,7 @@ namespace osgEarth { namespace Buildings
         bool _usingNVGL;
         osg::ref_ptr<TextureArena> _textures;
         ResidentData::Ptr _residentData;
-        std::atomic_int _residentTiles;
+        std::shared_ptr<std::atomic_int> _residentTiles;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;

@@ -187,7 +187,7 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile, bool useNVG
     _index(nullptr),
     _filterUsage(FILTER_USAGE_NORMAL),
     _verboseWarnings(false),
-    _residentTiles(0)
+    _residentTiles(std::make_shared<std::atomic_int>(0))
 {
     _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != nullptr;
 

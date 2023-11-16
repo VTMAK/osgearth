@@ -211,7 +211,7 @@ AerodromeFactory::AerodromeFactory(
     _map(map),
     _catalog(catalog),
     _sceneGraphCallbacks(callbacks),
-    _residentTiles(0)
+    _residentTiles(std::make_shared<std::atomic_int>(0))
 {
     //nop
 }

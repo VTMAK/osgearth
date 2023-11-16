@@ -105,7 +105,7 @@ namespace osgEarth { namespace Util
 
         ReadWrite<Mutex>& getSync() { return _sync; }
 
-        std::atomic_int loadedTiles;
+        std::shared_ptr<std::atomic_int> loadedTiles;
 
     public: // osg::Node
 

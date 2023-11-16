@@ -121,7 +121,7 @@ namespace osgEarth { namespace Aerodrome
         Distance _lodRange = Distance(15000.0f, Units::METERS);
         bool _clampToTerrain = false;
 
-        std::atomic_int _residentTiles;
+        std::shared_ptr<std::atomic_int> _residentTiles;
         friend class AerodromeLayer;
     };
 

@@ -79,7 +79,7 @@ BuildingLayer::reportStats() const
     if (pager)
     {
         Stats report;
-        report.push_back({ "Resident tiles", std::to_string((unsigned)pager->_residentTiles) });
+        report.push_back({ "Resident tiles", std::to_string((unsigned)*pager->_residentTiles) });
         return report;
     }
     else return {};

@@ -246,7 +246,7 @@ FeatureModelLayer::reportStats() const
     if (fmg)
     {
         Layer::Stats result;
-        result.push_back({ "Resident tiles", std::to_string((unsigned)fmg->loadedTiles) });
+        result.push_back({ "Resident tiles", std::to_string((unsigned)*fmg->loadedTiles) });
         return result;
     }
     else return {};

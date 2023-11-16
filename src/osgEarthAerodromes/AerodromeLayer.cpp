@@ -93,7 +93,7 @@ AerodromeLayer::reportStats() const
     auto factory = osgEarth::findTopMostNodeOfType<AerodromeFactory>(_root.get());
     if (factory)
     {
-        report.push_back({ "Resident aerodromes", std::to_string(factory->_residentTiles) });
+        report.push_back({ "Resident aerodromes", std::to_string(*factory->_residentTiles) });
     }
     return report;
 }
