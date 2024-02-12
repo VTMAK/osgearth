@@ -133,8 +133,16 @@ SubstituteModelFilter::findResource(const URI&            uri,
     {
         // create it on the fly:
         output = symbol->createResource();
-        output->uri() = uri;
-        _instanceCache.insert(uri, output.get());
+
+        if (!uri.empty())
+        {
+            output->uri() = uri;
+            _instanceCache.insert(uri, output.get());
+        }
+        else if (symbol->asModel())
+        {
+            output->node() = symbol->asModel()->getModel();
+        }
     }
 
     // failed to find the instance.
@@ -330,13 +338,31 @@ SubstituteModelFilter::process(const FeatureList&           features,
         {
             calculateGeometryHeading(input, context);
         }
-		// evaluate the instance URI expression:
-		const std::string& st = input->eval(uriEx, &context);
-		URI& instanceURI = uriCache[st];
-		if(instanceURI.empty()) // Create a map, to reuse URI's, since they take a long time to create
-		{
-			instanceURI = URI( st, uriEx.uriContext() );
-		}
+
+        // evaluate the instance URI expression:
+        std::string resourceKey;
+        if (symbol->url().isSet())
+        {
+            resourceKey = input->eval(uriEx, &context);
+        }
+        else if (modelSymbol && modelSymbol->getModel())
+        {
+            resourceKey = Stringify() << modelSymbol->getModel();
+        }
+        else if (iconSymbol && iconSymbol->getImage())
+        {
+            resourceKey = Stringify() << iconSymbol->getImage();
+        }
+
+        URI instanceURI;
+        if (symbol->url().isSet())
+        {
+            instanceURI = uriCache[resourceKey];
+            if (instanceURI.empty()) // Create a map, to reuse URI's, since they take a long time to create
+            {
+                instanceURI = URI(resourceKey, uriEx.uriContext());
+            }
+        }
 
         // find the corresponding marker in the cache
         osg::ref_ptr<InstanceResource> instance;
@@ -407,32 +433,32 @@ SubstituteModelFilter::process(const FeatureList&           features,
         {
             //This is a not so obvious way of writing to the map.
             // Notice the & in the definition of modeRefOfRefPtr
-            osg::ref_ptr<osg::Node>& modelRefOfRefPtr = uniqueModels[key];
+            osg::ref_ptr<osg::Node>& unique_model = uniqueModels[key];
 
-            if (!modelRefOfRefPtr.valid())
+            if (!unique_model.valid())
             {
                 // Always clone the cached instance so we're not processing data that's
                 // already in the scene graph. -gw
-                context.resourceCache()->cloneOrCreateInstanceNode(instance.get(), modelRefOfRefPtr, context.getDBOptions());
+                context.resourceCache()->cloneOrCreateInstanceNode(instance.get(), unique_model, context.getDBOptions());
 
                 // if icon decluttering is off, install an AutoTransform.
                 if (iconSymbol)
                 {
                     if (iconSymbol->declutter() == true)
                     {
-                        ScreenSpaceLayout::activate(modelRefOfRefPtr->getOrCreateStateSet());
+                        ScreenSpaceLayout::activate(unique_model->getOrCreateStateSet());
                     }
-                    else if (dynamic_cast<osg::AutoTransform*>(modelRefOfRefPtr.get()) == 0L)
+                    else if (dynamic_cast<osg::AutoTransform*>(unique_model.get()) == 0L)
                     {
                         osg::AutoTransform* at = new osg::AutoTransform();
                         at->setAutoRotateMode(osg::AutoTransform::ROTATE_TO_SCREEN);
                         at->setAutoScaleToScreen(true);
-                        at->addChild(modelRefOfRefPtr);
-                        modelRefOfRefPtr = at;
+                        at->addChild(unique_model);
+                        unique_model = at;
                     }
                 }
             }
-            model = modelRefOfRefPtr.get();
+            model = unique_model;
         }
 
         if ((_filterUsage == FILTER_USAGE_NORMAL && model.valid()) || (_filterUsage == FILTER_USAGE_ZERO_WORK_CALLBACK_BASED))
@@ -672,27 +698,12 @@ SubstituteModelFilter::push(FeatureList& features, FilterContext& context)
     computeLocalizers(context);
 
     osg::Group* group = createDelocalizeGroup();
-    group->setName("SubstituteModelFilter::Delocalizer");
 
     osg::ref_ptr< osg::Group > attachPoint = new osg::Group;
-    attachPoint->setName("SubstituteModelFilter::attachPoint");
+    group->addChild(attachPoint.get());
 
     // Process the feature set, using clustering if requested
     bool ok = true;
-
-    osg::ref_ptr<osg::Group> oqn;
-    if (OcclusionQueryNodeFactory::_occlusionFactory) {
-        oqn = OcclusionQueryNodeFactory::_occlusionFactory->createQueryNode();
-    }
-    if (oqn.get())
-    {
-        oqn->setName("SubstituteModelFilter::OQN");
-        group->addChild(oqn.get());
-        oqn->addChild(attachPoint.get());
-    }
-    else {
-        group->addChild(attachPoint.get());
-    }
 
     process(features, symbol.get(), context.getSession(), attachPoint.get(), newContext);
     if (_filterUsage == FILTER_USAGE_NORMAL && _cluster)

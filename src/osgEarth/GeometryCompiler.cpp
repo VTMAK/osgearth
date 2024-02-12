@@ -76,9 +76,13 @@ _optimize              ( false ),
 _optimizeVertexOrdering( true ),
 _validate              ( false ),
 _maxPolyTilingAngle    ( 45.0f ),
-_useOSGTessellator     ( false )
+_useOSGTessellator     ( false ),
+_filterUsage(FILTER_USAGE_NORMAL)
 {
-
+    if (stockDefaults)
+    {
+        //nop
+    }
 }
 
 //-----------------------------------------------------------------------
@@ -96,7 +100,8 @@ _optimize              ( s_defaults.optimize().value() ),
 _optimizeVertexOrdering( s_defaults.optimizeVertexOrdering().value() ),
 _validate              ( s_defaults.validate().value() ),
 _maxPolyTilingAngle    ( s_defaults.maxPolygonTilingAngle().value() ),
-_useOSGTessellator     (s_defaults.useOSGTessellator().value())
+_useOSGTessellator     (s_defaults.useOSGTessellator().value()),
+_filterUsage           (s_defaults.filterUsage().value())
 {
     fromConfig(conf.getConfig());
 }
