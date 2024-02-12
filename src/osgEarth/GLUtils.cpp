@@ -548,6 +548,9 @@ GLObjectPool::GLObjectPool(unsigned cxid) :
     char* value = ::getenv("OSGEARTH_GL_OBJECT_POOL_DELAY");
     if (value)
         _frames_to_delay_deletion = as<unsigned>(value, _frames_to_delay_deletion);
+
+    // DEBUGGING
+    Threading::setThreadName("OSG Graphics Thread");
 }
 
 namespace
@@ -1122,7 +1125,7 @@ GLBuffer::release()
         }
 #else
         for (auto& i : _isResident)
-            i.second = false;
+            i.second.value = false;
 #endif
 
         //makeNonResident();
@@ -1382,7 +1385,7 @@ GLTexture::release()
         _isResident.value = false;
 #else
         for (auto& i : _isResident)
-            i.second = false;
+            i.second.value = false;
 #endif
         _handle = 0;
     }

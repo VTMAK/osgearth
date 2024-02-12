@@ -566,7 +566,7 @@ SpatialReference::getGeographicSRS() const
 
     if ( !_geo_srs.valid() )
     {
-        Threading::ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
 
         if ( !_geo_srs.valid() ) // double-check pattern
         {
@@ -598,7 +598,7 @@ SpatialReference::getGeodeticSRS() const
 
     if ( !_geodetic_srs.valid() )
     {
-        Threading::ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
 
         if ( !_geodetic_srs.valid() ) // double check pattern
         {
@@ -630,7 +630,7 @@ SpatialReference::getGeocentricSRS() const
 
     if ( !_geocentric_srs.valid() )
     {
-        Threading::ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
 
         if ( !_geocentric_srs.valid() ) // double-check pattern
         {
