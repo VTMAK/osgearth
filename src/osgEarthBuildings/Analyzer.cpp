@@ -139,8 +139,8 @@ Analyzer::analyze(osg::Node* node, ProgressCallback* progress, unsigned numFeatu
     if (!node) return;
     if (!progress) return;
 
-    static Threading::Mutex s_analyzeMutex;
-    Threading::ScopedMutexLock lock(s_analyzeMutex);
+    static std::mutex s_analyzeMutex;
+    std::lock_guard<std::mutex> lock(s_analyzeMutex);
     
     std::cout
         << "...............................................................................\n"

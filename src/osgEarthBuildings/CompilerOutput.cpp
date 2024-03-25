@@ -445,7 +445,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
     ResidentData::Ptr rd = _residentData;
     auto get_or_create = [rd](osg::Texture* osgTex, bool& isNew)
     {
-        ScopedMutexLock lock(rd->_m);
+        std::lock_guard<std::mutex> lock(rd->_m);
 
         Texture::WeakPtr& weak = rd->_textures[osgTex];
         Texture::Ptr arena_tex = weak.lock();

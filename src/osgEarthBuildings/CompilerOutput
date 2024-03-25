@@ -62,14 +62,11 @@ namespace osgEarth { namespace Buildings
 
     struct TextureCache : public osg::Referenced
     {
-        Threading::Mutex _mutex;
-
-        TextureCache() :
-            _mutex("OE.Buildings.TextureCache") { }
+        std::mutex _mutex;
 
         osg::ref_ptr<osg::Texture> getOrCreate(SkinResource* skin, const osgDB::Options* readOptions)
         {
-            ScopedMutexLock lock(_mutex);
+            std::lock_guard<std::mutex> lock(_mutex);
 
             osg::ref_ptr<osg::Texture> tex;
 
@@ -101,7 +98,7 @@ namespace osgEarth { namespace Buildings
                 !tex->getImage(0)->getFileName().empty() &&     // has a valid filename
                 dynamic_cast<osg::TextureBuffer*>(tex) == 0L)   // isn't an instance data texture
             {
-                ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
 
                 osg::ref_ptr<osg::Texture>& t = _cache[tex->getImage(0)->getFileName()];
                 if (!t.valid())
@@ -117,7 +114,8 @@ namespace osgEarth { namespace Buildings
 
         void releaseGLObjects(osg::State* state)
         {
-            ScopedMutexLock lock(_mutex);
+            std::lock_guard<std::mutex> lock(_mutex);
+
             for (auto iter : _cache)
             {
                 osg::ref_ptr<osg::Texture>& tex = iter.second;
@@ -130,7 +128,7 @@ namespace osgEarth { namespace Buildings
 
         void resizeGLObjectBuffers(unsigned size)
         {
-            ScopedMutexLock lock(_mutex);
+            std::lock_guard<std::mutex> lock(_mutex);
             for (auto iter : _cache)
             {
                 osg::ref_ptr<osg::Texture>& tex = iter.second;
@@ -143,7 +141,7 @@ namespace osgEarth { namespace Buildings
 
         void clear()
         {
-            ScopedMutexLock lock(_mutex);
+            std::lock_guard<std::mutex> lock(_mutex);
             _cache.clear();
         }
 
