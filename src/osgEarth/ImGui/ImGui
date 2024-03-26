@@ -385,6 +385,34 @@ namespace ImGuiLTable
         return ImGui::InputScalar(s.c_str(), data_type, p_data, p_step, p_step_fast, format, flags);
     }
 
+    static bool ColorEdit3(const char* label, float col[3], ImGuiColorEditFlags flags = 0)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        return ImGui::ColorEdit3(label, col, flags);
+    }
+
+    static bool ColorEdit4(const char* label, float col[4], ImGuiColorEditFlags flags = 0)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        return ImGui::ColorEdit4(label, col, flags);
+    }
+
+    static void PlotLines(const char* label, float(*getter)(void*, int), void* data, int values_count, int values_offset, const char* overlay = nullptr,
+        float scale_min = FLT_MAX, float scale_max = FLT_MAX)
+    {
+        ImGui::TableNextColumn();
+        ImGui::Text(label);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::PlotLines("", getter, data, values_count, values_offset, overlay, scale_min, scale_max);
+    }
+
     static void End()
     {
         ImGui::EndTable();
@@ -393,6 +421,18 @@ namespace ImGuiLTable
 
 namespace ImGuiUtil
 {
+    static bool BeginPopupResizable(const char* str_id, ImGuiWindowFlags flags)
+    {
+        ImGuiContext& g = *GImGui;
+        if (g.OpenPopupStack.Size <= g.BeginPopupStack.Size) // Early out for performance
+        {
+            g.NextWindowData.ClearFlags(); // We behave like Begin() and need to consume those values
+            return false;
+        }
+        //flags |= ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
+        return ImGui::BeginPopupEx(g.CurrentWindow->GetID(str_id), flags);
+    }
+
     template<typename... Args>
     static void TextCentered(const char* format, Args&&... args)
     {
@@ -443,6 +483,25 @@ namespace ImGuiUtil
             bool flip = (texture->getImage() && texture->getImage()->getOrigin() == osg::Image::TOP_LEFT);
             ImGui::Image((void*)(intptr_t)textureObject->_id, ImVec2(w, h), ImVec2(0, flip ? 0 : 1), ImVec2(1, flip ? 1 : 0), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 0, 1));
         }
+    }
+
+    static int InputTextCallback(ImGuiInputTextCallbackData* data)
+    {
+        std::string* str = (std::string*)data->UserData;
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
+        {
+            // Resize string callback
+            IM_ASSERT(data->Buf == str->c_str());
+            str->resize(data->BufTextLen);
+            data->Buf = (char*)str->c_str();
+        }
+        return 0;
+    }
+
+    static bool InputTextMultiline(const char* label, std::string* str, const ImVec2& size)
+    {
+        ImGuiInputTextFlags flags = ImGuiInputTextFlags_CallbackResize;
+        return ImGui::InputTextMultiline(label, (char*)str->c_str(), str->capacity() + 1, size, flags, InputTextCallback, (void*)str);
     }
 }
 

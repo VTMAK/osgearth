@@ -16,9 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-
-#ifndef OSGEARTH_TERRAIN_TILE_MODEL_FACTORY_H
-#define OSGEARTH_TERRAIN_TILE_MODEL_FACTORY_H 1
+#pragma once
 
 #include <osgEarth/TerrainTileModel>
 #include <osgEarth/TerrainOptions>
@@ -43,8 +41,6 @@ namespace osgEarth
     class OSGEARTH_EXPORT CreateTileManifest
     {
     public:
-        CreateTileManifest();
-
         //! Request data for a layer
         void insert(const Layer* layer);
 
@@ -77,10 +73,10 @@ namespace osgEarth
     private:
         typedef vector_map<UID, int> LayerTable;
         LayerTable _layers;
-        bool _includesElevation;
-        bool _includesConstraints;
-        bool _includesLandCover;
-        optional<bool> _progressive;
+        bool _includesElevation = false;
+        bool _includesConstraints = false;
+        bool _includesLandCover = false;
+        optional<bool> _progressive = false;
     };
 
     /**
@@ -189,5 +185,3 @@ namespace osgEarth
         ElevationPool::WorkingSet _workingSet;
     };
 }
-
-#endif // OSGEARTH_TERRAIN_TILE_MODEL_FACTORY_H

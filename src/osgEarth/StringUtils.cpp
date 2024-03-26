@@ -550,6 +550,7 @@ osgEarth::Util::ciEquals(const std::string& lhs, const std::string& rhs, const s
     return true;
 }
 
+#if 0
 #if defined(WIN32) && !defined(__CYGWIN__)
 #  define STRICMP ::stricmp
 #else
@@ -560,6 +561,7 @@ bool CIStringComp::operator()(const std::string& lhs, const std::string& rhs) co
 {
     return STRICMP( lhs.c_str(), rhs.c_str() ) < 0;
 }
+#endif
 
 bool
 osgEarth::Util::startsWith( const std::string& ref, const std::string& pattern, bool caseSensitive, const std::locale& loc )

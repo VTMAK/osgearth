@@ -56,7 +56,6 @@ struct App
     osg::ref_ptr<OGRFeatureSource> input;
     osg::ref_ptr<OGRFeatureSource> output;
     Threading::Mutexed<std::queue<FeatureList*> > outputQueue;
-    Threading::Event gate;
     std::string attrName;
     bool verbose;
 
@@ -113,7 +112,7 @@ struct App
 
         GeoPoint point(input->getFeatureProfile()->getSRS(),0,0,0);
 
-        osg::ref_ptr<FeatureCursor> cursor = input->createFeatureCursor(Query(), NULL);
+        osg::ref_ptr<FeatureCursor> cursor = input->createFeatureCursor();
         while(cursor->hasMore())
         {
             Feature* f = cursor->nextFeature();

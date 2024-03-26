@@ -296,8 +296,8 @@ _orthoTracksPerspective         ( true ),
 _terrainAvoidanceEnabled        ( true ),
 _terrainAvoidanceMinDistance    ( 1.0 ),
 _throwingEnabled                ( false ),
-_throwDecayRate                 ( 0.05 ),
-_zoomToMouse                    ( false )
+_throwDecayRate                 ( 0.175 ),
+_zoomToMouse                    ( true )
 {
     //NOP
 }
@@ -1308,9 +1308,13 @@ EarthManipulator::clearViewpoint()
     _setVP0.unset();
     _setVP1.unset();
 
+    if (breakingTether)
+    {
+        collapseTetherRotationIntoRotation();
+    }
+
     // Restore the matrix values in a neutral state.
     recalculateCenterFromLookVector();
-    //resetLookAt();
 
     // Fire the callback to indicate a tethering break.
     if ( _tetherCallback.valid() && breakingTether )
@@ -1605,7 +1609,8 @@ EarthManipulator::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapt
 
     osg::View* view = aa.asView();
 
-    _time_s_now = view->getFrameStamp()->getReferenceTime();
+    _time_s_now = ea.getTime();
+    //_time_s_now = view->getFrameStamp()->getReferenceTime();
 
     if ( ea.getEventType() == osgGA::GUIEventAdapter::FRAME )
     {
@@ -2892,7 +2897,7 @@ EarthManipulator::handlePointAction( const Action& action, float mx, float my, o
 void
 EarthManipulator::handleContinuousAction( const Action& action, osg::View* view )
 {
-    double t_factor = (_time_s_now - _last_continuous_action_time)/0.016666666;
+    double t_factor = (_time_s_now - _last_continuous_action_time) * 60.0;
     _last_continuous_action_time = _time_s_now;
     handleMovementAction( action._type, _continuous_dx * t_factor, _continuous_dy * t_factor, view );
 }

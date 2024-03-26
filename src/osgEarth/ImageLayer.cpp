@@ -26,7 +26,7 @@
 #include <osgEarth/TimeSeriesImage>
 #include <osgEarth/Random>
 #include <osgEarth/MetaTile>
-#include <osgEarth/CoverageLayer>
+#include <osgEarth/Utils>
 #include <osg/ImageStream>
 #include <cinttypes>
 
@@ -43,14 +43,6 @@ using namespace osgEarth;
 void
 ImageLayer::Options::fromConfig(const Config& conf)
 {
-    _transparentColor.setDefault( osg::Vec4ub(0,0,0,0) );
-    _minFilter.setDefault( osg::Texture::LINEAR_MIPMAP_LINEAR );
-    _magFilter.setDefault( osg::Texture::LINEAR );
-    _textureCompression.setDefault("");
-    _shared.setDefault( false );
-    _coverage.setDefault( false );
-    _reprojectedTileSize.setDefault( 256 );
-
     conf.get( "nodata_image",   _noDataImageFilename );
     conf.get( "shared",         _shared );
     conf.get( "coverage",       _coverage );
@@ -223,7 +215,7 @@ ImageLayer::create(const ConfigOptions& options)
 Status
 ImageLayer::openImplementation()
 {
-    Status parent = super::openImplementation();
+    Status parent = TileLayer::openImplementation();
     if (parent.isError())
         return parent;
 
@@ -248,13 +240,6 @@ ImageLayer::openImplementation()
         }
     }
 
-    for (auto layer : _postLayers)
-    {
-        Status s = layer->open(getReadOptions());
-        if (s.isError())
-            return s;
-    }
-
     return Status::NoError;
 }
 
@@ -264,7 +249,6 @@ ImageLayer::init()
     TileLayer::init();
 
     _useCreateTexture = false;
-    _sentry.setName("ImageLayer " + getName());
 
     // image layers render as a terrain texture.
     setRenderType(RENDERTYPE_TERRAIN_SURFACE);
@@ -384,7 +368,6 @@ ImageLayer::createImage(
     return createImage(key, nullptr);
 }
 
-#include <osgDB/WriteFile>
 GeoImage
 ImageLayer::createImage(
     const TileKey& key,
@@ -408,15 +391,13 @@ ImageLayer::createImage(
     {
         for (auto& post : _postLayers)
         {
-            // if we didn't get a result from the actual key, try to fall back
-            // so we can apply the post to "something".
             if (!result.valid())
             {
                 TileKey bestKey = getBestAvailableTileKey(key);
                 result = createImageInKeyProfile(bestKey, progress);
             }
 
-            result = applyPostLayer(result, key, post.get(), progress);
+            result = post->createImage(result, key, progress);
         }
     }
 
@@ -429,17 +410,6 @@ ImageLayer::createImage(
 }
 
 GeoImage
-ImageLayer::applyPostLayer(const GeoImage& canvas, const TileKey& key, Layer* post, ProgressCallback* progress) const
-{
-    auto post_imageLayer = dynamic_cast<ImageLayer*>(post);
-    if (post_imageLayer)
-    {
-        return post_imageLayer->createImage(canvas, key, progress);
-    }
-    else return canvas;
-}
-
-GeoImage
 ImageLayer::createImage(
     const GeoImage& canvas,
     const TileKey& key,
@@ -449,10 +419,33 @@ ImageLayer::createImage(
     return createImageImplementation(canvas, key, progress);
 }
 
+struct Hooks
+{
+    static void put(osgDB::Options* read_options, std::shared_ptr<Hooks> hooks)
+    {
+        ObjectStorage::set(read_options, hooks);
+    }
+
+    static std::shared_ptr<Hooks> get(const osgDB::Options* read_options)
+    {
+        std::shared_ptr<Hooks> hooks;
+        ObjectStorage::get(read_options, hooks);
+        return hooks;
+    }
+
+    ReadResult pre_read(Layer* layer, const TileKey& key, ProgressCallback* progress)
+    {
+        return ReadResult(ReadResult::RESULT_OK);
+    }
+
+    ReadResult post_read(Layer* layer, const TileKey& key, const GeoImage& data, ProgressCallback* progress)
+    {
+        return ReadResult(ReadResult::RESULT_OK);
+    }
+};
+
 GeoImage
-ImageLayer::createImageInKeyProfile(
-    const TileKey& key,
-    ProgressCallback* progress)
+ImageLayer::createImageInKeyProfile(const TileKey& key, ProgressCallback* progress)
 {
     // If the layer is disabled, bail out.
     if ( !isOpen() )
@@ -470,12 +463,28 @@ ImageLayer::createImageInKeyProfile(
     // Tile gate prevents two threads from requesting the same key
     // at the same time, which would be unnecessary work. Only lock
     // the gate if there is an L2 cache active
-    ScopedGate<TileKey> scopedGate(_sentry, key, [&]() {
-        return _memCache.valid();
-    });
+    //
+    // Note: be careful. We had to remove the gate from ElevationLayer
+    // because it was causing deadlocks.
+    ScopedGate<TileKey> scopedGate(_sentry, key, _memCache.valid());
 
     GeoImage result;
 
+#if HOOKS
+    auto hooks = Hooks::get(getReadOptions());
+    if (hooks)
+    {
+        auto rr = hooks->pre_read(this, key, progress);
+        auto image = rr.releaseImage();
+        auto status = hooks->prehook_image(this, key, progress, result);
+        if (status.isError())
+            return GeoImage(status);
+        else if (result.valid())
+            return result;
+    }
+#endif
+
+#if 1
     OE_DEBUG << LC << "create image for \"" << key.str() << "\", ext= "
         << key.getExtent().toString() << std::endl;
 
@@ -552,20 +561,19 @@ ImageLayer::createImageInKeyProfile(
             return GeoImage::INVALID;
         }
     }
+#endif
 
     if (key.getProfile()->isHorizEquivalentTo(getProfile()))
     {
         bool createUpsampledImage = false;
 
-        if (getUpsample() &&
-            getMaxDataLevel() > key.getLOD())
+        if (getUpsample() == true && getMaxDataLevel() > key.getLOD())
         {
             TileKey best = getBestAvailableTileKey(key, false);
             if (best.valid())
             {
                 TileKey best_upsampled = getBestAvailableTileKey(key, true);
-                if (best_upsampled.valid() &&
-                    best.getLOD() < best_upsampled.getLOD())
+                if (best_upsampled.valid() && best.getLOD() < best_upsampled.getLOD())
                 {
                     createUpsampledImage = true;
                 }
@@ -608,6 +616,16 @@ ImageLayer::createImageInKeyProfile(
         // invoke user callbacks
         invoke_onCreate(key, result);
 
+#if HOOKS
+        if (hooks)
+        {
+            auto status = hooks->posthook_image(this, key, result, progress, result);
+            if (status.isError())
+                return GeoImage(status);
+        }
+#endif
+
+#if 1
         if (_memCache.valid())
         {
             CacheBin* bin = _memCache->getOrCreateDefaultBin();
@@ -616,11 +634,12 @@ ImageLayer::createImageInKeyProfile(
 
         // If we got a result, the cache is valid and we are caching in the map profile,
         // write to the map cache.
-        if (cacheBin && policy.isCacheWriteable())
+        if (cacheBin        &&
+            policy.isCacheWriteable())
         {
             if ( key.getExtent() != result.getExtent() )
             {
-                OE_INFO << LC << "WARNING! mismatched extents between layer and cache" << std::endl;
+                OE_INFO << LC << "WARNING! mismatched extents." << std::endl;
             }
 
             cacheBin->write(cacheKey, result.getImage(), 0L);
@@ -636,6 +655,7 @@ ImageLayer::createImageInKeyProfile(
             OE_DEBUG << LC << "Using cached but expired image for " << key.str() << std::endl;
             result = GeoImage( cachedImage.get(), key.getExtent());
         }
+#endif
     }
 
     return result;
@@ -871,15 +891,15 @@ ImageLayer::removeCallback(ImageLayer::Callback* c)
 }
 
 void
-ImageLayer::addPostLayer(Layer* layer)
+ImageLayer::addPostLayer(ImageLayer* layer)
 {
-    ScopedMutexLock lock(_postLayers);
+    std::lock_guard<std::mutex> lock(_postLayers.mutex());
     _postLayers.push_back(layer);
 }
 
 //...................................................................
 
-#define ARENA_ASYNC_LAYER "oe.layer.async"
+#define ARENA_ASYNC_LAYER "oe.rex.loadtile"
 //#define FUTURE_IMAGE_COLOR_PLACEHOLDER
 
 FutureTexture2D::FutureTexture2D(
@@ -906,24 +926,25 @@ FutureTexture2D::dispatch() const
     osg::observer_ptr<ImageLayer> layer_ptr(_layer);
     TileKey key(_key);
 
-    Job job(JobArena::get(ARENA_ASYNC_LAYER));
-    job.setName(Stringify() << key.str() << " " << _layer->getName());
-
-    // prioritize higher LOD tiles.
-    job.setPriority(key.getLOD());
-
-    _result = job.dispatch<GeoImage>(
-        [layer_ptr, key](Cancelable* progress) mutable
+    auto task = [layer_ptr, key](Cancelable& progress) mutable
         {
             GeoImage result;
             osg::ref_ptr<ImageLayer> safe(layer_ptr);
             if (safe.valid())
             {
-                osg::ref_ptr<ProgressCallback> p = new ProgressCallback(progress);
+                osg::ref_ptr<ProgressCallback> p = new ProgressCallback(&progress);
                 result = safe->createImage(key, p.get());
             }
             return result;
-        });
+        };
+
+    jobs::context context{
+        Stringify() << key.str() << " " << _layer->getName(),
+        jobs::get_pool(ARENA_ASYNC_LAYER), // pool
+        [key]() { return key.getLOD(); }
+    };
+
+    _result = jobs::dispatch(task, context);
 }
 
 void

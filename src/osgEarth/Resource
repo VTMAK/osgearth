@@ -25,6 +25,7 @@
 #include <osgEarth/Config>
 #include <osgEarth/Status>
 #include <osgEarth/Threading>
+#include <osg/Object>
 #include <vector>
 
 namespace osgEarth { namespace Util
@@ -64,7 +65,7 @@ namespace osgEarth { namespace Util
 
     protected:
 
-        mutable Threading::Mutex _mutex;
+        mutable std::mutex _mutex;
         mutable Status _status;
 
     private:

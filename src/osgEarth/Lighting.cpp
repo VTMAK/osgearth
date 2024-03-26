@@ -123,14 +123,14 @@ GenerateGL3LightingUniforms::apply(osg::LightSource& lightSource)
             lightSource.addCullCallback(new LightSourceGL3UniformGenerator());
         }
 
-#if !defined(OSG_GL_FIXED_FUNCTION_AVAILABLE)
+//#if !defined(OSG_GL_FIXED_FUNCTION_AVAILABLE)
         // If there's no FFP, we need to replace the Light with a LightGL3 to prevent
         // error messages on the console.
         if (dynamic_cast<LightGL3*>(lightSource.getLight()) == 0L)
         {
             lightSource.setLight(new LightGL3(*lightSource.getLight()));
         }
-#endif
+//#endif
     }
 
     apply(static_cast<osg::Node&>(lightSource));
@@ -139,7 +139,7 @@ GenerateGL3LightingUniforms::apply(osg::LightSource& lightSource)
 //............................................................................
 
 LightSourceGL3UniformGenerator::LightSourceGL3UniformGenerator() :
-    _statesetsMutex("LightSourceGL3UniformGenerator(OE)")
+    _statesetsMutex()
 {
     //nop
 }
@@ -178,7 +178,7 @@ LightSourceGL3UniformGenerator::run(osg::Object* obj, osg::Object* data)
         {
             cv->getCurrentRenderStage()->setStateSet(ss = new osg::StateSet());
 
-            Threading::ScopedMutexLock lock(_statesetsMutex);
+            std::lock_guard<std::mutex> lock(_statesetsMutex);
             _statesets.push_back(ss);
         }
 
@@ -230,7 +230,7 @@ LightSourceGL3UniformGenerator::run(osg::Object* obj, osg::Object* data)
 void
 LightSourceGL3UniformGenerator::resizeGLBufferObjects(unsigned maxSize)
 {
-    Threading::ScopedMutexLock lock(_statesetsMutex);
+    std::lock_guard<std::mutex> lock(_statesetsMutex);
     for(unsigned i=0; i<_statesets.size(); ++i)
         _statesets[i]->resizeGLObjectBuffers(maxSize);
 }
@@ -238,7 +238,7 @@ LightSourceGL3UniformGenerator::resizeGLBufferObjects(unsigned maxSize)
 void
 LightSourceGL3UniformGenerator::releaseGLObjects(osg::State* state) const
 {
-    Threading::ScopedMutexLock lock(_statesetsMutex);
+    std::lock_guard<std::mutex> lock(_statesetsMutex);
     for(unsigned i=0; i<_statesets.size(); ++i)
         _statesets[i]->releaseGLObjects(state);
     _statesets.clear();

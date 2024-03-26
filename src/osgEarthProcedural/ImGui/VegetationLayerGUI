@@ -254,122 +254,119 @@ namespace osgEarth
                         }
                     }
 
-                    if (_veglayer.valid() && _veglayer->isOpen())
+                    bool showTileBBox = _veglayer->getShowTileBoundingBoxes();
+                    if (ImGui::Checkbox("Show tile bounding boxes", &showTileBBox))
                     {
-                        bool showTileBBox = _veglayer->getShowTileBoundingBoxes();
-                        if (ImGui::Checkbox("Show tile bounding boxes", &showTileBBox))
-                        {
-                            _veglayer->setShowTileBoundingBoxes(showTileBBox);
-                        }
+                        _veglayer->setShowTileBoundingBoxes(showTileBBox);
+                    }
 
-                        static std::map<const Biome*, unsigned> biomeCounts;
-                        ImGui::Checkbox("Show asset bounding boxes", &_showPlacements);
-                        if (_showPlacements)
-                        {
-                            const char* group_items[] = { "trees", "bushes", "undergrowth" };
-                            static unsigned group_item = 0;
-                            ImGui::SameLine();
-                            if (ImGuiLTable::BeginCombo("Group", group_items[group_item])) {
-                                for (int n = 0; n < IM_ARRAYSIZE(group_items); n++) {
-                                    const bool is_selected = (group_item == n);
-                                    if (ImGui::Selectable(group_items[n], is_selected))
-                                        group_item = n;
-                                    if (is_selected)
-                                        ImGui::SetItemDefaultFocus();
-                                }
-                                ImGuiLTable::EndCombo();
+                    static std::map<const Biome*, unsigned> biomeCounts;
+                    ImGui::Checkbox("Show asset bounding boxes", &_showPlacements);
+                    if (_showPlacements)
+                    {
+                        const char* group_items[] = { "trees", "bushes", "undergrowth" };
+                        static unsigned group_item = 0;
+                        ImGui::SameLine();
+                        if (ImGuiLTable::BeginCombo("Group", group_items[group_item])) {
+                            for (int n = 0; n < IM_ARRAYSIZE(group_items); n++) {
+                                const bool is_selected = (group_item == n);
+                                if (ImGui::Selectable(group_items[n], is_selected))
+                                    group_item = n;
+                                if (is_selected)
+                                    ImGui::SetItemDefaultFocus();
                             }
-                            const char* group_name = group_items[group_item];
+                            ImGuiLTable::EndCombo();
+                        }
+                        const char* group_name = group_items[group_item];
 
-                            biomeCounts.clear();
+                        biomeCounts.clear();
 
-                            auto& p = _pointUnderMouse;
-                            if (p.isValid())
+                        auto& p = _pointUnderMouse;
+                        if (p.isValid())
+                        {
+                            auto lod = _veglayer->options().group(group_name).lod().get();
+                            TileKey key = _mapNode->getMap()->getProfile()->createTileKey(p, lod);
+                            if (key != _showPlacementsLastTileKey)
                             {
-                                auto lod = _veglayer->options().group(group_name).lod().get();
-                                TileKey key = _mapNode->getMap()->getProfile()->createTileKey(p, lod);
-                                if (key != _showPlacementsLastTileKey)
+                                _showPlacementsLastTileKey = key;
+
+                                std::vector<VegetationLayer::Placement> placements;
+
+                                _veglayer->getAssetPlacements(
+                                    key,
+                                    group_name,
+                                    true,
+                                    placements,
+                                    nullptr);
+
+                                FeatureList features;
+
+                                for (auto& p : placements)
                                 {
-                                    _showPlacementsLastTileKey = key;
+                                    // record the asset's position and properties as a point feature:
+                                    Point* point = new Point();
+                                    point->push_back(p.mapPoint());
 
-                                    std::vector<VegetationLayer::Placement> placements;
+                                    osg::ref_ptr<Feature> feature = new Feature(point, key.getExtent().getSRS());
+                                    feature->set("elevation", p.mapPoint().z());
 
-                                    _veglayer->getAssetPlacements(
-                                        key,
-                                        group_name,
-                                        true,
-                                        placements,
-                                        nullptr);
-
-                                    FeatureList features;
-
-                                    for (auto& p : placements)
+                                    float width = 1.0f, height = 1.0f;
+                                    auto& bbox = p.asset()->boundingBox();
+                                    if (bbox.valid())
                                     {
-                                        // record the asset's position and properties as a point feature:
-                                        Point* point = new Point();
-                                        point->push_back(p.mapPoint());
+                                        width = std::max(
+                                            p.asset()->boundingBox().xMax() - p.asset()->boundingBox().xMin(),
+                                            p.asset()->boundingBox().yMax() - p.asset()->boundingBox().yMin());
 
-                                        osg::ref_ptr<Feature> feature = new Feature(point, key.getExtent().getSRS());
-                                        feature->set("elevation", p.mapPoint().z());
-
-                                        float width = 1.0f, height = 1.0f;
-                                        auto& bbox = p.asset()->boundingBox();
-                                        if (bbox.valid())
-                                        {
-                                            width = std::max(
-                                                p.asset()->boundingBox().xMax() - p.asset()->boundingBox().xMin(),
-                                                p.asset()->boundingBox().yMax() - p.asset()->boundingBox().yMin());
-
-                                            height =
-                                                p.asset()->boundingBox().zMax() - p.asset()->boundingBox().zMin();
-                                        }
-
-                                        feature->set("width", width * std::max(p.scale().x(), p.scale().y()));
-                                        feature->set("height", height * p.scale().z());
-                                        feature->set("rotation", p.rotation() * 180.0f / M_PI);
-                                        feature->set("name", p.asset()->assetDef()->name());
-
-                                        features.push_back(feature.get());
-
-                                        if (biomeCounts.find(p.biome) == biomeCounts.end())
-                                            biomeCounts[p.biome] = 0;
-                                        else
-                                            biomeCounts[p.biome]++;
+                                        height =
+                                            p.asset()->boundingBox().zMax() - p.asset()->boundingBox().zMin();
                                     }
 
-                                    Style s;
-                                    s.getOrCreate<ModelSymbol>()->setModel(_boxgeom.get());
-                                    s.getOrCreate<ModelSymbol>()->scaleX() = NumericExpression("feature.properties.width");
-                                    s.getOrCreate<ModelSymbol>()->scaleY() = NumericExpression("feature.properties.width");
-                                    s.getOrCreate<ModelSymbol>()->scaleZ() = NumericExpression("feature.properties.height");
+                                    feature->set("width", width * std::max(p.scale().x(), p.scale().y()));
+                                    feature->set("height", height * p.scale().z());
+                                    feature->set("rotation", p.rotation() * 180.0f / M_PI);
+                                    feature->set("name", p.asset()->assetDef()->name());
 
-                                    if (_placementNode.valid())
-                                        _placementNode->getParent(0)->removeChild(_placementNode.get());
+                                    features.push_back(feature.get());
 
-                                    _placementNode = new FeatureNode(features, s);
-                                    _mapNode->addChild(_placementNode);
+                                    if (biomeCounts.find(p.biome) == biomeCounts.end())
+                                        biomeCounts[p.biome] = 0;
+                                    else
+                                        biomeCounts[p.biome]++;
                                 }
-                            }
 
-                            for (auto iter : biomeCounts)
-                            {
-                                std::string biome_name = iter.first ? iter.first->name().get() : "null";
-                                ImGui::Text("(%ld) %s", iter.second, biome_name.c_str());
+                                Style s;
+                                s.getOrCreate<ModelSymbol>()->setModel(_boxgeom.get());
+                                s.getOrCreate<ModelSymbol>()->scaleX() = NumericExpression("feature.properties.width");
+                                s.getOrCreate<ModelSymbol>()->scaleY() = NumericExpression("feature.properties.width");
+                                s.getOrCreate<ModelSymbol>()->scaleZ() = NumericExpression("feature.properties.height");
+
+                                if (_placementNode.valid())
+                                    _placementNode->getParent(0)->removeChild(_placementNode.get());
+
+                                _placementNode = new FeatureNode(features, s);
+                                _mapNode->addChild(_placementNode);
                             }
                         }
-                        else if (_placementNode.valid())
-                        {
-                            if (_placementNode.valid())
-                                _placementNode->getParent(0)->removeChild(_placementNode.get());
-                            _placementNode = nullptr;
-                            _showPlacementsLastTileKey = {};
-                        }
 
-                        ImGui::Checkbox("Simulate tree placement under mouse", &_simulateTreePlacement);
-                        if (_simulateTreePlacement)
+                        for (auto iter : biomeCounts)
                         {
-                            ImGui::TextWrapped(_simulateTreePlacementOutput.c_str());
+                            std::string biome_name = iter.first ? iter.first->name().get() : "null";
+                            ImGui::Text("(%ld) %s", iter.second, biome_name.c_str());
                         }
+                    }
+                    else if (_placementNode.valid())
+                    {
+                        if (_placementNode.valid())
+                            _placementNode->getParent(0)->removeChild(_placementNode.get());
+                        _placementNode = nullptr;
+                        _showPlacementsLastTileKey = {};
+                    }
+
+                    ImGui::Checkbox("Simulate tree placement under mouse", &_simulateTreePlacement);
+                    if (_simulateTreePlacement)
+                    {
+                        ImGui::TextWrapped(_simulateTreePlacementOutput.c_str());
                     }
 
                     ImGui::Separator();
@@ -524,10 +521,11 @@ namespace osgEarth
                         if (key.valid())
                         {
                             _biomeUnderMouseKey = key;
-                            _biomeUnderMouse = Job().dispatch<const Biome*>([&, key, p](Cancelable* c)
+
+                            _biomeUnderMouse = jobs::dispatch([&, key, p](Cancelable& c)
                                 {
                                     const Biome* result = nullptr;
-                                    osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(c);
+                                    osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(&c);
                                     auto g = _biolayer->createImage(key, prog.get());
                                     if (g.valid())
                                     {

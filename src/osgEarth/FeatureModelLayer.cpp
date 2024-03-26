@@ -32,17 +32,17 @@ REGISTER_OSGEARTH_LAYER(feature_model, FeatureModelLayer); // backwards compatib
 //...........................................................................
 
 FeatureModelLayer::Options::Options() :
-VisibleLayer::Options(),
-FeatureModelOptions(),
-GeometryCompilerOptions()
+    VisibleLayer::Options(),
+    FeatureModelOptions(),
+    GeometryCompilerOptions()
 {
     fromConfig(_conf);
 }
 
 FeatureModelLayer::Options::Options(const ConfigOptions& options) :
-VisibleLayer::Options(options),
-FeatureModelOptions(options),
-GeometryCompilerOptions(options)
+    VisibleLayer::Options(options),
+    FeatureModelOptions(options),
+    GeometryCompilerOptions(options)
 {
     fromConfig(_conf);
 }
@@ -308,6 +308,7 @@ FeatureModelLayer::create()
         fmg->setNodeFactory(createFeatureNodeFactory());
         fmg->setSceneGraphCallbacks(getSceneGraphCallbacks());
         fmg->setStyleSheet(getStyleSheet());
+        fmg->setUseNVGL(options().useNVGL().get());
 
         // pass though the min/max ranges
         if (options().maxVisibleRange().isSet())

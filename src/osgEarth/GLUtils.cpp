@@ -26,6 +26,7 @@
 #include <osgEarth/Utils>
 #include <osgEarth/Capabilities>
 #include <osgEarth/Registry>
+#include <osgEarth/Notify>
 
 #include <osg/LineStipple>
 #include <osg/GraphicsContext>
@@ -43,7 +44,7 @@ using namespace osgEarth;
 
 #define LC "[GLUtils] "
 
-//#define USE_RECYCLING
+#define USE_RECYCLING
 
 #define OE_DEVEL OE_DEBUG
 
@@ -177,8 +178,7 @@ GLUtils::useNVGL(bool value)
 namespace
 {
     struct Mapping {
-        Mapping() : _ptr(nullptr) { }
-        const osg::State* _ptr;
+        const osg::State* _ptr = nullptr;
     };
     static Mapping s_mappings[4096];
 }
@@ -417,6 +417,16 @@ namespace
         {
             const std::string& s = severities[severity - GL_DEBUG_SEVERITY_HIGH];
             OE_WARN << "GL (" << s << ", " << source << ") -- " << message << std::endl;
+
+            std::stringstream buf;
+            CallStack stack;
+            for(unsigned i=1; i<stack.symbols.size(); ++i)
+            {
+                if (stack.symbols[i].find("s_oe_gldebugproc") == std::string::npos)
+                    buf << "\n - " << stack.symbols[i];
+                if (stack.symbols[i] == "main") break;
+            }
+            OE_WARN << "Call stack:" << buf.str() << std::endl;
         }
     }
 
@@ -509,7 +519,13 @@ GL3RealizeOperation::operator()(osg::Object* object)
 #define LC "[GLObjectPool] "
 
 // static decl
-Mutexed<std::vector<GLObjectPool*>> GLObjectPool::_pools;
+namespace
+{
+    std::mutex s_pools_mutex;
+    std::vector<GLObjectPool*> s_pools;
+}
+bool GLObjectPool::_enableRecycling = true;
+
 
 GLObjectPool*
 GLObjectPool::get(osg::State& state)
@@ -528,8 +544,8 @@ std::unordered_map<int, GLObjectPool*>
 GLObjectPool::getAll()
 {
     std::unordered_map<int, GLObjectPool*> result;
-    ScopedMutexLock lock(_pools);
-    for (auto& pool : _pools)
+    std::lock_guard<std::mutex> lock(s_pools_mutex);
+    for (auto& pool : s_pools)
         result[pool->getContextID()] = pool;
     return result;
 }
@@ -542,15 +558,13 @@ GLObjectPool::GLObjectPool(unsigned cxid) :
     _avarice(10.f)
 {
     _gcs.resize(256);
-    ScopedMutexLock lock(_pools);
-    _pools.emplace_back(this);
+
+    std::lock_guard<std::mutex> lock(s_pools_mutex);
+    s_pools.emplace_back(this);
 
     char* value = ::getenv("OSGEARTH_GL_OBJECT_POOL_DELAY");
     if (value)
         _frames_to_delay_deletion = as<unsigned>(value, _frames_to_delay_deletion);
-
-    // DEBUGGING
-    Threading::setThreadName("OSG Graphics Thread");
 }
 
 namespace
@@ -586,52 +600,13 @@ GLObjectPool::track(osg::GraphicsContext* gc)
     _gcs[i]._gc = gc;
     _gcs[i]._operation = new GCServicingOperation(this);
     gc->add(_gcs[i]._operation.get());
-
-    //auto iter = _non_shared_objects.find(gc);
-    //if (iter == _non_shared_objects.end())
-    //{
-    //    _non_shared_objects.emplace(gc, Collection());
-
-    //    // add this object to the GC's operations thread so it
-    //    // can service it once per frame:
-    //    if (_gc_operation == nullptr)
-    //    {
-    //        _gc_operation = new FlushOperation(this);
-    //    }
-    //    gc->add(_gc_operation.get());
-    //}
 }
-
-//void
-//GLObjectPool::flush(osg::GraphicsContext* gc)
-//{
-//    // This function is invoked by the FlushOperation once per
-//    // frame with the active GC.
-//    // Here we will look for per-state objects (like VAOs and FBOs)
-//    // that may only be deleted in the same GC that created them.
-//    unsigned num = flush(_non_shared_objects[gc]);
-//    if (num > 0)
-//    {
-//        OE_DEBUG << LC << "GC " << (std::uintptr_t)gc << " flushed " << num << " shared objects" << std::endl;
-//    }
-//}
 
 void
 GLObjectPool::watch(GLObject::Ptr object)
 {
-    ScopedMutexLock lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
     _objects.emplace_back(object);
-
-    //if (object->shareable())
-    //{
-    //    // either this is a shareable object, or we are inserting into
-    //    // a non-shared pool and that is why state is nullptr.
-    //    _objects.insert(object);
-    //}
-    //else
-    //{
-    //    _non_shared_objects[state.getGraphicsContext()].insert(object);
-    //}
 }
 
 void
@@ -642,15 +617,6 @@ GLObjectPool::releaseGLObjects(osg::State* state)
         GLObjectPool::get(*state)->releaseAll(state->getGraphicsContext());
     }
 }
-
-//void
-//GLObjectPool::releaseAll()
-//{
-//    ScopedMutexLock lock(_mutex);
-//    for (auto& object : _objects)
-//        object->release();
-//    _objects.clear();
-//}
 
 GLsizeiptr
 GLObjectPool::totalBytes() const
@@ -679,7 +645,7 @@ GLObjectPool::flushAllDeletedGLObjects()
 void
 GLObjectPool::deleteAllGLObjects()
 {
-    //ScopedMutexLock lock(_mutex);
+    //std::lock_guard<std::mutex> lock(_mutex);
     //for (auto& object : _objects)
     //    object->release();
     //_objects.clear();
@@ -689,7 +655,7 @@ GLObjectPool::deleteAllGLObjects()
 void
 GLObjectPool::discardAllGLObjects()
 {
-    //ScopedMutexLock lock(_mutex);
+    //std::lock_guard<std::mutex> lock(_mutex);
     //_objects.clear();
     //_totalBytes = 0;
 }
@@ -697,7 +663,7 @@ GLObjectPool::discardAllGLObjects()
 void
 GLObjectPool::releaseAll(const osg::GraphicsContext* gc)
 {
-    ScopedMutexLock lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
 
     GLsizeiptr bytes = 0;
     GLObjectPool::Collection keepers;
@@ -722,7 +688,7 @@ GLObjectPool::releaseAll(const osg::GraphicsContext* gc)
 void
 GLObjectPool::releaseOrphans(const osg::GraphicsContext* gc)
 {
-    ScopedMutexLock lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
 
     unsigned maxNumToRelease = std::max(1u, (unsigned)pow(4.0f, _avarice));
     unsigned numReleased = 0u;
@@ -755,37 +721,6 @@ GLObjectPool::releaseOrphans(const osg::GraphicsContext* gc)
     _objects.swap(keepers);
     _totalBytes = bytes;
 }
-
-#if 0
-unsigned
-GLObjectPool::flush(GLObjectPool::Collection& objects)
-{
-    ScopedMutexLock lock(_mutex);
-
-    GLsizeiptr bytes_released = 0;
-    std::unordered_set<GLObject::Ptr> keep;
-    unsigned maxNumToRelease = std::max(1u, (unsigned)pow(4.0f, _avarice));
-    unsigned numReleased = 0u;
-
-    for (auto& object : objects)
-    {
-        if (object.use_count() == 1 && numReleased < maxNumToRelease)
-        {
-            bytes_released += object->size();
-            object->release();
-            ++numReleased;
-        }
-        else
-        {
-            keep.insert(object);
-        }
-    }
-    objects.swap(keep);
-    _totalBytes = _totalBytes - bytes_released;
-
-    return numReleased;
-}
-#endif
 
 GLObject::GLObject(GLenum ns, osg::State& state) :
     _name(0),
@@ -1315,10 +1250,16 @@ GLTexture::bind(osg::State& state)
     glBindTexture(_target, _name);
 
     // Inform OSG of the state change
-    state.haveAppliedTextureAttribute(
-        state.getActiveTextureUnit(), osg::StateAttribute::TEXTURE);
-    state.haveAppliedTextureMode(
-        state.getActiveTextureUnit(), _target);
+    state.haveAppliedTextureAttribute(state.getActiveTextureUnit(), osg::StateAttribute::TEXTURE);
+
+    // account for the FFP version of the mode
+    GLenum fixed_function_target = _target;
+    if (_target == GL_TEXTURE_2D_ARRAY)
+    {
+        fixed_function_target = GL_TEXTURE_2D;
+    }
+
+    state.haveAppliedTextureMode(state.getActiveTextureUnit(), fixed_function_target);
 }
 
 GLuint64
@@ -1665,14 +1606,14 @@ GLPipeline::Dispatcher::operator()(osg::GraphicsContext* gc)
 }
 
 //static defs
-Mutex GLPipeline::_mutex("GLPipeline(OE)");
+Mutex GLPipeline::_mutex;
 std::unordered_map<osg::State*, GLPipeline::Ptr> GLPipeline::_lut;
 
 
 GLPipeline::Ptr
 GLPipeline::get(osg::State& state)
 {
-    ScopedMutexLock lock(GLPipeline::_mutex);
+    std::unique_lock<std::mutex> lock(GLPipeline::_mutex);
     GLPipeline::Ptr& p = _lut[&state];
 
     if (p == nullptr)
@@ -1721,8 +1662,7 @@ ComputeImageSession::setImage(osg::Image* image)
 void
 ComputeImageSession::execute(osg::State& state)
 {
-    auto job = GLPipeline::get(state)->dispatch<bool>(
-        [this](osg::State& state, Promise<bool>& promise, int invocation)
+    auto task = [this](osg::State& state, jobs::promise<bool>& promise, int invocation)
         {
             if (invocation == 0)
             {
@@ -1736,9 +1676,9 @@ ComputeImageSession::execute(osg::State& state)
                 readback(&state);
                 return false; // all done.
             }
-        }
-    );
+        };
 
+    auto job = GLPipeline::get(state)->dispatch<bool>(task);
     job.join();
 }
 
@@ -1796,7 +1736,7 @@ namespace
 
     struct ICOCallback : public ICO::CompileCompletedCallback
     {
-        Promise<osg::ref_ptr<osg::Node>> _promise;
+        jobs::promise<osg::ref_ptr<osg::Node>> _promise;
         osg::ref_ptr<osg::Node> _node;
         std::atomic_int& _jobsActive;
 
@@ -1821,6 +1761,16 @@ namespace
 
 std::atomic_int GLObjectsCompiler::_jobsActive;
 
+namespace
+{
+    struct StateToCompileEx : public osgUtil::StateToCompile
+    {
+        void apply(osg::StateSet& stateSet) override
+        {
+        }
+    };
+}
+
 osg::ref_ptr<osgUtil::StateToCompile>
 GLObjectsCompiler::collectState(osg::Node* node) const
 {
@@ -1838,13 +1788,13 @@ GLObjectsCompiler::collectState(osg::Node* node) const
     return state;
 }
 
-Future<osg::ref_ptr<osg::Node>>
+jobs::future<osg::ref_ptr<osg::Node>>
 GLObjectsCompiler::compileAsync(
     const osg::ref_ptr<osg::Node>& node,
     const osg::Object* host,
     Cancelable* progress) const
 {
-    Future<osg::ref_ptr<osg::Node>> result;
+    jobs::future<osg::ref_ptr<osg::Node>> result;
 
     if (node.valid())
     {
@@ -1861,7 +1811,7 @@ GLObjectsCompiler::compileAsync(
                 auto compileSet = new osgUtil::IncrementalCompileOperation::CompileSet();
                 compileSet->buildCompileMap(ico->getContextSet(), *state.get());
                 ICOCallback* callback = new ICOCallback(node, _jobsActive);
-                result = callback->_promise; // .getFuture();
+                result = callback->_promise;
                 compileSet->_compileCompletedCallback = callback;
                 _jobsActive++;
                 ico->add(compileSet, false);
@@ -1872,28 +1822,27 @@ GLObjectsCompiler::compileAsync(
         if (!compileScheduled)
         {
             // no ICO available - just resolve the future immediately
-            Promise<osg::ref_ptr<osg::Node>> promise;
-            result = promise; // .getFuture();
-            promise.resolve(node);
+            result.resolve(node);
         }
     }
 
     return result;
 }
 
-Future<osg::ref_ptr<osg::Node>>
+jobs::future<osg::ref_ptr<osg::Node>>
 GLObjectsCompiler::compileAsync(
     const osg::ref_ptr<osg::Node>& node,
     osgUtil::StateToCompile* state,
     const osg::Object* host,
     Cancelable* progress) const
 {
-    Future<osg::ref_ptr<osg::Node>> result;
+    jobs::future<osg::ref_ptr<osg::Node>> result;
 
     OE_SOFT_ASSERT_AND_RETURN(node.valid(), result);
 
     // if there is an ICO available, schedule the GPU compilation
     bool compileScheduled = false;
+
     if (state != nullptr && !state->empty())
     {
         osg::ref_ptr<ICO> ico;
@@ -1902,7 +1851,7 @@ GLObjectsCompiler::compileAsync(
             auto compileSet = new osgUtil::IncrementalCompileOperation::CompileSet();
             compileSet->buildCompileMap(ico->getContextSet(), *state);
             ICOCallback* callback = new ICOCallback(node, _jobsActive);
-            result = callback->_promise; // .getFuture();
+            result = callback->_promise;
             compileSet->_compileCompletedCallback = callback;
             _jobsActive++;
             ico->add(compileSet, false);
@@ -1913,14 +1862,50 @@ GLObjectsCompiler::compileAsync(
     if (!compileScheduled)
     {
         // no ICO available - just resolve the future immediately
-        Promise<osg::ref_ptr<osg::Node>> promise;
-        result = promise; // .getFuture();
-        promise.resolve(node);
+        result.resolve(node);
     }
 
     return result;
 }
 
+void
+GLObjectsCompiler::requestIncrementalCompile(
+    const osg::ref_ptr<osg::Node>& node,
+    osgUtil::StateToCompile* state,
+    const osg::Object* host,
+    jobs::promise<osg::ref_ptr<osg::Node>> promise) const
+{
+    if (!node.valid())
+    {
+        promise.resolve();
+        return;
+    }
+
+    // if there is an ICO available, schedule the GPU compilation
+    bool compileScheduled = false;
+
+    if (state != nullptr && !state->empty())
+    {
+        osg::ref_ptr<ICO> ico;
+        if (ObjectStorage::get(host, ico) && ico->isActive())
+        {
+            auto compileSet = new osgUtil::IncrementalCompileOperation::CompileSet();
+            compileSet->buildCompileMap(ico->getContextSet(), *state);
+            ICOCallback* callback = new ICOCallback(node, _jobsActive);
+            callback->_promise = promise;
+            compileSet->_compileCompletedCallback = callback;
+            _jobsActive++;
+            ico->add(compileSet, false);
+            compileScheduled = true;
+        }
+    }
+
+    if (!compileScheduled)
+    {
+        // no ICO available - just resolve the future immediately
+        promise.resolve(node);
+    }
+}
 
 void
 GLObjectsCompiler::compileNow(

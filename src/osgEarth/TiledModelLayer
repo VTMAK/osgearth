@@ -20,6 +20,8 @@
 #include <osgEarth/Common>
 #include <osgEarth/TileKey>
 #include <osgEarth/VisibleLayer>
+#include <osgEarth/TextureArena>
+#include <osgEarth/StateSetCache>
 #include <osg/Node>
 
 namespace osgEarth
@@ -37,6 +39,11 @@ namespace osgEarth
         struct OSGEARTH_EXPORT Options : public VisibleLayer::Options
         {
             META_LayerOptions(osgEarth, Options, VisibleLayer::Options);
+            OE_OPTION(bool, additive);
+            OE_OPTION(float, rangeFactor);
+            OE_OPTION(unsigned, minLevel, 0u);
+            OE_OPTION(unsigned, maxLevel, 99u);
+            OE_OPTION(bool, nvgl, false);
             virtual Config getConfig() const;
             void fromConfig(const Config& conf);
         };
@@ -53,15 +60,54 @@ namespace osgEarth
         virtual const Profile* getProfile() const = 0;
 
         //! Minimum available LOD of the underlying tiled data source.
-        virtual unsigned getMinLevel() const = 0;
+        virtual unsigned getMinLevel() const;
+        void setMinLevel(unsigned value);
 
         //! Maximum available LOD of the underlying tiled data source.
-        virtual unsigned getMaxLevel() const = 0;
+        virtual unsigned getMaxLevel() const;
+        void setMaxLevel(unsigned value);
+
+        //! Whether new LODs should be added to the scene (true) or replace existing ones (false)
+        void setAdditive(const bool& value);
+        const bool& getAdditive() const;
+
+        //! The range factor.  Default is 6
+        void setRangeFactor(const float &value);
+        const float& getRangeFactor() const;
+
+        //! Forces a rebuild on this layer.
+        void dirty();
+
+    public: // Layer
+
+        // The Node representing this layer.
+        osg::Node* getNode() const override;
+
+        // called by the map when this layer is added
+        void addedToMap(const Map*) override;
+
+        // called by the map when this layer is removed
+        void removedFromMap(const Map*) override;
+
+        // post-ctor initialization
+        void init() override;
 
     protected:
         //! Subclasses must implement this to create a tile.
         //! @param key The tile key, in the underlying tiled data source's profile.
         //! @param progress A progress callback that can be checked for user cancellation.
         virtual osg::ref_ptr<osg::Node> createTileImplementation(const TileKey& key, ProgressCallback* progress) const = 0;
+
+        // NVGL support:
+        osg::ref_ptr<TextureArena> _textures;
+        mutable std::vector<Texture::WeakPtr> _texturesCache;
+        mutable std::mutex _texturesCacheMutex;
+
+    private:
+        osg::observer_ptr< const Map > _map;
+        osg::ref_ptr< osg::Group > _root;
+        bool _graphDirty;
+        osg::ref_ptr<StateSetCache> _statesetCache;
+        void create();
     };
 }

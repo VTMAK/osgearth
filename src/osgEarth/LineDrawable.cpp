@@ -1282,7 +1282,7 @@ LineDrawable::dirty()
     }
 }
 
-osg::observer_ptr<osg::StateSet> LineDrawable::s_gpuStateSet;
+//osg::observer_ptr<osg::StateSet> LineDrawable::s_gpuStateSet;
 
 void
 LineDrawable::setupShaders()
@@ -1291,11 +1291,25 @@ LineDrawable::setupShaders()
     // shared by all LineDrawable instances so OSG will sort them together.
     if (_useGPU && !_gpuStateSet.valid())
     {
+        _gpuStateSet = Registry::instance()->getOrCreate<osg::StateSet>("oe.LineDrawable_StateSet", []()
+            {
+                auto ss = new osg::StateSet();
+                VirtualProgram* vp = VirtualProgram::getOrCreate(ss);
+                vp->setName("osgEarth::LineDrawable");
+                Shaders shaders;
+                shaders.load(vp, shaders.LineDrawable);
+                vp->addBindAttribLocation("oe_LineDrawable_prev", LineDrawable::PreviousVertexAttrLocation);
+                vp->addBindAttribLocation("oe_LineDrawable_next", LineDrawable::NextVertexAttrLocation);
+                ss->getOrCreateUniform("oe_LineDrawable_limits", osg::Uniform::FLOAT_VEC2)->set(osg::Vec2f(-1, -1));
+                ss->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
+                return ss;
+            });
+#if 0
         if (s_gpuStateSet.lock(_gpuStateSet) == false)
         {
             // serialize access and double-check:
-            static Threading::Mutex s_mutex(OE_MUTEX_NAME);
-            Threading::ScopedMutexLock lock(s_mutex);
+            static std::mutex s_mutex;
+            std::lock_guard<std::mutex> lock(s_mutex);
 
             if (s_gpuStateSet.lock(_gpuStateSet) == false)
             {
@@ -1311,6 +1325,7 @@ LineDrawable::setupShaders()
                 s_gpuStateSet->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
             }
         }
+#endif
     }
 }
 
@@ -1336,7 +1351,7 @@ LineDrawable::accept(osg::NodeVisitor& nv)
 
         if (!_current)
         {
-            ScopedMutexLock lock(_mutex);
+            std::lock_guard<std::mutex> lock(_mutex);
             if (!_current)
                 initialize();
         }

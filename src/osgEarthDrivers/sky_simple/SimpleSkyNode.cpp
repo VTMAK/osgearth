@@ -131,7 +131,7 @@ namespace
 
                 if (genTexCoords)
                 {
-                    float s = 0.5 + (1.0 - ((lon + 180) / 360.0));
+                    float s = (lon + 180) / 360.0;
                     float t = (lat + 90.0) / 180.0;
                     texCoords->push_back(osg::Vec2(s, t));
                 }
@@ -146,7 +146,7 @@ namespace
 
                 if (y < latSegments && x < lonSegments)
                 {
-                    int x_plus_1 = x + 1; // x < lonSegments - 1 ? x + 1 : 0;
+                    int x_plus_1 = x + 1;
                     int y_plus_1 = y + 1;
                     el->push_back(y * row_size + x);
                     el->push_back(y * row_size + x_plus_1);
@@ -207,8 +207,7 @@ namespace
 SimpleSkyNode::SimpleSkyNode(const SimpleSkyOptions& options) :
     SkyNode(options),
     _options(options),
-    _eb_initialized(false),
-    _eb_mutex("SimpleSkyNode.eb_mutex(OE)")
+    _eb_initialized(false)
 {
     construct();
 
@@ -230,9 +229,9 @@ SimpleSkyNode::construct()
 
     _light = new LightGL3(0);
     _light->setPosition(osg::Vec4f(0.0f, 0.0f, 1.0f, 0.0f));
-    _light->setAmbient(osg::Vec4f(0.1f, 0.1f, 0.1f, 1.0f));
+    _light->setAmbient(osg::Vec4f(1.0f, 1.0f, 1.0f, 1.0f));
     _light->setDiffuse(osg::Vec4f(1.0f, 1.0f, 1.0f, 1.0f));
-    _light->setSpecular(osg::Vec4f(1.0f, 1.0f, 1.0f, 1.0f));
+    _light->setSpecular(osg::Vec4f(1.0f, 1.0f, 1.0f, 1.0f)); // does nothing in PBR mode
 
     // install the Sun as a lightsource.
     osg::LightSource* lightSource = new osg::LightSource();
@@ -344,7 +343,7 @@ SimpleSkyNode::traverse(osg::NodeVisitor& nv)
         // Generate LUTs on the first pass
         if (_useBruneton && !_eb_drawable.valid())
         {
-            ScopedMutexLock lock(_eb_mutex);
+            std::lock_guard<std::mutex> lock(_eb_mutex);
             if (!_eb_drawable.valid())
             {
                 _eb_drawable = new Bruneton::ComputeDrawable(

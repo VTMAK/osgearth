@@ -37,6 +37,7 @@
 #include <osgEarth/LineDrawable>
 #include <osgEarth/NetworkMonitor>
 #include <osgEarth/PagedNode>
+#include <osgEarth/Chonk>
 
 #include <osg/CullFace>
 #include <osg/PagedLOD>
@@ -315,60 +316,6 @@ namespace
     }
 }
 
-
-#ifndef USE_PAGING_MANAGER
-namespace
-{
-    /**
-     * A pseudo-loader for paged feature tiles.
-     */
-    struct osgEarthFeatureModelPseudoLoader : public osgDB::ReaderWriter
-    {
-        osgEarthFeatureModelPseudoLoader()
-        {
-            supportsExtension("osgearth_pseudo_fmg", "Feature model pseudo-loader");
-        }
-
-        const char* className() const
-        { // override
-            return "osgEarth Feature Model Pseudo-Loader";
-        }
-
-        ReadResult readNode(const std::string& uri, const osgDB::Options* readOptions) const
-        {
-            if (!acceptsExtension(osgDB::getLowerCaseFileExtension(uri)))
-                return ReadResult::FILE_NOT_HANDLED;
-
-            //UID uid;
-            unsigned int lod, x, y;
-            sscanf(uri.c_str(), "%u_%u_%u.%*s", &lod, &x, &y);
-
-            osg::ref_ptr<FeatureModelGraph> graph;
-            if (!ObjectStorage::get(readOptions, graph))
-            {
-                // FMG was shut down
-                return ReadResult(nullptr);
-            }
-
-            // Enter as a graph reader:
-            ScopedReadLock reader(graph->getSync());
-
-            OE_SCOPED_THREAD_NAME("DBPager", graph->getOwnerName());
-
-            // make sure it's running:
-            if (!graph->isActive())
-                return ReadResult(nullptr);
-
-            Registry::instance()->startActivity(uri);
-            osg::ref_ptr<osg::Node> node = graph->load(lod, x, y, uri, readOptions);
-            Registry::instance()->endActivity(uri);
-            return ReadResult(node);
-        }
-    };
-}
-REGISTER_OSGPLUGIN(osgearth_pseudo_fmg, osgEarthFeatureModelPseudoLoader);
-#endif
-
 namespace
 {
     GeoExtent
@@ -407,11 +354,29 @@ FeatureModelGraph::FeatureModelGraph(const FeatureModelOptions& options) :
     _options(options),
     _featureExtentClamped(false),
     _useTiledSource(false),
-    _blacklistMutex("FMG BlackList(OE)"),
     _isActive(false),
     loadedTiles(std::make_shared<std::atomic_int>(0))
 {
-    //NOP
+    //nop
+}
+
+void
+FeatureModelGraph::setUseNVGL(bool value)
+{
+    if (value == true && GLUtils::useNVGL() && !_textures.valid())
+    {
+        _textures = new TextureArena();
+        getOrCreateStateSet()->setAttribute(_textures, 1);
+
+        // auto release requires that we install this update callback!
+        _textures->setAutoRelease(true);
+
+        addUpdateCallback(new LambdaCallback<>([this](osg::NodeVisitor& nv)
+            {
+                _textures->update(nv);
+                return true;
+            }));
+    }
 }
 
 void
@@ -532,13 +497,9 @@ FeatureModelGraph::open()
     _filterChain = FeatureFilterChain::create(_options.filters(), NULL);
 
     // Call addedToMap on all of the FeatureFilters
-    if (_filterChain.valid() && !_filterChain->empty() && _session->getMap())
-    {
-        for (auto filter = _filterChain->begin(); filter != _filterChain->end(); ++filter)
-        {
-            filter->get()->addedToMap(_session->getMap());
-        }
-    }
+    if (_session->getMap())
+        for (auto& filter : _filterChain)
+            filter->addedToMap(_session->getMap());
 
     // world-space bounds of the feature layer
     _fullWorldBound = getBoundInWorldCoords(_usableMapExtent);
@@ -756,9 +717,6 @@ void
 FeatureModelGraph::shutdown()
 {
     _isActive = false;
-
-    // Block until all active pager tasks have returned/canceled
-    //ScopedWriteLock waiter(getSync());
 }
 
 FeatureModelGraph::~FeatureModelGraph()
@@ -803,6 +761,11 @@ FeatureModelGraph::getBoundInWorldCoords(const GeoExtent& extent, const Profile*
             workingExtent = map->getProfile()->clampAndTransformExtent(extent);
         else
             workingExtent = extent.transform(map->getSRS()); // _usableMapExtent.getSRS() );
+    }
+
+    if (!workingExtent.isValid())
+    {
+        return {};
     }
 
 #if 0
@@ -962,10 +925,6 @@ FeatureModelGraph::load(
 
     OE_TEST << LC << "load " << lod << "_" << tileX << "_" << tileY << std::endl;
 
-    std::stringstream namebuf;
-    namebuf << std::to_string(lod) << "/" << std::to_string(tileX) << "/" << std::to_string(tileY)
-        << " " << getName();
-
     osg::ref_ptr<osg::Group> result;
 
     if (_useTiledSource)
@@ -1100,11 +1059,6 @@ FeatureModelGraph::load(
     // Not when using the PAGING_MANAGER - these are run in the PagedNode load function.
     runPreMergeOperations(result.get());
 #endif
-
-    if (result.valid())
-    {
-        result->setName(namebuf.str());
-    }
 
     return result;
 }
@@ -1530,20 +1484,10 @@ FeatureModelGraph::buildTile(
     }
 }
 
-FeatureCursor*
-FeatureModelGraph::createCursor(FeatureSource* fs, FilterContext& cx, const Query& query, ProgressCallback* progress) const
-{
-    NetworkMonitor::ScopedRequestLayer layerRequest(_ownerName);
-    FeatureCursor* cursor = fs->createFeatureCursor(query, progress);
-    if (cursor && _filterChain.valid())
-    {
-        cursor = new FilteredFeatureCursor(cursor, _filterChain.get(), &cx);
-    }
-    return cursor;
-}
 
 osg::Group*
-FeatureModelGraph::build(const Style&          defaultStyle,
+FeatureModelGraph::build(
+    const Style&          defaultStyle,
     const Query&          baseQuery,
     const GeoExtent&      workingExtent,
     FeatureIndexBuilder*  index,
@@ -1566,11 +1510,7 @@ FeatureModelGraph::build(const Style&          defaultStyle,
         FilterContext context(_session.get(), featureProfile, workingExtent, index);
 
         // each feature has its own style, so use that and ignore the style catalog.
-        osg::ref_ptr<FeatureCursor> cursor = source->createFeatureCursor(
-            baseQuery,
-            _filterChain.get(),
-            &context,
-            progress);
+        osg::ref_ptr<FeatureCursor> cursor = source->createFeatureCursor(baseQuery, _filterChain, &context, progress);
 
         while (cursor.valid() && cursor->hasMore())
         {
@@ -1696,6 +1636,39 @@ FeatureModelGraph::createOrUpdateNode(FeatureCursor*           cursor,
                                       const Query&             query)
 {
     bool ok = _factory->createOrUpdateNode(cursor, style, context, output, query);
+
+    if (ok && _textures.valid() && output.valid())
+    {
+        auto xform = findTopMostNodeOfType<osg::MatrixTransform>(output.get());
+
+        // Convert the geometry into chonks
+        ChonkFactory factory(_textures);
+
+        factory.setGetOrCreateFunction(
+            ChonkFactory::getWeakTextureCacheFunction(
+                _texturesCache, _texturesCacheMutex));
+
+        osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+        
+        if (xform)
+        {
+            for (unsigned i = 0; i < xform->getNumChildren(); ++i)
+            {
+                drawable->add(xform->getChild(i), factory);
+            }
+            xform->removeChildren(0, xform->getNumChildren());
+            xform->addChild(drawable);
+            output = xform;
+        }
+        else
+        {
+            if (drawable->add(output.get(), factory))
+            {
+                output = drawable;
+            }
+        }
+    }
+
     return ok;
 }
 
@@ -1751,7 +1724,8 @@ FeatureModelGraph::buildStyleGroups(const StyleSelector*  selector,
  * Adds the resulting style groups to the provided parent.
  */
 void
-FeatureModelGraph::queryAndSortIntoStyleGroups(const Query&            query,
+FeatureModelGraph::queryAndSortIntoStyleGroups(
+    const Query&            query,
     const StringExpression& styleExpr,
     FeatureIndexBuilder*    index,
     osg::Group*             parent,
@@ -1773,7 +1747,7 @@ FeatureModelGraph::queryAndSortIntoStyleGroups(const Query&            query,
     // query the feature source:
     osg::ref_ptr<FeatureCursor> cursor = _session->getFeatureSource()->createFeatureCursor(
         query,
-        _filterChain.get(),
+        _filterChain,
         &context,
         progress);
 
@@ -1783,7 +1757,7 @@ FeatureModelGraph::queryAndSortIntoStyleGroups(const Query&            query,
     StringExpression styleExprCopy(styleExpr);
 
     // visit each feature and run the expression to sort it into a bin.
-    std::map<std::string, FeatureList> styleBins;
+    vector_map<std::string, FeatureList> styleBins;
     while (cursor->hasMore())
     {
         osg::ref_ptr<Feature> feature = cursor->nextFeature();
@@ -1801,10 +1775,10 @@ FeatureModelGraph::queryAndSortIntoStyleGroups(const Query&            query,
     }
 
     // next create a style group per bin.
-    for (std::map<std::string, FeatureList>::iterator i = styleBins.begin(); i != styleBins.end(); ++i)
+    for(auto& i : styleBins)
     {
-        const std::string& styleString = i->first;
-        FeatureList&       workingSet = i->second;
+        const std::string& styleString = i.first;
+        FeatureList&       workingSet = i.second;
 
         // resolve the style:
         Style combinedStyle;
@@ -1928,7 +1902,7 @@ FeatureModelGraph::createStyleGroup(const Style&          style,
     // query the feature source:
     osg::ref_ptr<FeatureCursor> cursor = _session->getFeatureSource()->createFeatureCursor(
         query,
-        _filterChain.get(),
+        _filterChain,
         &context,
         progress);
 

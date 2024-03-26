@@ -71,7 +71,7 @@ IconSymbol::getConfig() const
 	conf.set( "icon-occlusion-cull", _occlusionCull );
     conf.set( "icon-occlusion-cull-altitude", _occlusionCullAltitude );
 
-    conf.setNonSerializable( "IconSymbol::image", _image.get() );
+    //conf.setNonSerializable( "IconSymbol::image", _image.get() );
     return conf;
 }
 
@@ -93,12 +93,12 @@ IconSymbol::mergeConfig( const Config& conf )
 	conf.get( "icon-occlusion-cull", _occlusionCull );
     conf.get( "icon-occlusion-cull-altitude", _occlusionCullAltitude );
 
-    _image = conf.getNonSerializable<osg::Image>( "IconSymbol::image" );
+    //_image = conf.getNonSerializable<osg::Image>( "IconSymbol::image" );
 }
 
 namespace
 {
-    static Threading::Mutex s_getImageMutex(OE_MUTEX_NAME);
+    static std::mutex s_getImageMutex;
 }
 
 osg::Image*
@@ -106,7 +106,7 @@ IconSymbol::getImage( unsigned maxSize ) const
 {
     if ( !_image.valid() && _url.isSet() )
     {
-        Threading::ScopedMutexLock lock(s_getImageMutex);
+        std::lock_guard<std::mutex> lock(s_getImageMutex);
         if ( !_image.valid() )
         {
             osg::ref_ptr<osgDB::Options> dbOptions = Registry::instance()->cloneOrCreateOptions();

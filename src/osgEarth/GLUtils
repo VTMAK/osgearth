@@ -25,7 +25,6 @@
 
 #include <osgEarth/Common>
 #include <osgEarth/optional>
-#include <osgEarth/Threading>
 #include <osgEarth/Math>
 #include <osg/StateSet>
 #include <osg/OperationThread>
@@ -34,6 +33,7 @@
 #include <osg/Drawable>
 #include <osg/Texture2D>
 #include <osg/ContextData>
+#include <osg/State>
 #include <set>
 
 #ifndef GLintptr
@@ -59,8 +59,6 @@ namespace osgUtil {
 
 namespace osgEarth
 {
-    using namespace Threading;
-
     struct OSGEARTH_EXPORT GLUtils
     {
         //! Sets any default uniforms required by the implementation
@@ -574,6 +572,9 @@ namespace osgEarth
         //! construct an object pool under the given graphics context ID
         GLObjectPool(unsigned contextID);
 
+        //! Whether to support recycling of GL objects with identical properties
+        static void setEnableRecycling(bool value) { _enableRecycling = value; }
+
         //! Fetch the object pool for the graphics context represented
         //! by the state object
         static GLObjectPool* get(osg::State& state);
@@ -602,7 +603,8 @@ namespace osgEarth
 
         template<typename T>
         typename T::Ptr recycle(const GLObject::Compatible& compatible) {
-            ScopedMutexLock lock(_mutex);
+            if (!_enableRecycling) return {};
+            std::lock_guard<std::mutex> lock(_mutex);
             typename T::Ptr result;
             for (auto& object : _objects) {
                 if (object.use_count() == 1 && compatible(object.get())) {
@@ -627,9 +629,10 @@ namespace osgEarth
 
     protected:
 
-        mutable Mutex _mutex;
+        mutable std::mutex _mutex;
         Collection _objects; // objects being monitored
         GLsizeiptr _totalBytes;
+        static bool _enableRecycling;
         unsigned _hits;
         unsigned _misses;
         unsigned _avarice;
@@ -648,9 +651,6 @@ namespace osgEarth
 
         //! Release all objects created in the provided GC
         void releaseAll(const osg::GraphicsContext*);
-
-    private:
-        static Mutexed<std::vector<GLObjectPool*>> _pools;
     };
 
     /**
@@ -759,7 +759,7 @@ namespace osgEarth
     {
     public:
         //! Result type - future that will eventually contain the return value
-        using Result = Future<RESULT_TYPE>;
+        using Result = jobs::future<RESULT_TYPE>;
 
         //! Function type of async job
         using Function = std::function<RESULT_TYPE(osg::State*, Cancelable*)>;
@@ -807,8 +807,8 @@ namespace osgEarth
         template<typename T>
         using Delegate = std::function<bool(
             osg::State& state,
-            Promise<T>& promise,
-            int         invocation)>;
+            jobs::promise<T>& promise,
+            int invocation)>;
 
     public:
         //! Gets the GL pipeline for a State
@@ -819,7 +819,7 @@ namespace osgEarth
         template<typename T>
         struct DelegateOperation : public osg::Operation {
             Delegate<T> _delegate;
-            Promise<T> _promise;
+            jobs::promise<T> _promise;
             int _invocation;
 
             DelegateOperation(Delegate<T> d) :
@@ -840,10 +840,10 @@ namespace osgEarth
         template<typename T>
         struct DelegateOperation2 : public osg::Operation {
             Delegate<T> _delegate;
-            Promise<T>& _promise;
+            jobs::promise<T>& _promise;
             int _invocation;
 
-            DelegateOperation2(Delegate<T> d, Promise<T>& promise) :
+            DelegateOperation2(Delegate<T> d, jobs::promise<T>& promise) :
                 osg::Operation("GLPipeline", true),
                 _delegate(d),
                 _promise(promise),
@@ -860,10 +860,10 @@ namespace osgEarth
     public:
         // Launch an operation on this GL Pipeline.
         template<typename T>
-        Future<T> dispatch(Delegate<T> delegate)
+        jobs::future<T> dispatch(Delegate<T> delegate)
         {
             auto operation = new DelegateOperation<T>(delegate);
-            Future<T> future = operation->_promise; // .getFuture();
+            jobs::future<T> future = operation->_promise;
             if (_dispatcher.valid())
                 _dispatcher->push(operation);
             else
@@ -874,7 +874,7 @@ namespace osgEarth
         // Launch an operation on this GL Pipeline, supplying your own Promise.
         // Be sure to call getFuture() prior to calling this function.
         template<typename T>
-        void dispatch(Delegate<T> delegate, Promise<T>& promise)
+        void dispatch(Delegate<T> delegate, jobs::promise<T>& promise)
         {
             auto operation = new DelegateOperation2<T>(delegate, promise);
             if (_dispatcher.valid())
@@ -885,7 +885,7 @@ namespace osgEarth
 
     private:
         osg::ref_ptr<osg::GraphicsContext> _gc;
-        static Mutex _mutex;
+        static std::mutex _mutex;
         static std::unordered_map<osg::State*, GLPipeline::Ptr> _lut;
 
         struct Dispatcher : public osg::GraphicsOperation
@@ -894,7 +894,7 @@ namespace osgEarth
             void operator()(osg::GraphicsContext*) override;
             using OpQ = std::queue<osg::ref_ptr<osg::Operation>>;
             OpQ _thisQ;
-            Mutex _queue_mutex;
+            std::mutex _queue_mutex;
             GLPipeline::WeakPtr _pipeline_ref;
             osg::ref_ptr<osg::GraphicsContext> _myGC;
             void push(osg::Operation*);
@@ -939,28 +939,6 @@ namespace osgEarth
         void readback(osg::State* state);
     };
 
-    template<typename T>
-    class PerThreadComputeSession
-    {
-    public:
-        PerThreadComputeSession() :
-            _sessions("PerThreadComputeSession(OE)") { }
-
-        T& get(osg::Program* program) const {
-            ScopedMutexLock lock(_sessions);
-            SessionPtr& ptr = _sessions[getCurrentThreadId()];
-            if (ptr == nullptr) {
-                ptr = std::make_shared<T>();
-                ptr->setProgram(program);
-            }
-            return *ptr.get();
-        }
-    private:
-        using SessionPtr = std::shared_ptr<T>;
-        using SessionPtrPerThread = Mutexed<std::unordered_map<unsigned, SessionPtr>>;
-        mutable SessionPtrPerThread _sessions;
-    };
-
     /**
      * Utility to "pre-compile" a node by running it through the ICO
      * if one exists in the Options. If there is no ICO, this is a no-op
@@ -972,21 +950,33 @@ namespace osgEarth
         osg::ref_ptr<osgUtil::StateToCompile> collectState(
             osg::Node* node) const;
 
-        void compileNow(
-            const osg::ref_ptr<osg::Node>& node,
-            const osg::Object* host,
-            osgEarth::Threading::Cancelable* progress) const;
-
-        Future<osg::ref_ptr<osg::Node>> compileAsync(
-            const osg::ref_ptr<osg::Node>& node,
-            const osg::Object* host,
-            osgEarth::Threading::Cancelable* progress) const;
-
-        Future<osg::ref_ptr<osg::Node>> compileAsync(
+        //! Request that the OSG ICO compile GL object state asychnornously.
+        //! @node Node to compile
+        //! @state Collected state to compile for the given node
+        //! @host Object hosting the ICO itself. If this null, or does not host an ICO,
+        //!   the data will not compile and the promise will be resolved immediately.
+        //! @promise Promise that the ICO should resolve when the compile is complete.
+        void requestIncrementalCompile(
             const osg::ref_ptr<osg::Node>& node,
             osgUtil::StateToCompile* state,
             const osg::Object* host,
-            osgEarth::Threading::Cancelable* progress) const;
+            jobs::promise<osg::ref_ptr<osg::Node>> promise) const;
+
+        void compileNow(
+            const osg::ref_ptr<osg::Node>& node,
+            const osg::Object* host,
+            osgEarth::Cancelable* progress) const;
+
+        jobs::future<osg::ref_ptr<osg::Node>> compileAsync(
+            const osg::ref_ptr<osg::Node>& node,
+            const osg::Object* host,
+            osgEarth::Cancelable* progress) const;
+
+        jobs::future<osg::ref_ptr<osg::Node>> compileAsync(
+            const osg::ref_ptr<osg::Node>& node,
+            osgUtil::StateToCompile* state,
+            const osg::Object* host,
+            osgEarth::Cancelable* progress) const;
 
         static int totalJobs() { return (int)_jobsActive; }
 

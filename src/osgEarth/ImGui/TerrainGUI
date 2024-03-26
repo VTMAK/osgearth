@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_IMGUI_TERRAIN_GUI
-#define OSGEARTH_IMGUI_TERRAIN_GUI
+#pragma once
 
 #include "ImGui"
 #include <osgEarth/Threading>
@@ -31,6 +30,7 @@
 #include <osgEarth/GLUtils>
 #include <chrono>
 #include <list>
+#include <algorithm>
 
 namespace osgEarth
 {
@@ -101,6 +101,12 @@ namespace osgEarth
                             options.setMaxLOD(max_lod);
                         }
 
+                        bool progressive = options.getProgressive();
+                        if (ImGuiLTable::Checkbox("Progressive load", &progressive))
+                        {
+                            options.setProgressive(progressive);
+                        }
+
                         TerrainLODMethod method = options.getLODMethod();
                         bool method_b = (method == TerrainLODMethod::SCREEN_SPACE);
                         if (ImGuiLTable::Checkbox("Screen space LOD", &method_b))
@@ -158,13 +164,6 @@ namespace osgEarth
                             }
 
                             ImGui::Separator();
-                        }
-
-                        unsigned threads = options.getConcurrency();
-                        if (ImGuiLTable::SliderInt("Load threads", (int*)&threads, 1, 16))
-                        {
-                            options.setConcurrency(threads);
-                            _mapNode->getTerrainEngine()->dirtyTerrainOptions();
                         }
 
                         ImGuiLTable::End();
@@ -388,7 +387,12 @@ namespace osgEarth
                         geom->push_back(pf.x(), pf.y());
                         _measureCursor->dirty();
                     }
-                    else
+                    else if (geom->size() == 2)
+                    {
+                        // do nothing
+                        geom->push_back(geom->back()); // trick.
+                    }
+                    else if (geom->size() > 2)
                     {
                         // start over
                         geom->clear();
@@ -399,5 +403,3 @@ namespace osgEarth
         };
     }
 }
-
-#endif // OSGEARTH_IMGUI_TERRAIN_GUI

@@ -40,9 +40,9 @@ Merger::Merger() :
 {
     setCullingActive(false);
     setNumChildrenRequiringUpdateTraversal(+1);
-    _mutex.setName(OE_MUTEX_NAME);
 
-    _metrics = JobArena::get(ARENA_LOAD_TILE)->metrics();
+    auto pool = jobs::get_pool(ARENA_LOAD_TILE);
+    _metrics = pool->metrics();
 }
 
 Merger::~Merger()
@@ -59,18 +59,20 @@ Merger::setMergesPerFrame(unsigned value)
 void
 Merger::clear()
 {
-    ScopedMutexLock lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
 
     // Decrement the numJobsRunning stat b/c these jobs in the queues will never actually run.
     if (_metrics)
     {
         for (unsigned int i = 0; i < _mergeQueue.size(); ++i)
         {
-            _metrics->numJobsRunning--;
+            //_metrics->running--;
+            _metrics->postprocessing--;
         }
         for (unsigned int i = 0; i < _compileQueue.size(); ++i)
         {
-            _metrics->numJobsRunning--;
+            //_metrics->running--;
+            _metrics->postprocessing--;
         }
     }
 
@@ -96,7 +98,7 @@ Merger::merge(LoadTileDataOperationPtr data, osg::NodeVisitor& nv)
         bool bindless = GLUtils::useNVGL();
         data->_result.join()->getStateToCompile(*state.get(), bindless, data->_tilenode.get());
 
-        ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
 
         if (!state->empty())
         {
@@ -117,13 +119,14 @@ Merger::merge(LoadTileDataOperationPtr data, osg::NodeVisitor& nv)
     }
     else
     {
-        ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
         _mergeQueue.push(data);
     }
 
     if (_metrics)
     {
-        _metrics->numJobsRunning++;
+        _metrics->postprocessing++;
+        //_metrics->running++;
     }
 }
 
@@ -136,7 +139,7 @@ Merger::traverse(osg::NodeVisitor& nv)
     }
     else if (nv.getVisitorType() == nv.UPDATE_VISITOR && _clock.update())
     {
-        ScopedMutexLock lock(_mutex);
+        std::lock_guard<std::mutex> lock(_mutex);
 
         // Check the GL compile queue
         // TODO: the ICO will orphan compilesets when a graphics context
@@ -157,14 +160,15 @@ Merger::traverse(osg::NodeVisitor& nv)
                 // compile canceled, ditch it
                 if (_metrics)
                 {
-                    _metrics->numJobsRunning--;
-                    _metrics->numJobsCanceled++;
+                    //_metrics->running--;
+                    _metrics->postprocessing--;
+                    _metrics->canceled++;
                 }
             }
             else
             {
                 // not ready - requeue
-                _tempQueue.push_back(std::move(next));
+                _tempQueue.emplace_back(std::move(next));
             }
         }
         _compileQueue.swap(_tempQueue);
@@ -184,6 +188,7 @@ Merger::traverse(osg::NodeVisitor& nv)
                 if (next->_result.available())
                 {
                     next->merge();
+                    ++count;
                 }
                 else
                 {
@@ -191,12 +196,12 @@ Merger::traverse(osg::NodeVisitor& nv)
                 }
             }
 
-            ++count;
-
             _mergeQueue.pop();
+
             if (_metrics)
             {
-                _metrics->numJobsRunning--;
+                //_metrics->running--;
+                _metrics->postprocessing--;
             }
         }
 

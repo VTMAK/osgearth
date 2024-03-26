@@ -23,28 +23,30 @@
 #include <osgEarth/Layer>
 #include <osgEarth/LayerReference>
 #include <osgEarth/TiledModelLayer>
+#include <osgEarth/StateSetCache>
+#include <osgEarth/TextureArena>
+
 
 namespace osgEarth {
     class Map;
 }
 
 namespace osgEarth
-{  
+{
     /**
      * Layer that loads a pregenerated quadtree of model files
      */
     class OSGEARTH_EXPORT XYZModelLayer : public TiledModelLayer
     {
     public: // serialization
-        struct OSGEARTH_EXPORT Options : public TiledModelLayer::Options                         
+        struct OSGEARTH_EXPORT Options : public TiledModelLayer::Options
         {
             META_LayerOptions(osgEarth, Options, TiledModelLayer::Options);
             OE_OPTION(URI, url);
-            OE_OPTION(bool, additive);
             OE_OPTION(bool, invertY);
             OE_OPTION(int, minLevel);
             OE_OPTION(int, maxLevel);
-            OE_OPTION(float, rangeFactor);
+
             OE_OPTION(ProfileOptions, profile);
             Config getConfig() const override;
             void fromConfig(const Config& conf);
@@ -78,36 +80,17 @@ namespace osgEarth
         void setMaxLevel(unsigned value);
         unsigned getMaxLevel() const override;
 
-        //! The range factor.  Default is 6
-        void setRangeFactor(float value);
-        float getRangeFactor() const;
-
-        //! Forces a rebuild on this layer.
-        void dirty();
-
     public: // Layer
 
         //! opens the layer and returns the status
         Status openImplementation() override;
 
-        //! closes the layer
-        Status closeImplementation() override;
-
-        //! The Node representing this layer.
-        osg::Node* getNode() const override;
+        void addedToMap(const Map* map) override;
 
         //! Serialization
         Config getConfig() const override;
 
-    public: // Layer
-        
-        //! called by the map when this layer is added
-        void addedToMap(const Map*) override;
-
-        //! called by the map when this layer is removed
-        void removedFromMap(const Map*) override;
-
-        //! post-ctor initialization
+        // post-ctor initialization
         void init() override;
 
     protected: // TiledModelLayer
@@ -120,12 +103,14 @@ namespace osgEarth
         virtual ~XYZModelLayer();
 
     private:
-        osg::ref_ptr<osg::Group> _root;
         osg::ref_ptr<const Profile> _profile;
-        osg::observer_ptr< const Map > _map;
-        bool _graphDirty;
-        
-        void create();
+        osg::ref_ptr< osgDB::Options > _readOptions;
+#if 0
+        osg::ref_ptr< osgEarth::StateSetCache > _statesetCache;
+        osg::ref_ptr< TextureArena > _textures;
+        mutable std::vector<Texture::WeakPtr> _texturesCache;
+        mutable std::mutex _texturesCacheMutex;
+#endif
     };
 
 } // namespace osgEarth

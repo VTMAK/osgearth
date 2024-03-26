@@ -19,9 +19,7 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
-#ifndef OSGEARTH_CONTAINERS_H
-#define OSGEARTH_CONTAINERS_H 1
-
+#pragma once
 #include <osgEarth/Common>
 #include <osgEarth/Threading>
 #include <osg/ref_ptr>
@@ -32,6 +30,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <queue>
+#include <thread>
 
 namespace osgEarth { namespace Util
 {
@@ -39,23 +38,28 @@ namespace osgEarth { namespace Util
      * A std::map-like map that uses a vector.
      * This benchmarks much faster than std::map or std::unordered_map for small sets.
      */
-    template<typename KEY,typename DATA>
+    template<typename KEY,typename DATA,typename LESS=std::less<KEY>>
     struct vector_map
     {
         struct ENTRY {
             KEY first;
             DATA second;
         };
-        typedef std::vector<ENTRY> container_t;
 
-        typedef typename container_t::iterator       iterator;
-        typedef typename container_t::const_iterator const_iterator;
+        using value_type = DATA;
+        using container_t = std::vector<ENTRY>;
+        using iterator = typename container_t::iterator;
+        using const_iterator = typename container_t::const_iterator;
 
         container_t _container;
 
+        inline bool keys_equal(const KEY& a, const KEY& b) const {
+            return LESS()(a, b) == false && LESS()(b, a) == false;
+        }
+
         inline DATA& operator[](const KEY& key) {
             for(unsigned i=0; i<_container.size(); ++i) {
-                if (_container[i].first == key) {
+                if (keys_equal(_container[i].first, key)) {
                     return _container[i].second;
                 }
             }
@@ -71,7 +75,7 @@ namespace osgEarth { namespace Util
 
         inline iterator find(const KEY& key) {
             for (unsigned i = 0; i < _container.size(); ++i) {
-                if (_container[i].first == key) {
+                if (keys_equal(_container[i].first, key)) {
                     return _container.begin() + i;
                 }
             }
@@ -80,7 +84,7 @@ namespace osgEarth { namespace Util
 
         inline const_iterator find(const KEY& key) const {
             for(unsigned i=0; i<_container.size(); ++i) {
-                if (_container[i].first == key) {
+                if (keys_equal(_container[i].first, key)) {
                     return _container.begin()+i;
                 }
             }
@@ -93,7 +97,7 @@ namespace osgEarth { namespace Util
 
         inline void erase(const KEY& key) {
             for(unsigned i=0; i<_container.size(); ++i) {
-                if (_container[i].first == key) {
+                if (keys_equal(_container[i].first, key)) {
                     if (i+1 < _container.size()) {
                         _container[i] = _container[_container.size()-1];
                     }
@@ -238,16 +242,16 @@ namespace osgEarth { namespace Util
         unsigned _buf;
         unsigned _queries;
         unsigned _hits;
-        bool     _threadsafe;
-        mutable Threading::Mutex _mutex;
+        bool _threadsafe;
+        mutable std::mutex _mutex;
 
     public:
-        LRUCache( unsigned max =100 ) : _max(max), _threadsafe(false), _mutex("LRUCache(OE)") {
+        LRUCache( unsigned max =100 ) : _max(max), _threadsafe(false) {
             _queries = 0;
             _hits = 0;
             setMaxSize_impl(max);
         }
-        LRUCache( bool threadsafe, unsigned max =100 ) : _max(max), _threadsafe(threadsafe), _mutex("LRUCache(OE)") {
+        LRUCache( bool threadsafe, unsigned max =100 ) : _max(max), _threadsafe(threadsafe) {
             _queries = 0;
             _hits = 0;
             setMaxSize_impl(max);
@@ -258,7 +262,7 @@ namespace osgEarth { namespace Util
 
         void insert( const K& key, const T& value ) {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 insert_impl( key, value );
             }
             else {
@@ -268,7 +272,7 @@ namespace osgEarth { namespace Util
 
         bool get( const K& key, Record& out ) {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 get_impl( key, out );
             }
             else {
@@ -279,7 +283,7 @@ namespace osgEarth { namespace Util
 
         bool has( const K& key ) {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 return has_impl( key );
             }
             else {
@@ -289,7 +293,7 @@ namespace osgEarth { namespace Util
 
         void erase( const K& key ) {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 erase_impl( key );
             }
             else {
@@ -299,7 +303,7 @@ namespace osgEarth { namespace Util
 
         void clear() {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 clear_impl();
             }
             else {
@@ -309,7 +313,7 @@ namespace osgEarth { namespace Util
 
         void setMaxSize( unsigned max ) {
             if ( _threadsafe ) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 setMaxSize_impl( max );
             }
             else {
@@ -328,7 +332,7 @@ namespace osgEarth { namespace Util
 
         void forEach(const Functor& functor) const {
             if (_threadsafe) {
-                Threading::ScopedMutexLock lock(_mutex);
+                std::lock_guard<std::mutex> lock(_mutex);
                 iterate_impl(functor);
             }
             else {
@@ -564,23 +568,21 @@ namespace osgEarth { namespace Util
 
     /** Template for per-thread data storage */
     template<typename T>
-    struct PerThread : public Threading::Mutex
+    struct PerThread : public std::mutex
     {
-        PerThread() : Threading::Mutex() { }
-
-        PerThread(const std::string& name) : Threading::Mutex(name) { }
+        PerThread() { }
 
         T& get() {
-            Threading::ScopedMutexLock lock(*this);
-            return _data[Threading::getCurrentThreadId()];
+            std::lock_guard<std::mutex> lock(*this);
+            return _data[std::this_thread::get_id()];
         }
 
         void clear() {
-            Threading::ScopedMutexLock lock(*this);
+            std::lock_guard<std::mutex> lock(*this);
             _data.clear();
         }
 
-        typedef typename std::unordered_map<unsigned,T> container_t;
+        typedef typename std::unordered_map<std::thread::id,T> container_t;
         typedef typename container_t::iterator iterator;
 
         // NB. lock before using these!
@@ -597,7 +599,6 @@ namespace osgEarth { namespace Util
     struct PerObjectMap
     {
         PerObjectMap() { }
-        PerObjectMap(const std::string& name) : _mutex(name) { }
         bool threadsafe = true;
 
         DATA& get(KEY k)
@@ -634,7 +635,6 @@ namespace osgEarth { namespace Util
     struct PerObjectFastMap
     {
         PerObjectFastMap() { }
-        PerObjectFastMap(const std::string& name) : _mutex(name) { }
         bool threadsafe = true;
 
         struct Functor {
@@ -647,7 +647,7 @@ namespace osgEarth { namespace Util
 
         DATA& get(KEY k)
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             typename std::unordered_map<KEY,DATA>::iterator i = _data.find(k);
             if ( i != _data.end() )
                 return i->second;
@@ -657,53 +657,53 @@ namespace osgEarth { namespace Util
 
         void remove(KEY k)
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             _data.erase( k );
         }
 
         void forEach(Functor& functor)
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             for (typename std::unordered_map<KEY, DATA>::iterator i = _data.begin(); i != _data.end(); ++i)
                 functor.operator()(i->second);
         }
 
         void forEach(std::function<void(DATA&)> functor)
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             for (auto& entry : _data)
                 functor(entry.second);
         }
 
         void forEach(ConstFunctor& functor) const
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             for (typename std::unordered_map<KEY, DATA>::const_iterator i = _data.begin(); i != _data.end(); ++i)
                 functor.operator()(i->second);
         }
 
         void forEach(std::function<void(const DATA&)> functor) const
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             for (auto& entry : _data)
                 functor(entry.second);
         }
 
         unsigned size() const
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             return _data.size();
         }
 
         void clear()
         {
-            osgEarth::Threading::ScopedLockIf lock(_mutex, threadsafe);
+            osgEarth::Threading::scoped_lock_if lock(_mutex, threadsafe);
             _data.clear();
         }
 
     private:
         std::unordered_map<KEY,DATA> _data;
-        mutable osgEarth::Threading::Mutex _mutex;
+        mutable std::mutex _mutex;
     };
 
     /** Template for thread safe per-object data storage */
@@ -711,8 +711,6 @@ namespace osgEarth { namespace Util
     struct PerObjectRefMap
     {
         PerObjectRefMap() { }
-
-        PerObjectRefMap(const std::string& name) : _mutex(name) { }
 
         DATA* get(KEY k)
         {
@@ -838,24 +836,24 @@ namespace osgEarth { namespace Util
     public:
         //! Push a new item safely
         void push(const T& t) {
-            osgEarth::Threading::ScopedMutexLock lock(_m);
+            std::lock_guard<std::mutex> lock(_m);
             _queue.push(t);
         }
         //! Remove the front item safely 
         void pop() {
-            osgEarth::Threading::ScopedMutexLock lock(_m);
+            std::lock_guard<std::mutex> lock(_m);
             _queue.pop();
         }
         //! Safely return a copy of the item at the head of
         //! the queue
         T front() {
-            osgEarth::Threading::ScopedMutexLock lock(_m);
+            std::lock_guard<std::mutex> lock(_m);
             return _queue.empty() ? _default : _queue.front();
         }
         //! Safely remove the item at the head of the queue
         //! and return it
         T take_front() {
-            osgEarth::Threading::ScopedMutexLock lock(_m);
+            std::lock_guard<std::mutex> lock(_m);
             T t = _queue.empty() ? _default : _queue.front();
             if (_queue.empty() == false)
                 _queue.pop();
@@ -863,7 +861,7 @@ namespace osgEarth { namespace Util
         }
         //! Safely clear the queue
         void clear() {
-            osgEarth::Threading::ScopedMutexLock lock(_m);
+            std::lock_guard<std::mutex> lock(_m);
             _queue.swap(std::queue<T>());
         }
         //! True if the queue is empty (but only at the 
@@ -874,7 +872,7 @@ namespace osgEarth { namespace Util
 
     private:
         std::queue<T> _queue;
-        mutable osgEarth::Threading::Mutex _m;
+        mutable std::mutex _m;
         T _default;
     };
 
@@ -919,5 +917,3 @@ namespace osgEarth { namespace Util
         iterator _iter;
     };
 } }
-
-#endif // OSGEARTH_CONTAINERS_H

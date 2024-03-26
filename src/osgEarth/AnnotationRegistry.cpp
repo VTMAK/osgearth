@@ -62,13 +62,13 @@ AnnotationRegistry::instance()
 {
     // OK to be in the local scope since this gets called at static init time
     // by the OSGEARTH_REGISTER_ANNOTATION macro
-    static AnnotationRegistry* s_singleton =0L;
-    static Threading::Mutex    s_singletonMutex(OE_MUTEX_NAME);
+    static AnnotationRegistry* s_singleton = nullptr;
+    static std::mutex s_singletonMutex;
 
-    if ( !s_singleton )
+    if (!s_singleton)
     {
-        Threading::ScopedMutexLock lock(s_singletonMutex);
-        if ( !s_singleton )
+        std::lock_guard<std::mutex> lock(s_singletonMutex);
+        if (!s_singleton)
         {
             s_singleton = new AnnotationRegistry();
         }

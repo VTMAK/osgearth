@@ -251,7 +251,7 @@ namespace
     };
 
     
-    Threading::Gate<osg::Image*> WriteExternalReferencesToCache::_imageGate(OE_MUTEX_NAME);
+    Threading::Gate<osg::Image*> WriteExternalReferencesToCache::_imageGate;
 }
 
 

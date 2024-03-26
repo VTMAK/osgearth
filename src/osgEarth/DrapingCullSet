@@ -25,7 +25,6 @@
 #include <osgEarth/Common>
 #include <osgEarth/Containers>
 #include <osgEarth/DrapeableNode>
-#include <osgEarth/Threading>
 #include <osg/Camera>
 #include <osg/ObserverNodePath>
 #include <queue>
@@ -70,7 +69,7 @@ namespace osgEarth { namespace Util
         };
         using SortedFrameData = std::map<int, FrameData>;
         SortedFrameData _data;
-        Threading::Mutex _data_mutex;
+        std::mutex _data_mutex;
     };
 
     /**

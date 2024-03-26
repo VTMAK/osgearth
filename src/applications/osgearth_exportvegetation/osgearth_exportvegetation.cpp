@@ -26,8 +26,8 @@
 #include <osgEarth/Feature>
 #include <osgEarth/TerrainTileModelFactory>
 #include <osgEarth/LandCover>
+#include <osgEarth/NoiseTextureFactory>
 #include <osgEarthProcedural/VegetationLayer>
-#include <osgEarthProcedural/NoiseTextureFactory>
 #include <osgEarthProcedural/VegetationFeatureGenerator>
 #include <osgDB/ReadFile>
 
@@ -172,18 +172,11 @@ main(int argc, char** argv)
     if (keys.empty())
         return usage(argv[0], "No data in extent");
 
-    JobArena arena("Vegetation Export", 1u);
-
     std::cout << "Exporting " << keys.size() << " keys.." << std::endl;
 
     for(const auto key : keys)
     {
-        Job(&arena).dispatch(
-            [&app, key](Cancelable*)
-            {
-                app.exportKey(key);
-            }
-        );
+        jobs::dispatch([&app, key]() { app.exportKey(key); });
     }
     
 

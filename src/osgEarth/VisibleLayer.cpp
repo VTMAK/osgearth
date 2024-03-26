@@ -19,7 +19,9 @@
 #include "VisibleLayer"
 #include "VirtualProgram"
 #include "Utils"
+#include "NodeUtils"
 #include "ShaderLoader"
+#include "SimplePager"
 
 #include <osg/BlendFunc>
 #include <osgUtil/RenderBin>
@@ -161,21 +163,13 @@ VisibleLayer::Options::getConfig() const
     conf.set( "attenuation_range", attenuationRange() );
     conf.set( "blend", "interpolate", _blend, BLEND_INTERPOLATE );
     conf.set( "blend", "modulate", _blend, BLEND_MODULATE );
+    conf.set( "nvgl", useNVGL() );
     return conf;
 }
 
 void
 VisibleLayer::Options::fromConfig(const Config& conf)
 {
-    _visible.init( true );
-    _opacity.init( 1.0f );
-    _minVisibleRange.init( 0.0 );
-    _maxVisibleRange.init( FLT_MAX );
-    _attenuationRange.init(0.0f);
-    _blend.init( BLEND_INTERPOLATE );
-    _mask.init(DEFAULT_LAYER_MASK);
-    debugView().setDefault(false);
-
     conf.get( "visible", _visible );
     conf.get( "opacity", _opacity);
     conf.get( "min_range", _minVisibleRange );
@@ -184,6 +178,7 @@ VisibleLayer::Options::fromConfig(const Config& conf)
     conf.get( "mask", _mask );
     conf.get( "blend", "interpolate", _blend, BLEND_INTERPOLATE );
     conf.get( "blend", "modulate", _blend, BLEND_MODULATE );
+    conf.get( "nvgl", useNVGL());
 }
 
 //........................................................................
@@ -449,7 +444,14 @@ VisibleLayer::setMaxVisibleRange( float maxVisibleRange )
         (float)options().minVisibleRange().get(),
         (float)options().maxVisibleRange().get(),
         (float)options().attenuationRange().get()));
-    fireCallback( &VisibleLayerCallback::onVisibleRangeChanged );
+
+    forEachNodeOfType<SimplePager>(getNode(), 
+        [&](SimplePager* node) {
+            node->setMaxRange(maxVisibleRange);
+        }
+    );
+
+    fireCallback(&VisibleLayerCallback::onVisibleRangeChanged);
 }
 
 float

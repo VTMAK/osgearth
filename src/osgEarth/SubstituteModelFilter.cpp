@@ -267,7 +267,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
 
     // first, go through the features and build the model cache. Apply the model matrix' scale
     // factor to any AutoTransforms directly (cloning them as necessary)
-    std::map< std::pair<URI, float>, osg::ref_ptr<osg::Node> > uniqueModels;
+    std::map< std::pair<std::string, float>, osg::ref_ptr<osg::Node> > uniqueModels;
 
     SubstituteModelFilterNode* substituteModelFilterNode = 0;
 
@@ -337,6 +337,29 @@ SubstituteModelFilter::process(const FeatureList&           features,
         if ( modelSymbol && modelSymbol->orientationFromFeature().get() )
         {
             calculateGeometryHeading(input, context);
+        }
+		// evaluate the instance URI expression:
+        std::string resourceKey;
+        if (symbol->url().isSet())
+        {
+            resourceKey = input->eval(uriEx, &context);
+        }
+        else if (modelSymbol && modelSymbol->getModel())
+        {
+            resourceKey = Stringify() << modelSymbol->getModel();
+        }
+        else if (iconSymbol && iconSymbol->getImage())
+        {
+            resourceKey = Stringify() << iconSymbol->getImage();
+        }
+        URI instanceURI;
+        if (symbol->url().isSet())
+        {
+            instanceURI = uriCache[resourceKey];
+            if (instanceURI.empty()) // Create a map, to reuse URI's, since they take a long time to create
+            {
+                instanceURI = URI(resourceKey, uriEx.uriContext());
+            }
         }
 
         // evaluate the instance URI expression:
@@ -424,7 +447,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
         }
 
         // now that we have a marker source, create a node for it
-        std::pair<URI,float> key( instanceURI, iconSymbol? scale : 1.0f ); //use 1.0 for models, since we don't want unique models based on scaling
+        std::pair<std::string,float> key( resourceKey, iconSymbol? scale : 1.0f ); //use 1.0 for models, since we don't want unique models based on scaling
 
         // cache nodes per instance.
         osg::ref_ptr<osg::Node> model;

@@ -19,8 +19,7 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
-#ifndef OSGEARTH_CHONK
-#define OSGEARTH_CHONK 1
+#pragma once
 
 #include <osgEarth/Common>
 #include <osgEarth/GLUtils>
@@ -41,16 +40,17 @@ namespace osgEarth
     {
     public:
         using Ptr = std::shared_ptr<ChonkMaterial>;
+
         static Ptr create() {
             return Ptr(new ChonkMaterial);
         }
 
         // texturearena indexes of material textures
-        int albedo_index;
-        int normal_index;
-        int pbr_index;
-        int material1_index;
-        int material2_index;
+        int albedo_index = -1;
+        int normal_index = -1;
+        int pbr_index = -1;
+        int material1_index = -1;
+        int material2_index = -1;
 
         // store refs to the original textures when the
         // factory objects's texture arena is using auto-release.
@@ -62,29 +62,28 @@ namespace osgEarth
         Texture::Ptr material2_tex;
 
     private:
-        ChonkMaterial() :
-            albedo_index(-1),
-            normal_index(-1),
-            pbr_index(-1),
-            material1_index(-1),
-            material2_index(-1){}
+        //! hidden to force use of create()
+        ChonkMaterial() { }
     };
 
     class ChonkFactory;
+    class ChonkDrawable;
 
     /**
      * A bindless rendering unit comprised of one VBO and one EBO.
      * A single Chonk usually represents one drawable "Object" in
-     * the scene. It can include multiple LODs.
+     * the scene. It can include up to 2 LODs.
      */
     class OSGEARTH_EXPORT Chonk
     {
     public:
         using element_t = GLuint;
+        using Ptr = std::shared_ptr<Chonk>;
+        using WeakPtr = std::weak_ptr<Chonk>;
 
         //! Adds a node.
         bool add(
-            osg::Node*,
+            osg::Node* node,
             ChonkFactory& factory);
 
         //! Adds a node with screen-space-error limits.
@@ -97,30 +96,27 @@ namespace osgEarth
         //! Local bounding box of this Chonk.
         const osg::BoundingBoxf& getBound();
 
+        //! Name, which will appear in GL debug labels
+        std::string& name() { return _name; }
+        const std::string& name() const { return _name; }
+
     public:
         //! Single vertex data.
         struct VertexGPU
         {
             osg::Vec3f position;
             osg::Vec3f normal;
-            char normal_technique;
+            char normal_technique = (char)0;
             osg::Vec4ub color;
             osg::Vec2f uv;
             osg::Vec3f flex;
 
             // texturearena indexes of materials
             // TODO: use a material index instead?
-            GLshort albedo_index;
-            GLshort normalmap_index;
-            GLshort pbr_index;
-            osg::Vec2s extended_materials;
-
-            VertexGPU() : 
-                normal_technique(0),
-                albedo_index(-1),
-                normalmap_index(-1),
-                pbr_index(-1),
-                extended_materials(-1,-1){}
+            GLshort albedo_index = -1;
+            GLshort normalmap_index = -1;
+            GLshort pbr_index = -1;
+            osg::Vec2s extended_material_index = osg::Vec2s(-1, -1);
         };
 
         static GLubyte NORMAL_TECHNIQUE_DEFAULT;
@@ -139,12 +135,11 @@ namespace osgEarth
         };
 
     public:
-        using Ptr = std::shared_ptr<Chonk>;
-        using WeakPtr = std::weak_ptr<Chonk>;
 
         //! Creates a new empty chonk.
         static Ptr create();
 
+        std::string _name;
         std::vector<ChonkMaterial::Ptr> _materials;
         std::vector<VertexGPU> _vbo_store;
         std::vector<element_t> _ebo_store;
@@ -185,6 +180,10 @@ namespace osgEarth
         using GetOrCreateFunction =
             std::function<Texture::Ptr(osg::Texture* osgTex, bool& isNew)>;
 
+        osg::ref_ptr<TextureArena> _textures;
+
+        GetOrCreateFunction _getOrCreateTexture;
+
     public:
         ChonkFactory(
             TextureArena* textures);
@@ -193,15 +192,30 @@ namespace osgEarth
         //! creating new ones. Good for sharing data across invocations.
         void setGetOrCreateFunction(GetOrCreateFunction);
 
-        //! Adds a node and generates an asset drawable for it.
-        //! The asset will upload to the GPU on the next call to apply.
-        void load(
+        //! For the given node, this method populates the provided Chonk wit
+        //! its geometry. If the factory finds any InstancedGeometry's along
+        //! the way it will create a Chonk for each one in out_instances.
+        //! Returns false if the node contained no geometry.
+        bool load(
             osg::Node* node,
-            Chonk& chonk);
+            Chonk* chonk, 
+            float far_pixel_scale,
+            float near_pixel_scale);
 
-    private:
-        osg::ref_ptr<TextureArena> _textures;
-        GetOrCreateFunction _getOrCreateTexture;
+        bool load(
+            osg::Node* node,
+            ChonkDrawable* drawable,
+            float far_pixel_scale,
+            float near_pixel_scale);
+
+        /**
+        * Stock "getOrCreateTexture" function for the ChonkFactory that works on
+        * a vector of Weak pointers. Use this or provide your own or don't use
+        * one at all.
+        */
+        static GetOrCreateFunction getWeakTextureCacheFunction(
+            std::vector<Texture::WeakPtr>& cache,
+            std::mutex& cache_mutex);
     };
 
     /**
@@ -218,6 +232,15 @@ namespace osgEarth
         //! Construct a default drawable
         //! @param renderBinNumber OSG render bin number for the drawable
         ChonkDrawable(int render_bin_number = 3);
+
+        //! Adds a node to the drawable. This method will rip all the geometry
+        //! from the node, find any instances, and assemble everything into
+        //! this drawable.
+        bool add(
+            osg::Node* node,
+            ChonkFactory& factory,
+            float far_pixel_scale = 1.0f,
+            float near_pixel_scale = FLT_MAX);
 
         //! Adds one instance of a chonk to the drawable.
         void add(Chonk::Ptr value);
@@ -257,13 +280,19 @@ namespace osgEarth
         //! Installs a basic chonk-rendering shader on a drawable.
         static void installRenderBin(ChonkDrawable*);
 
+        //! Whether this drawable contains any geometry
+        bool empty() const {
+            return _batches.empty();
+        }
+
     public:
 
-        virtual osg::BoundingBox computeBoundingBox() const override;
-        virtual osg::BoundingSphere computeBound() const override;
-        virtual void drawImplementation(osg::RenderInfo& ri) const override;
-        virtual void resizeGLObjectBuffers(unsigned) override;
-        virtual void releaseGLObjects(osg::State*) const override;
+        osg::BoundingBox computeBoundingBox() const override;
+        osg::BoundingSphere computeBound() const override;
+        void drawImplementation(osg::RenderInfo& ri) const override;
+        void compileGLObjects(osg::RenderInfo& ri) const override;
+        void resizeGLObjectBuffers(unsigned) override;
+        void releaseGLObjects(osg::State*) const override;
 
     protected:
         virtual ~ChonkDrawable();
@@ -284,11 +313,11 @@ namespace osgEarth
         using Instances = std::vector<Instance>;
         using Batches = std::unordered_map<Chonk::Ptr, Instances>;
         Batches _batches;
-        bool _gpucull;
-        float _fadeNear, _fadeFar;
-        double _birthday;
-        float _alphaCutoff;
-        int _renderBinNumber;
+        bool _gpucull = true;
+        float _fadeNear = 0.0f, _fadeFar = 0.0f;
+        double _birthday = -1.0;
+        float _alphaCutoff = 0.0f;
+        int _renderBinNumber = 0;
 
         //! GL objects (and supporting data structures) that must
         //! be stored and managed for each unique OSG state,
@@ -324,19 +353,17 @@ namespace osgEarth
             GLBuffer::Ptr _instanceInputBuf;
             GLBuffer::Ptr _instanceOutputBuf;
             GLBuffer::Ptr _chonkBuf;
-            bool _dirty;
-            bool _gpucull;
+            bool _dirty = true;
+            bool _gpucull = true;
 
             void(GL_APIENTRY * _glMultiDrawElementsIndirectBindlessNV)
                 (GLenum, GLenum, const GLvoid*, GLsizei, GLsizei, GLint);
 
             struct PCPState {
-                GLint _passUL;
-                PCPState() : _passUL(-1) { }
+                GLint _passUL = -1;
             };
             mutable std::unordered_map<const void*, PCPState> _pcps;
 
-            GLObjects();
             void initialize(
                 const osg::Object* host, osg::State& state);
             void update(
@@ -362,10 +389,11 @@ namespace osgEarth
         virtual void accept(osg::PrimitiveFunctor&) const override;
 
     private:
-        mutable bool _proxy_dirty;
+        mutable bool _proxy_dirty = true;
         mutable std::vector<osg::Vec3f> _proxy_verts;
         mutable std::vector<GLuint> _proxy_indices;
         void refreshProxy() const;
+        void update_gl_objects(GLObjects&, osg::State&) const;
         ChonkDrawable(const ChonkDrawable& rhs, const osg::CopyOp&) { }
 
         friend class ChonkRenderBin;
@@ -411,5 +439,3 @@ namespace osgEarth
         };
     };
 }
-
-#endif // OSGEARTH_INSTANCE_CLOUD

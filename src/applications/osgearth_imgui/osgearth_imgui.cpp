@@ -42,11 +42,11 @@ usage(const char* name)
 int
 main(int argc, char** argv)
 {
-    osgEarth::initialize();
-
     osg::ArgumentParser arguments(&argc, argv);
     if (arguments.read("--help"))
         return usage(argv[0]);
+
+    osgEarth::initialize(arguments);
 
     osgViewer::Viewer viewer(arguments);
     viewer.setThreadingModel(viewer.SingleThreaded);
@@ -59,7 +59,7 @@ main(int argc, char** argv)
     // If you use the MapNodeHelper, call this first.
     viewer.setRealizeOperation(new GUI::ApplicationGUI::RealizeOperation);
 
-    osg::ref_ptr<osg::Node> node = MapNodeHelper().loadWithoutControls(arguments, &viewer);
+    osg::ref_ptr<osg::Node> node = MapNodeHelper().load(arguments, &viewer);
     if (node.valid())
     {
         // Call this to add the GUI. 

@@ -62,10 +62,6 @@ Layer::Options::getConfig() const
 void
 Layer::Options::fromConfig(const Config& conf)
 {
-    // defaults:
-    openAutomatically().setDefault(true);
-    terrainPatch().setDefault(false);
-
     conf.get("name", name());
     conf.get("open", openAutomatically()); // back compat
     conf.get("enabled", openAutomatically());
@@ -355,7 +351,7 @@ Layer::init()
         osg::Object::setName("[" + std::string(className()) + "]");
     }
 
-    _mutex = new Threading::ReadWriteMutex(options().name().isSet() ? options().name().get() : "Unnamed Layer(OE)");
+    _mutex = new Threading::ReadWriteMutex();
 }
 
 Status
@@ -518,13 +514,15 @@ Layer::getTypeName() const
 
 #define LAYER_OPTIONS_TAG "osgEarth.LayerOptions"
 
-Layer*
+osg::ref_ptr<Layer>
 Layer::create(const ConfigOptions& options)
 {
     std::string name = options.getConfig().key();
 
     if (name.empty())
+    {
         name = options.getConfig().value("driver");
+    }
 
     if ( name.empty() )
     {
@@ -538,28 +536,30 @@ Layer::create(const ConfigOptions& options)
     dbopt->setPluginData( LAYER_OPTIONS_TAG, (void*)&options );
 
     //std::string pluginExtension = std::string( ".osgearth_" ) + name;
-    std::string pluginExtension = std::string( "." ) + name;
+    //std::string pluginExtension = std::string( "." ) + name;
+
+    osg::ref_ptr<Layer> result;
 
     // use this instead of osgDB::readObjectFile b/c the latter prints a warning msg.
-    osgDB::ReaderWriter::ReadResult rr = osgDB::Registry::instance()->readObject( pluginExtension, dbopt.get() );
-    if ( !rr.validObject() || rr.error() )
+    auto rw = osgDB::Registry::instance()->getReaderWriterForExtension(name);
+    if (rw)
     {
-        // quietly fail so we don't get tons of msgs.
-        return 0L;
+        auto rr = rw->readObject("." + name, dbopt.get());
+        if (!rr.validObject() || rr.error())
+        {
+            // quietly fail so we don't get tons of msgs.
+            return nullptr;
+        }
+
+        result = dynamic_cast<Layer*>(rr.getObject());
+        if (result.valid())
+        {
+            if (result->getName().empty())
+                result->setName(name);
+        }
     }
 
-    Layer* layer = dynamic_cast<Layer*>( rr.getObject() );
-    if ( layer == 0L )
-    {
-        // TODO: communicate an error somehow
-        return 0L;
-    }
-
-    if (layer->getName().empty())
-        layer->setName(name);
-
-    rr.takeObject();
-    return layer;
+    return result;
 }
 
 const ConfigOptions&

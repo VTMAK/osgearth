@@ -41,44 +41,46 @@ namespace osgEarth
     {
     public:
         META_ConfigOptions(osgEarth, TerrainOptions, DriverConfigOptions);
-        OE_OPTION(int, tileSize);
-        OE_OPTION(float, minTileRangeFactor);
-        OE_OPTION(bool, clusterCulling);
-        OE_OPTION(unsigned, maxLOD);
-        OE_OPTION(unsigned, minLOD);
-        OE_OPTION(unsigned, firstLOD);
-        OE_OPTION(bool, enableLighting);
-        OE_OPTION(bool, enableBlending);
-        OE_OPTION(bool, compressNormalMaps);
-        OE_OPTION(unsigned, minNormalMapLOD);
-        OE_OPTION(bool, gpuTessellation);
-        OE_OPTION(float, tessellationLevel);
-        OE_OPTION(float, tessellationRange);
-        OE_OPTION(bool, debug);
-        OE_OPTION(int, renderBinNumber);
-        OE_OPTION(unsigned, minExpiryFrames);
-        OE_OPTION(double, minExpiryTime);
-        OE_OPTION(float, minExpiryRange);
-        OE_OPTION(unsigned, maxTilesToUnloadPerFrame);
-        OE_OPTION(unsigned, minResidentTiles);
-        OE_OPTION(bool, castShadows);
-        OE_OPTION(TerrainLODMethod, lodMethod);
-        OE_OPTION(float, tilePixelSize);
-        OE_OPTION(float, heightFieldSkirtRatio);
-        OE_OPTION(Color, color);
-        OE_OPTION(bool, progressive);
-        OE_OPTION(bool, useNormalMaps);
-        OE_OPTION(bool, normalizeEdges);
-        OE_OPTION(bool, morphTerrain);
-        OE_OPTION(bool, morphImagery);
-        OE_OPTION(unsigned, mergesPerFrame);
-        OE_OPTION(float, priorityScale);
-        OE_OPTION(std::string, textureCompression);
-        OE_OPTION(unsigned, concurrency);
-        OE_OPTION(bool, useLandCover);
-        OE_OPTION(float, screenSpaceError);
-        OE_OPTION(unsigned, maxTextureSize);
-        OE_OPTION(bool, visible);
+        OE_OPTION(int, tileSize, 17);
+        OE_OPTION(float, minTileRangeFactor, 7.0f);
+        OE_OPTION(bool, clusterCulling, true);
+        OE_OPTION(unsigned, maxLOD, 19u);
+        OE_OPTION(unsigned, minLOD, 0u);
+        OE_OPTION(unsigned, firstLOD, 0u);
+        OE_OPTION(bool, enableLighting, true);
+        OE_OPTION(bool, enableBlending, true);
+        OE_OPTION(bool, compressNormalMaps, false);
+        OE_OPTION(unsigned, minNormalMapLOD, 0u);
+        OE_OPTION(bool, gpuTessellation, false);
+        OE_OPTION(float, tessellationLevel, 2.5f);
+        OE_OPTION(float, tessellationRange, 75.0f);
+        OE_OPTION(bool, debug, false);
+        OE_OPTION(int, renderBinNumber, 0);
+        OE_OPTION(unsigned, minExpiryFrames, 0u);
+        OE_OPTION(double, minExpiryTime, 0.0);
+        OE_OPTION(float, minExpiryRange, 0.0f);
+        OE_OPTION(unsigned, maxTilesToUnloadPerFrame, ~0u);
+        OE_OPTION(unsigned, minResidentTiles, 0u);
+        OE_OPTION(bool, castShadows, false);
+        OE_OPTION(TerrainLODMethod, lodMethod, TerrainLODMethod::CAMERA_DISTANCE);
+        OE_OPTION(float, tilePixelSize, 512.0f);
+        OE_OPTION(float, heightFieldSkirtRatio, 0.0f);
+        OE_OPTION(Color, color, Color::White);
+        OE_OPTION(bool, progressive, true);
+        OE_OPTION(bool, useNormalMaps, true);
+        OE_OPTION(bool, normalizeEdges, false);
+        OE_OPTION(bool, morphTerrain, true);
+        OE_OPTION(bool, morphImagery, true);
+        OE_OPTION(unsigned, mergesPerFrame, ~0u);
+        OE_OPTION(float, priorityScale, 1.0f);
+        OE_OPTION(std::string, textureCompression, {});
+        OE_OPTION(unsigned, concurrency, 4u);
+        OE_OPTION(bool, useLandCover, true);
+        OE_OPTION(float, screenSpaceError, 0.0f);
+        OE_OPTION(unsigned, maxTextureSize, 65536u);
+        OE_OPTION(bool, visible, true);
+        OE_OPTION(bool, createTilesAsync, true);
+        OE_OPTION(bool, createTilesGrouped, true);
 
         virtual Config getConfig() const;
     private:
@@ -113,15 +115,6 @@ namespace osgEarth
         const unsigned& getMaxLOD() const;
 
         //! (Legacy property)
-        //! The minimum level of detail to which the terrain should subdivide (no matter what).
-        //! If you leave this unset, the terrain will subdivide until the map layers
-        //! stop providing data (default behavior). If you set a value, the terrain will subdivide
-        //! to the specified LOD no matter what (and may continue farther if higher-resolution
-        //! data is available).
-        void setMinLOD(const unsigned& value);
-        const unsigned& getMinLOD() const;
-
-        //! (Legacy property)
         //! The lowest LOD to display. By default, the terrain begins at LOD 0.
         //! Set this to start the terrain tile mesh at a higher LOD.
         //! Don't set this TOO high though or you will run into memory problems.
@@ -138,11 +131,7 @@ namespace osgEarth
         void setEnableBlending(const bool& value);
         const bool& getEnableBlending() const;
 
-        //! @deprecated
-        //! Whether to compress the normal maps before sending to the GPU
-        void setCompressNormalMaps(const bool& value);
-        const bool& getCompressNormalMaps() const;
-
+        //! (Currently not used)
         //! Minimum level of detail at which to generate elevation-based normal maps,
         //! assuming normal maps have been activated. This mitigates the overhead of 
         //! calculating normal maps for very high altitude scenes where they are no
@@ -161,10 +150,6 @@ namespace osgEarth
         //! Maximum range in meters to apply GPU tessellation
         void setTessellationRange(const float& value);
         const float& getTessellationRange() const;
-
-        //! Whether to activate debugging mode
-        void setDebug(const bool& value);
-        const bool& getDebug() const;
 
         //! Render bin number for the terrain
         void setRenderBinNumber(const int& value);
@@ -246,12 +231,6 @@ namespace osgEarth
         void setMergesPerFrame(const unsigned& value);
         const unsigned& getMergesPerFrame() const;
 
-        //! Scale factor for background loading priority of terrain tiles.
-        //! Default = 1.0. Make it higher to prioritize terrain loading over
-        //! other modules.
-        void setPriorityScale(const float& value);
-        const float& getPriorityScale() const;
-
         //! Texture compression to use by default on terrain image textures
         void setTextureCompressionMethod(const std::string& method);
         const std::string& getTextureCompressionMethod() const;
@@ -271,6 +250,40 @@ namespace osgEarth
         //! Whether to render the terrain
         void setVisible(const bool& value);
         const bool& getVisible() const;
+
+        //! Whether the engine should create child tiles asynchronously
+        void setCreateTilesAsync(const bool& value);
+        const bool& getCreateTilesAsync() const;
+
+        //! Whether the engine should create all child tiles in a group
+        void setCreateTilesGrouped(const bool& value);
+        const bool& getCreateTilesGrouped() const;
+
+        //! @deprecated
+        //! Scale factor for background loading priority of terrain tiles.
+        //! Default = 1.0. Make it higher to prioritize terrain loading over
+        //! other modules.
+        void setPriorityScale(const float& value);
+        const float& getPriorityScale() const;
+
+        //! @deprecated
+        //! Whether to activate debugging mode
+        void setDebug(const bool& value);
+        const bool& getDebug() const;
+
+        //! @deprecated
+        //! Whether to compress the normal maps before sending to the GPU
+        void setCompressNormalMaps(const bool& value);
+        const bool& getCompressNormalMaps() const;
+
+        //! @deprecated
+        //! The minimum level of detail to which the terrain should subdivide (no matter what).
+        //! If you leave this unset, the terrain will subdivide until the map layers
+        //! stop providing data (default behavior). If you set a value, the terrain will subdivide
+        //! to the specified LOD no matter what (and may continue farther if higher-resolution
+        //! data is available).
+        void setMinLOD(const unsigned& value);
+        const unsigned& getMinLOD() const;
 
         TerrainOptionsAPI();
         TerrainOptionsAPI(TerrainOptions*);

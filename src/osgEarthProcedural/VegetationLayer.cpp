@@ -21,8 +21,8 @@
 */
 #include "VegetationLayer"
 #include "ProceduralShaders"
-#include "NoiseTextureFactory"
 
+#include <osgEarth/NoiseTextureFactory>
 #include <osgEarth/VirtualProgram>
 #include <osgEarth/CameraUtils>
 #include <osgEarth/LineDrawable>
@@ -37,6 +37,7 @@
 #include <osgEarth/rtree.h>
 #include <osgEarth/TerrainConstraintLayer>
 #include <osgEarth/AnnotationUtils>
+#include <osgEarth/Threading>
 
 #include <osg/BlendFunc>
 #include <osg/Multisample>
@@ -417,7 +418,7 @@ VegetationLayer::update(osg::NodeVisitor& nv)
 
         if (_newAssets.available())
         {
-            ScopedMutexLock lock(_assets);
+            std::lock_guard<std::mutex> lock(_assets.mutex());
             _assets = std::move(_newAssets.release());
         }
 
@@ -885,7 +886,7 @@ VegetationLayer::prepareForRendering(TerrainEngine* engine)
     setUseImpostorNormalMaps(options().useImpostorNormalMaps().get());
 
     // configure the thread pool
-    JobArena::setConcurrency(JOB_ARENA_VEGETATION, options().threads().get());
+    jobs::get_pool(JOB_ARENA_VEGETATION)->set_concurrency(options().threads().get());
 }
 
 namespace
@@ -1086,7 +1087,7 @@ VegetationLayer::checkForNewAssets() const
 
     osg::observer_ptr<const VegetationLayer> layer_weakptr(this);
 
-    auto loadNewAssets = [layer_weakptr](Cancelable* c) -> AssetsByGroup
+    auto loadNewAssets = [layer_weakptr](Cancelable& c) -> AssetsByGroup
     {
         OE_PROFILING_ZONE_NAMED("VegetationLayer::loadNewAssets(job)");
 
@@ -1101,7 +1102,7 @@ VegetationLayer::checkForNewAssets() const
             // re-organize the data into a form we can readily use.
             for (auto iter : biomes)
             {
-                if (c && c->isCanceled())
+                if (c.canceled())
                     break;
 
                 const Biome* biome = iter.second.biome;
@@ -1157,10 +1158,12 @@ VegetationLayer::checkForNewAssets() const
         return result;
     };
 
-    Job job;
-    job.setName("VegetationLayer asset loader");
-    job.setArena(JOB_ARENA_VEGETATION);
-    _newAssets = job.dispatch<AssetsByGroup>(loadNewAssets);
+    jobs::context context{
+        "VegetationLayer asset loader",
+        jobs::get_pool(JOB_ARENA_VEGETATION)
+    };
+
+    _newAssets = jobs::dispatch(loadNewAssets, context);
 
     return true;
 }
@@ -1207,15 +1210,17 @@ VegetationLayer::createDrawableAsync(
     double backup_birthday,
     float range) const
 {
+    //OE_INFO << LC << "createDrawableAsync key=" << key_.str() << std::endl;
+
     osg::ref_ptr<const VegetationLayer> layer = this;
     TileKey key = key_;
     const std::string group = group_;
     osg::BoundingBox tile_bbox = tile_bbox_;
     osg::ref_ptr<const osg::FrameStamp> framestamp = framestamp_;
 
-    auto function = [layer, key, group, tile_bbox, framestamp, backup_birthday](Cancelable* c) // -> osg::ref_ptr<osg::Drawable>
+    auto function = [layer, key, group, tile_bbox, framestamp, backup_birthday](Cancelable& c) // -> osg::ref_ptr<osg::Drawable>
     {
-        osg::ref_ptr<ProgressCallback> p = new ProgressCallback(c);
+        osg::ref_ptr<ProgressCallback> p = new ProgressCallback(&c);
         auto result = layer->createDrawable(key, group, tile_bbox, p.get());
         if (result.valid())
             asChonkDrawable(result)->setBirthday(
@@ -1223,11 +1228,12 @@ VegetationLayer::createDrawableAsync(
         return result;
     };
 
-    Job job;
-    job.setName("Vegetation create drawable");
-    job.setArena(JOB_ARENA_VEGETATION);
-    job.setPriority(-range); // closer is sooner
-    return job.dispatch<osg::ref_ptr<osg::Drawable>>(function);
+    jobs::context context;
+    context.name = "Vegetation create drawable";
+    context.pool = jobs::get_pool(JOB_ARENA_VEGETATION);
+    context.priority = [range]() { return -range; }; // closer is sooner
+
+    return jobs::dispatch(function, context);
 }
 
 #undef RAND
@@ -1246,12 +1252,16 @@ VegetationLayer::getAssetPlacements(
     // bail out if the Map has disappeared
     osg::ref_ptr<const Map> map;
     if (!_map.lock(map))
+    {
         return false;
+    }
 
     // bail out if missing or disabled group
     const Options::Group& groupOptions = options().group(group);
     if (groupOptions.enabled() == false)
+    {
         return false;
+    }
 
     std::vector<Placement> result;
 
@@ -1262,19 +1272,24 @@ VegetationLayer::getAssetPlacements(
 
     if (loadBiomesOnDemand == false)
     {
-        ScopedMutexLock lock(_assets);
+        std::lock_guard<std::mutex> lock(_assets.mutex());
 
         auto iter = _assets.find(group);
         if (iter == _assets.end())
-            return false; // data is unavailable.
+        {
+            //OE_INFO << LC << "(1) GAP returning false because _assets doesn't exist for group " << group << std::endl;
+            return !_newAssets.working();
+            //return false; // data is unavailable.
+        }
         else
+        {
             groupAssets = iter->second; //shallow copy
+        }
 
         // if it's empty, bail out (and probably return later)
         if (groupAssets.empty())
         {
-            OE_DEBUG << LC << "key=" << key.str() << "; asset list is empty for group " << group << std::endl;
-            //return std::move(result);
+            //OE_INFO << LC << "GAP returning false because the groupAssets is empty" << std::endl;
             return false;
         }
     }
@@ -1332,19 +1347,24 @@ VegetationLayer::getAssetPlacements(
             AssetsByGroup newAssets = _newAssets.release();
             if (!newAssets.empty())
             {
-                ScopedMutexLock lock(_assets);
+                std::lock_guard<std::mutex> lock(_assets.mutex());
                 _assets = std::move(newAssets);
             }
         }
 
         // make a shallow copy of assets list safely
         {
-            ScopedMutexLock lock(_assets);
+            std::lock_guard<std::mutex> lock(_assets.mutex());
             auto iter = _assets.find(group);
             if (iter == _assets.end())
+            {
+                //OE_INFO << LC << "(2) GAP returning false because _assets doesn't exist for group " << group << std::endl;
                 return false;
+            }
             else
+            {
                 groupAssets = iter->second; // shallow copy
+            }
         }
 
         // if it's empty, bail out (and probably return later)
@@ -1710,7 +1730,7 @@ VegetationLayer::simulateAssetPlacement(const GeoPoint& point, const std::string
 
     if (loadBiomesOnDemand == false)
     {
-        ScopedMutexLock lock(_assets);
+        std::lock_guard<std::mutex> lock(_assets.mutex());
 
         auto iter = _assets.find(group);
         if (iter == _assets.end())
@@ -1784,14 +1804,14 @@ VegetationLayer::simulateAssetPlacement(const GeoPoint& point, const std::string
             AssetsByGroup newAssets = _newAssets.release();
             if (!newAssets.empty())
             {
-                ScopedMutexLock lock(_assets);
+                std::lock_guard<std::mutex> lock(_assets.mutex());
                 _assets = std::move(newAssets);
             }
         }
 
         // make a shallow copy of assets list safely
         {
-            ScopedMutexLock lock(_assets);
+            std::lock_guard<std::mutex> lock(_assets.mutex());
             auto iter = _assets.find(group);
             if (iter == _assets.end())
             {
@@ -2016,7 +2036,7 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
         {
             // We don't want more than one camera creating the
             // same drawable, so this _tiles table tracks tiles globally.
-            ScopedMutexLock lock(_tiles);
+            std::lock_guard<std::mutex> lock(_tiles.mutex());
 
             // First, find a placeholder based on the same tile key,
             // ignoring the revision. (Even if we find an existing tile,
@@ -2112,6 +2132,7 @@ VegetationLayer::cull(const TileBatch& batch, osg::NodeVisitor& nv) const
             else
             {
                 // creation failed; reset for another try.
+                OE_INFO << "Failed for " << entry->getKey().str() << "; will retry..." << std::endl;
                 view._tile = nullptr;
             }
         }
@@ -2162,7 +2183,7 @@ VegetationLayer::resizeGLObjectBuffers(unsigned maxSize)
 {
     PatchLayer::resizeGLObjectBuffers(maxSize);
 
-    ScopedMutexLock lock(_tiles);
+    std::lock_guard<std::mutex> lock(_tiles.mutex());
 
     for (auto& tile : _tiles)
     {

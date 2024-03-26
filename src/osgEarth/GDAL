@@ -24,6 +24,7 @@
 #include <osgEarth/ImageLayer>
 #include <osgEarth/ElevationLayer>
 #include <osgEarth/URI>
+#include <osgEarth/Containers>
 
  /**
   * GDAL (Geospatial Data Abstraction Library) Layers
@@ -67,12 +68,13 @@ namespace osgEarth {
             Options(const ConfigOptions& input);
             OE_OPTION(URI, url);
             OE_OPTION(std::string, connection);
-            OE_OPTION(unsigned, subDataSet);
-            OE_OPTION(RasterInterpolation, interpolation);
+            OE_OPTION(unsigned, subDataSet, 0u);
+            OE_OPTION(RasterInterpolation, interpolation, INTERP_AVERAGE);
             OE_OPTION(ProfileOptions, warpProfile);
-            OE_OPTION(bool, useVRT);
-            OE_OPTION(bool, coverageUsesPaletteIndex);
-            OE_OPTION(bool, singleThreaded);
+            OE_OPTION(bool, useVRT, false);
+            OE_OPTION(bool, coverageUsesPaletteIndex, true);
+            OE_OPTION(bool, singleThreaded, false);
+            OE_OPTION(ProfileOptions, fallbackProfile);
 
             void readFrom(const Config& conf);
             void writeTo(Config& conf) const;
@@ -113,6 +115,7 @@ namespace osgEarth {
                 const std::string& name,
                 const GDAL::Options& options,
                 unsigned tileSize,
+                const Profile* fallback_profile,
                 DataExtentList* out_dataExtents,
                 const osgDB::Options* readOptions);
 
@@ -160,7 +163,6 @@ namespace osgEarth {
             const GDAL::Options& gdalOptions() const { return _gdalOptions; }
             osg::ref_ptr<GDAL::ExternalDataset> _externalDataset;
             std::string _name;
-            unsigned _threadId;
 
             const std::string& getName() const { return _name; }
         };
@@ -180,9 +182,10 @@ namespace osgEarth {
         struct LayerBase
         {
         protected:
-            mutable Threading::Mutex _driversMutex;
-            mutable Threading::Mutex _singleThreadingMutex;
-            mutable std::unordered_map<unsigned, GDAL::Driver::Ptr> _drivers;
+            mutable Util::PerThread<GDAL::Driver::Ptr> _driverPerThread;
+            mutable std::mutex _singleThreadingMutex;
+            mutable GDAL::Driver::Ptr _driverSingleThreaded = nullptr;
+            mutable Util::ReadWriteMutex _createCloseMutex;
         };
     }
 }

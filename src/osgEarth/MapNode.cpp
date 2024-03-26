@@ -44,8 +44,6 @@ using namespace osgEarth::Contrib;
 
 #define LC "[MapNode] "
 
-//---------------------------------------------------------------------------
-
 namespace
 {
     /**
@@ -214,18 +212,6 @@ MapNode::Options::getConfig() const
 void
 MapNode::Options::fromConfig(const Config& conf)
 {
-    proxySettings().init(ProxySettings());
-    enableLighting().init(true);
-    overlayBlending().init(true);
-    overlayBlendingSource().init("alpha");
-    overlayMipMapping().init(false);
-    overlayTextureSize().init(4096);
-    overlayResolutionRatio().init(3.0f);
-    useCascadeDraping().init(false);
-    terrain().init(TerrainOptions());
-    drapingRenderBinNumber().init(1);
-    screenSpaceError().setDefault(25.0f);
-
     conf.get( "proxy",                    proxySettings() );
     conf.get( "lighting",                 enableLighting() );
     conf.get( "overlay_blending",         overlayBlending() );
@@ -293,8 +279,10 @@ MapNode::init()
     this->addChild(_terrainGroup);
 
     // make a group for the model layers.  This node is a PagingManager instead of a regular Group to allow PagedNode's to be used within the layers.
-    _layerNodes = new PagingManager;
-    _layerNodes->setName( "osgEarth::MapNode.layerNodes" );
+    auto pagingManager = new PagingManager();
+    pagingManager->setName("osgEarth::MapNode.layerNodes");
+    pagingManager->setMaxMergesPerFrame(options().terrain()->mergesPerFrame().value());
+    _layerNodes = pagingManager;
 
     this->addChild( _layerNodes );
 
@@ -686,7 +674,7 @@ MapNode::addExtension(Extension* extension, const osgDB::Options* options)
             }
         }
 
-        OE_INFO << LC << "Added extension \"" << extension->getName() << "\"\n";
+        //OE_INFO << LC << "Added extension \"" << extension->getName() << "\"\n";
     }
 }
 
@@ -847,8 +835,8 @@ MapNode::traverse( osg::NodeVisitor& nv )
             nv.getVisitorType() == nv.CULL_VISITOR ||
             nv.getVisitorType() == nv.UPDATE_VISITOR)
         {
-            static Threading::Mutex s_openMutex(OE_MUTEX_NAME);
-            Threading::ScopedMutexLock lock(s_openMutex);
+            static std::mutex s_openMutex;
+            std::lock_guard<std::mutex> lock(s_openMutex);
             if (!_isOpen)
             {
                 _isOpen = open();

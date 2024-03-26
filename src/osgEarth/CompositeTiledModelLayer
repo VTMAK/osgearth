@@ -1,0 +1,95 @@
+/* -*-c++-*- */
+/* osgEarth - Geospatial SDK for OpenSceneGraph
+ * Copyright 2020 Pelican Mapping
+ * http://osgearth.org
+ *
+ * osgEarth is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ */
+#ifndef OSGEARTH_COMPOSITE_TILED_MODEL_LAYER
+#define OSGEARTH_COMPOSITE_TILED_MODEL_LAYER 1
+
+#include <osgEarth/Common>
+#include <osgEarth/Layer>
+#include <osgEarth/TiledModelLayer>
+
+namespace osgEarth {
+    class Map;
+}
+
+namespace osgEarth
+{  
+    class OSGEARTH_EXPORT CompositeTiledModelLayer : public TiledModelLayer
+    {
+    public: // serialization
+        struct OSGEARTH_EXPORT Options : public TiledModelLayer::Options                         
+        {
+            META_LayerOptions(osgEarth, Options, TiledModelLayer::Options);            
+            OE_OPTION(ProfileOptions, profile);
+
+            OE_OPTION_VECTOR(ConfigOptions, layers);
+
+            Config getConfig() const override;
+            void fromConfig(const Config& conf);
+        };
+
+    public:
+        META_Layer(osgEarth, CompositeTiledModelLayer, Options, TiledModelLayer, CompositeTiledModel);
+
+        //! Tiling profile (required)
+        void setProfile(const Profile* profile);
+        const Profile* getProfile() const override { return _profile.get(); }
+
+        unsigned getMinLevel() const override;
+
+        //! Maximum level of detail to access
+        unsigned getMaxLevel() const override;
+
+    public: // Layer
+
+        //! opens the layer and returns the status
+        Status openImplementation() override;
+
+        //! Serialization
+        Config getConfig() const override;
+
+    public: // Layer
+        
+        //! called by the map when this layer is added
+        void addedToMap(const Map*) override;
+
+        //! called by the map when this layer is removed
+        void removedFromMap(const Map*) override;
+
+    protected: // TiledModelLayer
+
+        //! Creates an OSG node from a tile key.
+        osg::ref_ptr<osg::Node> createTileImplementation(const TileKey&, ProgressCallback*) const override;
+
+    protected:
+
+        virtual ~CompositeTiledModelLayer();
+
+    private:        
+        osg::ref_ptr<const Profile> _profile;
+        osg::observer_ptr< const Map > _map;
+
+        unsigned int _minLevel = 0;
+        unsigned int _maxLevel = 0;
+
+        std::vector< osg::ref_ptr< TiledModelLayer > > _layers;
+    };
+
+} // namespace osgEarth
+
+#endif // OSGEARTH_COMPOSITE_TILED_MODEL_LAYER

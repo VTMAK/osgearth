@@ -49,11 +49,11 @@ void FeatureFilter::addedToMap(const class Map*)
 #undef LC
 #define LC "[FeatureFilterChain] "
 
-FeatureFilterChain*
+FeatureFilterChain
 FeatureFilterChain::create(const std::vector<ConfigOptions>& filters, const osgDB::Options* readOptions)
 {
     // Create and initialize the filters.
-    FeatureFilterChain* chain = NULL;
+    FeatureFilterChain chain;
 
     for(unsigned i=0; i<filters.size(); ++i)
     {
@@ -61,21 +61,18 @@ FeatureFilterChain::create(const std::vector<ConfigOptions>& filters, const osgD
         FeatureFilter* filter = FeatureFilterRegistry::instance()->create( conf.getConfig(), 0L );
         if ( filter )
         {
-            if (chain == NULL)
-                chain = new FeatureFilterChain();
-
-            chain->push_back( filter );
+            chain.push_back( filter );
             Status s = filter->initialize(readOptions);
             if (s.isError())
             {
-                chain->_status = s;
+                chain._status = s;
                 OE_WARN << LC << "Filter problem: " << filter->getName() << " : " << s.message() << std::endl;
                 break;
             }
         }
     }
 
-    return chain;
+    return std::move(chain);
 }
 
 /********************************************************************************/
@@ -93,11 +90,11 @@ FeatureFilterRegistry::instance()
     // OK to be in the local scope since this gets called at static init time
     // by the OSGEARTH_REGISTER_ANNOTATION macro
     static FeatureFilterRegistry* s_singleton =0L;
-    static Threading::Mutex    s_singletonMutex(OE_MUTEX_NAME);
+    static std::mutex s_singletonMutex;
 
     if ( !s_singleton )
     {
-        Threading::ScopedMutexLock lock(s_singletonMutex);
+        std::lock_guard<std::mutex> lock(s_singletonMutex);
         if ( !s_singleton )
         {
             s_singleton = new FeatureFilterRegistry();

@@ -35,9 +35,11 @@
 
 namespace osgEarth
 {
+    class VirtualProgram;
+
     namespace Util
     {
-        class /*internal*/ ProgramRepo : public Threading::Mutexed<osg::Referenced>
+        class OSGEARTH_EXPORT ProgramRepo : public Threading::Mutexed<osg::Referenced>
         {
         public:
             // Program key (must be sorted set)
@@ -92,10 +94,23 @@ namespace osgEarth
 
             ~ProgramRepo();
 
+            ProgramMap copy() const {
+                lock();
+                auto result = _db;
+                unlock();
+                return result;
+            }
+
+            //! Repository for simple, reusable VP objects.
+            osg::ref_ptr<VirtualProgram> getOrCreateVirtualProgram(
+                const std::string& name,
+                std::function<VirtualProgram*()> create);
+
         private:
             mutable ProgramMap _db;
             bool _releaseUnusedPrograms;
             std::string _programBinaryCacheFolder;
+            std::unordered_map<std::string, osg::ref_ptr<VirtualProgram>> _virtualProgramLUT;
         };
     }
 }
@@ -283,7 +298,7 @@ namespace osgEarth
 
             bool _dirty;
 
-            static Threading::Mutex _cacheMutex;
+            static std::mutex _cacheMutex;
             using PolyShaderCache = std::map<
                 std::pair<std::string, std::string>,
                 osg::ref_ptr<PolyShader>>;
@@ -561,7 +576,7 @@ namespace osgEarth
         mutable osg::buffered_object<ApplyVars> _apply;
 
         // protects access to the data members, which may be accessed by other VPs in the state stack.
-        mutable Threading::Mutex _dataModelMutex;
+        mutable std::mutex _dataModelMutex;
         bool _useDataModelMutex = true;
 
         // The program cache holds an osg::Program instance for each collection of shaders

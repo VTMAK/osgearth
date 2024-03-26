@@ -124,8 +124,6 @@ namespace
 
 BiomeManager::BiomeManager() :
     _revision(0),
-    _refsAndRevision_mutex("BiomeManager.refsAndRevision(OE)"),
-    _residentData_mutex("BiomeManager.residentData(OE)"),
     _lodTransitionPixelScale(16.0f),
     _locked(false)
 {
@@ -139,7 +137,7 @@ BiomeManager::BiomeManager() :
 void
 BiomeManager::ref(const Biome* biome)
 {
-    ScopedMutexLock lock(_refsAndRevision_mutex);
+    std::lock_guard<std::mutex> lock(_refsAndRevision_mutex);
 
     auto item = _refs.emplace(biome, 0);
     ++item.first->second;
@@ -153,7 +151,7 @@ BiomeManager::ref(const Biome* biome)
 void
 BiomeManager::unref(const Biome* biome)
 {
-    ScopedMutexLock lock(_refsAndRevision_mutex);
+    std::lock_guard<std::mutex> lock(_refsAndRevision_mutex);
 
     auto iter = _refs.find(biome);
     
@@ -212,7 +210,7 @@ BiomeManager::reset()
     // reset the reference counts, and bump the revision so the
     // next call to update will remove any resident data
     {
-        ScopedMutexLock lock(_refsAndRevision_mutex);
+        std::lock_guard<std::mutex> lock(_refsAndRevision_mutex);
 
         for (auto& iter : _refs)
         {
@@ -245,7 +243,7 @@ BiomeManager::recalculateResidentBiomes()
 
     // Figure out which biomes we need to load and which we can discard.
     {
-        ScopedMutexLock lock(_refsAndRevision_mutex);
+        std::lock_guard<std::mutex> lock(_refsAndRevision_mutex);
 
         for (auto& ref : _refs)
         {
@@ -265,7 +263,7 @@ BiomeManager::recalculateResidentBiomes()
 
     // Update the resident biome data structure:
     {
-        ScopedMutexLock lock(_residentData_mutex);
+        std::lock_guard<std::mutex> lock(_residentData_mutex);
 
         // add biomes that might need adding
         for (auto biome : biomes_to_add)
@@ -304,7 +302,7 @@ BiomeManager::recalculateResidentBiomes()
 std::vector<const Biome*>
 BiomeManager::getActiveBiomes() const
 {
-    ScopedMutexLock lock(_refsAndRevision_mutex);
+    std::lock_guard<std::mutex> lock(_refsAndRevision_mutex);
 
     std::vector<const Biome*> result;
 
@@ -321,7 +319,7 @@ BiomeManager::getResidentAssets() const
 {
     std::vector<const ModelAsset*> result;
 
-    ScopedMutexLock lock(_residentData_mutex);
+    std::lock_guard<std::mutex> lock(_residentData_mutex);
 
     result.reserve(_residentModelAssets.size());
 
@@ -418,13 +416,12 @@ namespace
 }
 
 void
-BiomeManager::materializeNewAssets(
-    const osgDB::Options* readOptions)
+BiomeManager::materializeNewAssets(const osgDB::Options* readOptions)
 {
     OE_PROFILING_ZONE;
 
     // exclusive access to the resident dataset
-    ScopedMutexLock lock(_residentData_mutex);
+    std::lock_guard<std::mutex> lock(_residentData_mutex);
 
     // Some caches to avoid duplicating data
     std::map<URI, ResidentModelAsset::Ptr> texcache;
@@ -432,6 +429,7 @@ BiomeManager::materializeNewAssets(
 
     // Factory for loading chonk data. It will use our texture arena.
     ChonkFactory factory(_textures.get());
+    factory.setGetOrCreateFunction(ChonkFactory::getWeakTextureCacheFunction(_texturesCache, _texturesCacheMutex));
 
     // Clear out each biome's instances so we can start fresh.
     // This is a low-cost operation since anything we can re-use
@@ -770,7 +768,10 @@ BiomeManager::materializeNewAssets(
                     float near_pixel_scale = FLT_MAX;
 
                     if (residentAsset->chonk() == nullptr)
+                    {
                         residentAsset->chonk() = Chonk::create();
+                        residentAsset->chonk()->name() = residentAsset->assetDef()->name();
+                    }
 
 #if 0
                     // FOR DEBUGGING - ADD A CHONK THAT VISUALIZES THE NORMALS
@@ -808,7 +809,10 @@ BiomeManager::materializeNewAssets(
                         FLT_MAX;
 
                     if (residentAsset->chonk() == nullptr)
+                    {
                         residentAsset->chonk() = Chonk::create();
+                        residentAsset->chonk()->name() = residentAsset->assetDef()->name();
+                    }
 
                     residentAsset->chonk()->add(
                         residentAsset->impostor().get(),
@@ -837,7 +841,7 @@ BiomeManager::setCreateImpostorFunction(
     const std::string& group,
     BiomeManager::CreateImpostorFunction func)
 {
-    ScopedMutexLock lock(_residentData_mutex);
+    std::lock_guard<std::mutex> lock(_residentData_mutex);
     _createImpostorFunctions[group] = func;
 }
 

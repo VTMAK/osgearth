@@ -18,13 +18,13 @@
  */
 #include "WindLayer"
 #include "Math"
-#include <osgEarth/Shaders>
-#include <osgEarth/StringUtils>
-#include <osgEarth/GeoTransform>
-#include <osgEarth/Registry>
-#include <osgEarth/Capabilities>
-#include <osgEarth/GLUtils>
-#include <osgEarth/TerrainEngineNode>
+#include "NoiseTextureFactory"
+#include "Shaders"
+#include "StringUtils"
+#include "Registry"
+#include "Capabilities"
+#include "GLUtils"
+#include "TerrainEngineNode"
 #include <osg/BindImageTexture>
 #include <osg/Texture3D>
 #include <osg/Program>
@@ -106,19 +106,19 @@ namespace
     {
         CameraState& get(const osg::Camera* camera)
         {
-            ScopedMutexLock lock(mutex());
+            std::lock_guard<std::mutex> lock(mutex());
             return (*this)[camera];
         }
 
         void for_each(const std::function<void(CameraState&)>& func) {
-            ScopedMutexLock lock(mutex());
+            std::lock_guard<std::mutex> lock(mutex());
             for (auto& i : *this) {
                 func(i.second);
             }
         }
 
         void for_each(const std::function<void(const CameraState&)>& func) const {
-            ScopedMutexLock lock(mutex());
+            std::lock_guard<std::mutex> lock(mutex());
             for (auto& i : *this) {
                 func(i.second);
             }
@@ -130,7 +130,7 @@ namespace
     // custom cull callback for the wind drawable
     struct WindStateCuller : public osg::Drawable::CullCallback
     {
-        bool cull(osg::NodeVisitor* nv, osg::Drawable* drawable, osg::RenderInfo* renderInfo) const;
+        bool cull(osg::NodeVisitor* nv, osg::Drawable* drawable, osg::RenderInfo* renderInfo) const override;
     };
 
     //! Drawable that runs the compute shader to populate our wind texture.
@@ -139,6 +139,9 @@ namespace
     public:
         WindDrawable(const osgDB::Options* readOptions);
 
+        void accept(osg::NodeVisitor& nv) override {
+            osg::Drawable::accept(nv);
+        }
         void setupPerCameraState(const osg::Camera* camera);
         void streamDataToGPU(osg::RenderInfo& ri, GLObjects& globjects) const;
         void updateBuffers(CameraState&, osgUtil::CullVisitor*, const SpatialReference* srs);
@@ -149,6 +152,7 @@ namespace
 
         osg::ref_ptr<const osgDB::Options> _readOptions;
         osg::ref_ptr<osg::Program> _computeProgram;
+        osg::ref_ptr<osg::Texture> _noiseTexture;
         std::vector<osg::ref_ptr<Wind> > _winds;
         mutable osg::buffered_object<GLObjects> _globjects;
         mutable CameraStates _cameraState;
@@ -172,7 +176,7 @@ namespace
 
     WindDrawable::WindDrawable(const osgDB::Options* readOptions)
     {
-        _cameraState.setName(OE_MUTEX_NAME);
+        OE_SOFT_ASSERT(sizeof(WindData) % 16 == 0, "struct WindData is not 16-byte aligned; expect chaos");
 
         // Always run the shader.
         setCullingActive(false);
@@ -192,6 +196,10 @@ namespace
         _computeProgram->addShader(computeShader);
 
         setCullCallback(new WindStateCuller());
+
+        // simplex noise texture for wind speed variation
+        NoiseTextureFactory ntf;
+        _noiseTexture = ntf.create(256, 4);
     }
 
     void WindDrawable::setupPerCameraState(const osg::Camera* camera)
@@ -222,6 +230,10 @@ namespace
         cs._computeStateSet->addUniform(cs._texToViewMatrix.get());
 
         cs._computeStateSet->setRenderBinDetails(-90210, "RenderBin"); // necessary? probably not
+
+        // expose the noise texture to the compute shader
+        cs._computeStateSet->addUniform(new osg::Uniform("oe_noise_tex", 1));
+        cs._computeStateSet->setTextureAttribute(1, _noiseTexture.get(), osg::StateAttribute::ON);
 
 
         // Shared stateset using during the cull traversal
@@ -259,10 +271,7 @@ namespace
         }
     }
 
-    void WindDrawable::updateBuffers(
-        CameraState& cs,
-        osgUtil::CullVisitor* cv,
-        const SpatialReference* srs)
+    void WindDrawable::updateBuffers(CameraState& cs, osgUtil::CullVisitor* cv, const SpatialReference* srs)
     {
         if (cs._numWindsAllocated < _winds.size()+1)
         {
@@ -281,7 +290,8 @@ namespace
         const osg::Matrix ivm = cv->getCurrentCamera()->getInverseViewMatrix();
         const SpatialReference* worldSRS = srs->isGeographic() ? srs->getGeocentricSRS() : srs;
         osg::Matrix local2world;
-        worldSRS->createLocalToWorld(osg::Vec3d() * ivm, local2world);
+        auto eyeWorld = osg::Vec3d() * ivm;
+        worldSRS->createLocalToWorld(eyeWorld, local2world);
 
         size_t i;
         for(i=0; i<_winds.size(); ++i)
@@ -307,7 +317,7 @@ namespace
 
                 // transform it from local tangent space to view space:
                 dir = osg::Matrixd::transform3x3(dir, local2world * mvm);
-
+                
                 dir.normalize();
 
                 cs._windData[i].direction[0] = dir.x();
@@ -507,6 +517,8 @@ WindLayer::openImplementation()
         return Status(Status::ResourceUnavailable, "WindLayer requires GL 4.3+");
     }
 
+    _drawable = new WindDrawable(getReadOptions());
+
     return Layer::openImplementation();
 }
 
@@ -528,8 +540,10 @@ WindLayer::prepareForRendering(TerrainEngine* engine)
     Layer::prepareForRendering(engine);
 
     // Create the wind drawable that will provide a wind texture
-    WindDrawable* wd = new WindDrawable(getReadOptions());
-    _drawable = wd;
+    //WindDrawable* wd = new WindDrawable(getReadOptions());
+    //_drawable = wd;
+    WindDrawable* wd = dynamic_cast<WindDrawable*>(_drawable.get());
+    OE_SOFT_ASSERT_AND_RETURN(wd, void());
 
     // texture image unit for the shared wind LUT
     engine->getResources()->reserveTextureImageUnit(wd->_unitReservation, "WindLayer");

@@ -25,8 +25,11 @@
 
 using namespace osgEarth;
 using namespace osgEarth::Util;
-using namespace osgEarth::Util::Controls;
 using namespace osgEarth::Viewpoints;
+
+#ifdef OSGEARTH_HAVE_CONTROLS_API
+using namespace osgEarth::Util::Controls;
+#endif
 
 #define LC "[ViewpointsExtension] "
 
@@ -51,15 +54,38 @@ namespace
 
     struct ViewpointsHandler : public osgGA::GUIEventHandler
     {
-        ViewpointsHandler(const std::vector<Viewpoint>& viewpoints, float t)
-            : _viewpoints( viewpoints ), _transitionTime(t), _autoRunDelay(0.0f), _autoRunIndex(0), _count(0), _homeIndex(-1)
+        std::vector<Viewpoint> _viewpoints;
+        optional<Viewpoint>    _flyTo;
+        float                  _transitionTime = 0.0f;
+        float                  _autoRunDelay = 0.0f;
+        osg::Timer_t           _autoRunStartWaitTime;
+        int                    _autoRunIndex = 0;
+        int                    _homeIndex = -1;
+        int                    _count = 0;
+        bool                   _mapKeys = true;
+
+        ViewpointsHandler(const std::vector<Viewpoint>& viewpoints, float t, bool mapKeys)
+            : _viewpoints( viewpoints ), _transitionTime(t), _mapKeys(mapKeys)
         {
             _autoRunStartWaitTime = osg::Timer::instance()->tick();
         }
 
         bool handle( const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa )
         {
-            if ( ea.getEventType() == ea.KEYDOWN )
+            if (_count == 0 && _homeIndex >= 0 && _homeIndex < _viewpoints.size())
+            {
+                EarthManipulator* manip = getManip(aa);
+                if (manip)
+                {
+                    flyToViewpoint(manip, _viewpoints[_homeIndex], _transitionTime);
+                    ++_count;
+                }
+            }
+
+            if (ea.getHandled())
+                return false;
+
+            if ( _mapKeys && ea.getEventType() == ea.KEYDOWN )
             {
                 if ( !_viewpoints.empty() && _autoRunDelay <= 0.0f )
                 {
@@ -111,19 +137,6 @@ namespace
                         _autoRunStartWaitTime = now;
                     }
                 }
-
-                else if (_count == 0 && _homeIndex >= 0)
-                {
-                    if (_homeIndex < _viewpoints.size())
-                    {
-                        EarthManipulator* manip = getManip(aa);
-                        if (manip)
-                        {
-                            flyToViewpoint(manip, _viewpoints[_homeIndex], _transitionTime);
-                            ++_count;
-                        }
-                    }
-                }
             }
 
             return false;
@@ -139,18 +152,10 @@ namespace
         {
             _autoRunDelay = t;
         }
-
-        std::vector<Viewpoint> _viewpoints;
-        optional<Viewpoint>    _flyTo;
-        float                  _transitionTime;
-        float                  _autoRunDelay;
-        osg::Timer_t           _autoRunStartWaitTime;
-        int                    _autoRunIndex;
-        int                    _homeIndex;
-        int                    _count;
     };
 
 
+#ifdef OSGEARTH_HAVE_CONTROLS_API
     // flies to a viewpoint in response to control event (click)
     struct ClickViewpointHandler : public ControlEventHandler
     {
@@ -197,6 +202,7 @@ namespace
 
         return grid;
     }
+#endif 
 }
 
 //.........................................................................
@@ -214,6 +220,7 @@ ConfigOptions( options )
     const Config& viewpointsConf = options.getConfig();
     float t = viewpointsConf.value("time", VP_MAX_DURATION);
     int home = viewpointsConf.value("home", (int)-1);
+    bool mapKeys = viewpointsConf.value("map_keys", true) == true;
 
     std::vector<Viewpoint> viewpoints;
 
@@ -228,7 +235,7 @@ ConfigOptions( options )
 
     OE_INFO << LC << "Read " << viewpoints.size() << " viewpoints\n";
 
-    ViewpointsHandler* handler = new ViewpointsHandler(viewpoints, t);
+    ViewpointsHandler* handler = new ViewpointsHandler(viewpoints, t, mapKeys);
     handler->_homeIndex = home;
 
     if (viewpointsConf.hasValue("autorun"))
@@ -273,6 +280,8 @@ ViewpointsExtension::disconnect(osg::View* view)
     return true;
 }
 
+
+#ifdef OSGEARTH_HAVE_CONTROLS_API
 bool
 ViewpointsExtension::connect(Control* control)
 {
@@ -296,3 +305,4 @@ ViewpointsExtension::disconnect(Control* control)
     // TODO: remove the UI
     return true;
 }
+#endif

@@ -16,9 +16,9 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-
-#include <osgEarth/Geoid>
-#include <osgEarth/HeightFieldUtils>
+#include "Geoid"
+#include "HeightFieldUtils"
+#include "Notify"
 
 #define LC "[Geoid] "
 
@@ -26,8 +26,8 @@ using namespace osgEarth;
 
 
 Geoid::Geoid() :
-_units( Units::METERS ),
-_valid( false )
+    _units(Units::METERS),
+    _valid(false)
 {
     //nop
 }
@@ -54,7 +54,7 @@ Geoid::setHeightField( osg::HeightField* hf )
 }
 
 void
-Geoid::setUnits( const Units& units ) 
+Geoid::setUnits(const UnitsType& units)
 {
     _units = units;
     validate();
