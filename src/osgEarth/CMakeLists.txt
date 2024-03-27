@@ -180,6 +180,7 @@ SET(LIB_PUBLIC_HEADERS
     Expression
     Extension
     ExtrudeGeometryFilter
+    ExtrudeGeometryFilterNode
     ExtrusionSymbol
     FadeEffect
     Feature
@@ -372,6 +373,7 @@ SET(LIB_PUBLIC_HEADERS
     StyleSelector
     StyleSheet
     SubstituteModelFilter
+    SubstituteModelFilterNode
     Symbol
     Tags
     TDTiles
@@ -599,6 +601,7 @@ set(TARGET_SRC
     Expression.cpp
     Extension.cpp
     ExtrudeGeometryFilter.cpp
+    ExtrudeGeometryFilterNode.cpp
     ExtrusionSymbol.cpp
     FadeEffect.cpp
     Feature.cpp
@@ -769,6 +772,7 @@ set(TARGET_SRC
     StyleSelector.cpp
     StyleSheet.cpp
     SubstituteModelFilter.cpp
+    SubstituteModelFilterNode.cpp
     Symbol.cpp
     TDTiles.cpp
     Terrain.cpp
