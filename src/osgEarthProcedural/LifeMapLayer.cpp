@@ -400,32 +400,32 @@ LifeMapLayer::getUseNoise() const
 #define NOISE_LEVELS 2
 
 GeoImage
-LifeMapLayer::createImageImplementation(const TileKey& key, ProgressCallback* progress) const
+LifeMapLayer::createImageImplementation(
+    const TileKey& key,
+    ProgressCallback* progress) const
 {
     OE_PROFILING_ZONE;
 
     osg::ref_ptr<const Map> map;
-    _map.lock(map);
+    if (!_map.lock(map))
+        return GeoImage::INVALID;
 
     // collect the elevation data:
     osg::ref_ptr<ElevationTexture> elevTile;
-    if (getTerrainWeight() > 0.0f && _map.valid())
-    {
-        ElevationPool* ep = map->getElevationPool();
-        ep->getTile(key, true, elevTile, &_workingSet, progress);
+    ElevationPool* ep = map->getElevationPool();
+    ep->getTile(key, true, elevTile, &_workingSet, progress);
 
-        // ensure we have a normal map for slopes and curvatures:
-        if (elevTile.valid() && getTerrainWeight() > 0.0f)
-        {
-            elevTile->generateNormalMap(map.get(), &_workingSet, progress);
-        }
+    // ensure we have a normal map for slopes and curvatures:
+    if (elevTile.valid() && getTerrainWeight() > 0.0f)
+    {
+        elevTile->generateNormalMap(map.get(), &_workingSet, progress);
     }
 
     GeoExtent extent = key.getExtent();
 
     // set up the land cover data metatiler:
     MetaTile<GeoCoverage<LandCoverSample>> landcover;
-    if (getLandCoverWeight() > 0.0f && _landCoverFactory)
+    if (_landCoverFactory)
     {
         auto creator = [&](const TileKey& key, ProgressCallback* p) {
             return _landCoverFactory->createCoverage(key, p);
@@ -523,16 +523,23 @@ LifeMapLayer::createImageImplementation(const TileKey& key, ProgressCallback* pr
     osg::Vec3 normal;
     float slope;
     const osg::Vec3 up(0, 0, 1);
+
     std::string lu_id;
     osg::Vec4f hsl;
+
     osg::Vec2d noiseCoords[NOISE_LEVELS];
     osg::Vec4 noise[NOISE_LEVELS];
     const unsigned noiseLOD[NOISE_LEVELS] = { 10u, 14u };
+    //    12u, 13u, 14u, 15u //, 16u // 0u, 9u, 13u, 16u
+    //};
     const unsigned noisePattern[NOISE_LEVELS] = { RANDOM, CLUMPY };
+        //RANDOM, SMOOTH, CLUMPY, RANDOM2 };
     
     CoordScaler coordScalers[NOISE_LEVELS] = {
         CoordScaler(key.getProfile(), key.getLOD(), noiseLOD[0]),
-        CoordScaler(key.getProfile(), key.getLOD(), noiseLOD[1])
+        CoordScaler(key.getProfile(), key.getLOD(), noiseLOD[1]) //,
+        //CoordScaler(key.getProfile(), key.getLOD(), noiseLOD[2]),
+        //CoordScaler(key.getProfile(), key.getLOD(), noiseLOD[3])
     };
 
     ImageUtils::PixelReader noiseSampler(_noiseFunc.get());
@@ -563,7 +570,7 @@ LifeMapLayer::createImageImplementation(const TileKey& key, ProgressCallback* pr
         }
     }
 
-    std::minstd_rand gen(key.hash()); // TODO: check that this is actually deterministic
+    std::minstd_rand gen(key.hash());
 
     GeoImage result(image.get(), extent);
 
@@ -729,7 +736,7 @@ LifeMapLayer::createImageImplementation(const TileKey& key, ProgressCallback* pr
                 }
 
                 // COLOR CONTRIBUTION:
-                if (color.valid() && getColorWeight() > 0.0f)
+                if (color.valid())
                 {
                     double uu = u * color_matrix(0, 0) + color_matrix(3, 0);
                     double vv = v * color_matrix(1, 1) + color_matrix(3, 1);
@@ -914,10 +921,10 @@ LifeMapLayer::applyPostLayer(const GeoImage& canvas, const TileKey& key, Layer* 
 
             const auto& extent = canvas.getExtent();
 
-            for(unsigned t=0; t<read_canvas.t(); ++t)
+            for (unsigned t = 0; t < read_canvas.t(); ++t)
             {
                 double v = (double)t / (double)read_canvas.t();
-                for(unsigned s = 0; s < read_canvas.s(); ++s)
+                for (unsigned s = 0; s < read_canvas.s(); ++s)
                 {
                     double u = (double)s / (double)read_canvas.s();
 

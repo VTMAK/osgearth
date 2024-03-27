@@ -16,9 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-
-#ifndef OSGEARTH_IMAGE_TERRAIN_LAYER_H
-#define OSGEARTH_IMAGE_TERRAIN_LAYER_H 1
+#pragma once
 
 #include <osgEarth/Common>
 #include <osgEarth/Config>
@@ -209,9 +207,8 @@ namespace osgEarth
 
         //! Subclass overrides this to generate image data for the key.
         //! The key will always be in the same profile as the layer.
-        virtual GeoImage createImageImplementation(const TileKey& key, ProgressCallback* progress) const {
-            return createImageImplementation(GeoImage::INVALID, key, progress);
-        }
+        virtual GeoImage createImageImplementation(const TileKey&, ProgressCallback* progress) const
+            { return GeoImage::INVALID; }
 
     protected:
 
@@ -240,12 +237,6 @@ namespace osgEarth
             const TileKey& key,
             ProgressCallback* progress) const { }
 
-        virtual GeoImage applyPostLayer(
-            const GeoImage& canvas,
-            const TileKey& key,
-            Layer* postLayer,
-            ProgressCallback* progress) const;
-
     protected: // Layer
 
         virtual void init() override;
@@ -259,6 +250,13 @@ namespace osgEarth
         //! Configure the layer to create textures via createTexture instead of
         //! using a createImage driver
         void setUseCreateTexture();
+
+        //! Apply a post-processing layers to the image
+        virtual GeoImage applyPostLayer(
+            const GeoImage& image,
+            const TileKey& key,
+            Layer* postLayer,
+            ProgressCallback* progress) const;
 
         osg::ref_ptr<osg::Image> _emptyImage;
 
@@ -340,6 +338,3 @@ namespace osgEarth
 } // namespace osgEarth
 
 OSGEARTH_SPECIALIZE_CONFIG(osgEarth::ImageLayer::Options);
-
-
-#endif // OSGEARTH_IMAGE_TERRAIN_LAYER_H
