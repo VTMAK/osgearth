@@ -43,8 +43,8 @@ namespace osgEarth { namespace Procedural
         {
         public:
             META_LayerOptions(osgEarthProcedural, Options, VisibleLayer::Options);
-            OE_OPTION_LAYER(BiomeLayer, biomeLayer);
-            OE_OPTION_LAYER(LifeMapLayer, lifeMapLayer);
+            //OE_OPTION_LAYER(BiomeLayer, biomeLayer);
+            //OE_OPTION_LAYER(LifeMapLayer, lifeMapLayer);
             OE_OPTION(int, numLevels, 1);
             OE_OPTION(bool, useHexTiler, true);
             OE_OPTION(float, normalMapPower, 1.0f);
@@ -59,9 +59,9 @@ namespace osgEarth { namespace Procedural
     public:
         META_Layer(osgEarthProcedural, TextureSplattingLayer, Options, VisibleLayer, SplatImage);
 
-        BiomeLayer* getBiomeLayer() const;
+        //BiomeLayer* getBiomeLayer() const;
 
-        LifeMapLayer* getLifeMapLayer() const;
+        //LifeMapLayer* getLifeMapLayer() const;
 
         //! Whether to use a shader that obfuscates the repeating textures 
         //! found in texture splatting. Incurs a small GPU performance penalty.
@@ -119,12 +119,12 @@ namespace osgEarth { namespace Procedural
         Future<Materials::Ptr> _materialsJob;
         Materials::Ptr _materials;
         TextureImageUnitReservation _noiseUnit;
+        osg::observer_ptr<BiomeLayer> _biomeLayer_weak;
+        osg::observer_ptr<LifeMapLayer> _lifeMapLayer_weak;
 
         void buildStateSets();
 
-        Materials::Ptr loadMaterials(
-            const AssetCatalog&,
-            Cancelable*) const;
+        Materials::Ptr loadMaterials(const AssetCatalog&, Cancelable*) const;
     };
 } } // namespace osgEarth::Procedural
 
