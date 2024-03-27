@@ -338,29 +338,6 @@ SubstituteModelFilter::process(const FeatureList&           features,
         {
             calculateGeometryHeading(input, context);
         }
-		// evaluate the instance URI expression:
-        std::string resourceKey;
-        if (symbol->url().isSet())
-        {
-            resourceKey = input->eval(uriEx, &context);
-        }
-        else if (modelSymbol && modelSymbol->getModel())
-        {
-            resourceKey = Stringify() << modelSymbol->getModel();
-        }
-        else if (iconSymbol && iconSymbol->getImage())
-        {
-            resourceKey = Stringify() << iconSymbol->getImage();
-        }
-        URI instanceURI;
-        if (symbol->url().isSet())
-        {
-            instanceURI = uriCache[resourceKey];
-            if (instanceURI.empty()) // Create a map, to reuse URI's, since they take a long time to create
-            {
-                instanceURI = URI(resourceKey, uriEx.uriContext());
-            }
-        }
 
         // evaluate the instance URI expression:
         std::string resourceKey;
