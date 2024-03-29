@@ -168,7 +168,9 @@ AerodromeRenderer::apply(LightIndicatorNode& node)
 void
 AerodromeRenderer::apply(LinearFeatureNode& node)
 {
-    osg::ref_ptr<osgEarth::Feature> feature = osg::clone(node.getFeature(), osg::CopyOp::DEEP_COPY_ALL);
+    OE_SOFT_ASSERT_AND_RETURN(node.getFeature() != nullptr, void());
+
+    osg::ref_ptr<osgEarth::Feature> feature = new Feature(*node.getFeature()); // , osg::CopyOp::DEEP_COPY_ALL);
     osg::ref_ptr<osg::Node> geom;
 
     GeometryIterator iter( feature->getGeometry() );
@@ -1120,7 +1122,7 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Styl
         go.shaderPolicy() = osgEarth::SHADERPOLICY_INHERIT;
 
         GeometryCompiler compiler( go );
-        osg::ref_ptr< Feature > clone = new Feature(*feature, osg::CopyOp::DEEP_COPY_ALL);
+        osg::ref_ptr< Feature > clone = new Feature(*feature); // , osg::CopyOp::DEEP_COPY_ALL);
         return compiler.compile( clone.get(), (clone->style().isSet() ? *clone->style() : style), context );
     }
 

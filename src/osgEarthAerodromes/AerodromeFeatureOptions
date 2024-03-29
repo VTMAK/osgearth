@@ -135,22 +135,14 @@ namespace osgEarth { namespace Aerodrome
     class ModelOptions : public ConfigOptions
     {
     public:
-        /** ICAO code attribute name */
-        optional<URI>& url() { return _imageURI; }
-        const optional<URI>& url() const { return _imageURI; }    
-
-        optional<float>& scale() { return _scale; }
-        const optional<float>& scale() const { return _scale; }
-
-        optional<FeatureSelectorOptions>& selector() { return _selector; }
-        const optional<FeatureSelectorOptions>& selector() const { return _selector; }
-
-        optional<std::string>& headingAttr() { return _headingAttr; }
-        const optional<std::string>& headingAttr() const { return _headingAttr; }
+        OE_OPTION(URI, url);
+        OE_OPTION(float, scale, 1.0f);
+        OE_OPTION(FeatureSelectorOptions, selector);
+        OE_OPTION(std::string, headingAttr, "true_headi");
 
     public:
         ModelOptions( const ConfigOptions& opt =ConfigOptions() ) :
-          _scale(1.0f), _headingAttr("true_headi", "true_headi"), ConfigOptions( opt )
+          ConfigOptions( opt )
         {            
             fromConfig( _conf );
         }
@@ -160,7 +152,7 @@ namespace osgEarth { namespace Aerodrome
     public:
         Config getConfig() const {
             Config conf = ConfigOptions::getConfig();
-            conf.set( "url", _imageURI );
+            conf.set( "url", _url );
             conf.set( "scale", _scale );
             conf.set( "selector", _selector );
             conf.set( "heading_attr", _headingAttr );
@@ -175,16 +167,11 @@ namespace osgEarth { namespace Aerodrome
 
     private:
         void fromConfig( const Config& conf ) {
-            conf.get( "url", _imageURI );
+            conf.get( "url", _url);
             conf.get( "scale", _scale );
             conf.get( "selector", _selector );
             conf.get( "heading_attr", _headingAttr );
         }
-     
-        optional<URI>                    _imageURI;
-        optional<float>                  _scale;
-        optional<FeatureSelectorOptions> _selector;
-        optional<std::string>            _headingAttr;
     };
 
     typedef std::list<class ModelOptions> ModelOptionsSet;
@@ -200,11 +187,8 @@ namespace osgEarth { namespace Aerodrome
     {
     public:
         /** ICAO code attribute name */
-        optional<std::string>& icaoAttr() { return _icaoAttr; }
-        const optional<std::string>& icaoAttr() const { return _icaoAttr; }    
-
-        optional<TextureOptions>& textureOptions() { return _textureOptions; }
-        const optional<TextureOptions>& textureOptions() const { return _textureOptions; }
+        OE_OPTION(std::string, icaoAttr, "apt_icao");
+        OE_OPTION(TextureOptions, textureOptions);
 
         OE_OPTION_LAYER(FeatureSource, featureSource);
 
@@ -213,8 +197,7 @@ namespace osgEarth { namespace Aerodrome
 
     public:
         AerodromeFeatureOptions( const ConfigOptions& opt =ConfigOptions() ) :
-          ConfigOptions( opt ),
-          _icaoAttr("apt_icao")
+          ConfigOptions( opt )
         {            
             fromConfig( _conf );
         }
@@ -253,9 +236,6 @@ namespace osgEarth { namespace Aerodrome
         }
 
     private:
-     
-        optional<std::string> _icaoAttr;
-        optional<TextureOptions> _textureOptions;
         ModelOptionsSet _modelOptions;
     };
 

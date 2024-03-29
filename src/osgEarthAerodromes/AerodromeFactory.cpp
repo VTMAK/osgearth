@@ -263,7 +263,7 @@ void AerodromeFactory::createFeatureNodes(P featureOpts, AerodromeNode* aerodrom
     Query query;
     query.expression() = s_makeQuery(featureOpts.icaoAttr().value(), aerodrome->icao());
 
-    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query, 0L);
+    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query);
     while ( cursor.valid() && cursor->hasMore() )
     {
         Feature* f = cursor->nextFeature();
@@ -321,7 +321,7 @@ void AerodromeFactory::createMergedFeatureNodes(P featureOpts, AerodromeNode* ae
 
     osg::ref_ptr<Feature> newFeature = 0L;
 
-    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query, 0L);
+    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query);
     while ( cursor.valid() && cursor->hasMore() )
     {
         Feature* f = cursor->nextFeature();
@@ -390,7 +390,7 @@ void AerodromeFactory::createBoundaryNodes(BoundaryFeatureOptions boundaryOpts, 
     Query query;
     query.expression() = s_makeQuery(boundaryOpts.icaoAttr().value(), aerodrome->icao());
 
-    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query, 0L);
+    osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(query);
     while ( cursor.valid() && cursor->hasMore() )
     {
         Feature* f = cursor->nextFeature();
@@ -572,7 +572,7 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
         }
         FeatureSource* featureSource = i->featureSource().getLayer();
 
-        osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor(0L);
+        osg::ref_ptr<FeatureCursor> cursor = featureSource->createFeatureCursor();
         while ( cursor.valid() && cursor->hasMore() )
         {
             Feature* f = cursor->nextFeature();
