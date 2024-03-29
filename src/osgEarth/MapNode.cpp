@@ -974,6 +974,8 @@ MapNode::releaseGLObjects(osg::State* state) const
 
     ChonkRenderBin::releaseSharedGLObjects(state);
 
+    GLObjectPool::releaseGLObjects(state);
+
     osg::Group::releaseGLObjects(state);
 }
 
