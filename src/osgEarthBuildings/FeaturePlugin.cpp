@@ -85,7 +85,7 @@ namespace osgEarth { namespace Buildings
             }
 
             // Create a cursor to iterator over the feature data:
-            osg::ref_ptr<FeatureCursor> cursor = fs->createFeatureCursor(Query(), NULL);
+            osg::ref_ptr<FeatureCursor> cursor = fs->createFeatureCursor();
             if ( !cursor.valid() )
             {
                 OE_WARN << LC << "Failed to open a cursor from input file\n";

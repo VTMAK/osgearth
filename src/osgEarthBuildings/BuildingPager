@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_PAGER_H
-#define OSGEARTH_BUILDINGS_BUILDING_PAGER_H
+#pragma once
 
 #include "Common"
 #include "BuildingFactory"
@@ -55,7 +54,7 @@ namespace osgEarth { namespace Buildings
         void setSession(Session* session);
 
         /** Source from which to query features */
-        void setFeatureSource(FeatureSource* features);
+        void setFeatureSource(FeatureSource* features, FeatureFilterChain&& filters);
 
         /** Build catalog to use for creating building templates */
         void setCatalog(BuildingCatalog* catalog);
@@ -101,14 +100,15 @@ namespace osgEarth { namespace Buildings
             void resizeGLObjectBuffers(unsigned) override;
         };
 
-        osg::ref_ptr<Session>             _session;
-        osg::ref_ptr<FeatureSource>       _features;
-        osg::ref_ptr<BuildingCatalog>     _catalog;
-        osg::ref_ptr<BuildingCompiler>    _compiler;
-        CompilerSettings                  _compilerSettings;
-        FeatureIndexBuilder*              _index;
+        osg::ref_ptr<Session> _session;
+        osg::ref_ptr<FeatureSource> _features;
+        FeatureFilterChain _filters;
+        osg::ref_ptr<BuildingCatalog> _catalog;
+        osg::ref_ptr<BuildingCompiler> _compiler;
+        CompilerSettings _compilerSettings;
+        FeatureIndexBuilder* _index = nullptr;
         osg::observer_ptr<ElevationPool>  _elevationPool;
-        bool                              _profile;
+        bool _profile;
         osg::ref_ptr<CacheManager> _caches;
         FilterUsage _filterUsage;
         bool _verboseWarnings;
@@ -127,4 +127,3 @@ namespace osgEarth { namespace Buildings
 
 } } // namespace
 
-#endif // OSGEARTH_BUILDINGS_BUILDING_PAGER_H

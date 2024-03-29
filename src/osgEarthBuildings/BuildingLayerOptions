@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_OPTIONS_H
-#define OSGEARTH_BUILDINGS_BUILDING_OPTIONS_H
+#pragma once
 
 #include "Common"
 #include "CompilerSettings"
@@ -79,6 +78,7 @@ namespace osgEarth { namespace Buildings
 
         OE_OPTION_LAYER(StyleSheet, styleSheet);
         OE_OPTION_LAYER(FeatureSource, featureSource);
+        OE_OPTION_VECTOR(ConfigOptions, filters);
 
     public:
         BuildingLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : TiledModelLayer::Options( opt )
@@ -92,6 +92,7 @@ namespace osgEarth { namespace Buildings
             _verboseWarnings.init(false);
             _clusterCulling.init(false);
             useNVGL().setDefault(false);
+
             fromConfig( _conf );
         }
 
@@ -111,6 +112,15 @@ namespace osgEarth { namespace Buildings
             styleSheet().set(conf, "styles");
             featureSource().set(conf, "features");
             conf.set("nvgl", useNVGL());
+
+            if (filters().empty() == false)
+            {
+                Config temp;
+                for (unsigned i = 0; i < filters().size(); ++i)
+                    temp.add(filters()[i].getConfig());
+                conf.set("filters", temp);
+            }
+
             return conf;
         }
 
@@ -136,6 +146,10 @@ namespace osgEarth { namespace Buildings
             styleSheet().get(conf, "styles");
             featureSource().get(conf, "features");
             conf.get("nvgl", useNVGL());
+
+            const Config& filtersConf = conf.child("filters");
+            for(auto& i : filtersConf.children())
+                filters().push_back(ConfigOptions(i));
         }
 
         optional<URI> _buildingCatalogURI;
@@ -152,4 +166,3 @@ namespace osgEarth { namespace Buildings
     };
 } }
 
-#endif // OSGEARTH_BUILDINGS_BUILDING_OPTIONS_H

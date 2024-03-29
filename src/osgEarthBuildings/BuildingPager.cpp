@@ -272,9 +272,10 @@ BuildingPager::setSession(Session* session)
 }
 
 void
-BuildingPager::setFeatureSource(FeatureSource* features)
+BuildingPager::setFeatureSource(FeatureSource* features, FeatureFilterChain&& filters)
 {
     _features = features;
+    _filters = filters;
 }
 
 void
@@ -415,10 +416,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
         const Style* style = _session->styles() ? _session->styles()->getStyle(styleName) : nullptr;
 
         // Create a cursor to iterator over the feature data:
-        Query query;
-        query.tileKey() = tileKey;
-        
-        osg::ref_ptr<FeatureCursor> cursor = _features->createFeatureCursor(query, progress);
+        osg::ref_ptr<FeatureCursor> cursor = _features->createFeatureCursor(tileKey, _filters, nullptr, progress);
         if (cursor.valid() && cursor->hasMore() && !canceled)
         {
            osg::CVSpan UpdateTick(series, 4, "buildFromScratch");
@@ -433,7 +431,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
             ElevationPool::Envelope envelope;
 
             Distance clampingResolution;
-            Units units = tileKey.getProfile()->getSRS()->getUnits();
+            UnitsType units = tileKey.getProfile()->getSRS()->getUnits();
 
             const AltitudeSymbol* alt = style ? style->getSymbol<AltitudeSymbol>() : nullptr;
             if (alt && alt->clampingResolution().isSet())

@@ -179,15 +179,17 @@ BuildingLayer::createSceneGraph()
         profile,
         options().useNVGL().get());
 
+    auto filters = FeatureFilterChain::create(options().filters(), getReadOptions());
+
     pager->setName("BuildingPager");
-    pager->setAdditive        ( options().additiveLODs().get() );
-    pager->setElevationPool   ( map->getElevationPool() );
-    pager->setSession         ( _session.get() );
-    pager->setFeatureSource   ( fs );
-    pager->setCatalog         ( _catalog.get() );
-    pager->setCompilerSettings( options().compilerSettings().get() );
-    pager->setPriorityOffset  ( options().priorityOffset().get() );
-    pager->setPriorityScale   ( options().priorityScale().get() );
+    pager->setAdditive(options().additiveLODs().get());
+    pager->setElevationPool(map->getElevationPool());
+    pager->setSession(_session.get());
+    pager->setFeatureSource(fs, std::move(filters));
+    pager->setCatalog(_catalog.get());
+    pager->setCompilerSettings(options().compilerSettings().get());
+    pager->setPriorityOffset(options().priorityOffset().get());
+    pager->setPriorityScale(options().priorityScale().get());
     pager->setClusterCullingEnabled(options().clusterCulling().get());
     pager->setSceneGraphCallbacks(getSceneGraphCallbacks());
 
