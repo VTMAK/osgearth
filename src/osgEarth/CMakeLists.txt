@@ -201,6 +201,7 @@ SET(LIB_PUBLIC_HEADERS
     Fill
     Filter
     FilterContext
+    FilteredFeatureSource
     FilterUsage
     FlatteningLayer
     Formatter
@@ -622,6 +623,7 @@ set(TARGET_SRC
     Fill.cpp
     Filter.cpp
     FilterContext.cpp
+    FilteredFeatureSource.cpp
     FlatteningLayer.cpp
     FractalElevationLayer.cpp
     FrameClock.cpp
