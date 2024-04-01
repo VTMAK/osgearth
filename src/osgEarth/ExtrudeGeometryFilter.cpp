@@ -1494,3 +1494,14 @@ ExtrudeGeometryFilter::push( FeatureList& input, FilterContext& context )
 
     return group;
 }
+
+
+
+REGISTER_OBJECT_WRAPPER(ExtrudeGeometryFilterNode,
+    new ExtrudeGeometryFilterNode,
+    osgEarth::ExtrudeGeometryFilterNode,
+    "osg::Node osgEarth::ExtrudeGeometryFilterNode")
+{
+    ADD_OBJECT_SERIALIZER(_extrusionGroup, osg::Group, nullptr);
+    ADD_MATRIX_SERIALIZER(_xform, osg::Matrixd::identity());
+}

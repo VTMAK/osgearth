@@ -23,7 +23,6 @@
 #include <osgEarth/AltitudeFilter>
 #include <osgEarth/CentroidFilter>
 #include <osgEarth/ExtrudeGeometryFilter>
-#include <osgEarth/ExtrudeGeometryFilterNode>
 #include <osgEarth/ScatterFilter>
 #include <osgEarth/SubstituteModelFilter>
 #include <osgEarth/TessellateOperator>
