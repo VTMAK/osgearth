@@ -112,14 +112,14 @@ namespace osgEarth { namespace Procedural
         Status openImplementation() override;
 
         Status closeImplementation() override;
-            
+
         GeoImage createImageImplementation(const TileKey&, ProgressCallback*) const override;
 
         GeoImage applyPostLayer(const GeoImage&, const TileKey&, Layer*, ProgressCallback*) const override;
 
     public:
 
-        void addedToMap(const Map* map) override; 
+        void addedToMap(const Map* map) override;
 
         void removedFromMap(const Map* map) override;
 

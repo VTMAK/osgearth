@@ -16,6 +16,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <string>
 
  // OPTIONAL: Define WEEJOBS_EXPORT if you want to use this library from multiple modules (DLLs)
 #ifndef WEEJOBS_EXPORT
@@ -26,6 +27,16 @@
 #ifndef WEEJOBS_NAMESPACE
 #define WEEJOBS_NAMESPACE jobs
 #endif
+
+// Version
+#define WEEJOBS_VERSION_MAJOR 1
+#define WEEJOBS_VERSION_MINOR 0
+#define WEEJOBS_VERSION_REV   0
+#define WEEJOBS_STR_NX(s) #s
+#define WEEJOBS_STR(s) WEEJOBS_STR_NX(s)
+#define WEEJOBS_COMPUTE_VERSION(major, minor, patch) ((major) * 10000 + (minor) * 100 + (patch))
+#define WEEJOBS_VERSION_NUMBER WEEJOBS_COMPUTE_VERSION(WEEJOBS_VERSION_MAJOR, WEEJOBS_VERSION_MINOR, WEEJOBS_VERSION_REV)
+#define WEEJOBS_VERSION_STRING WEEJOBS_STR(WEEJOBS_VERSION_MAJOR) "." WEEJOBS_STR(WEEJOBS_VERSION_MINOR) "." WEEJOBS_STR(WEEJOBS_VERSION_REV)
 
 /**
 * weejobs is an API for scheduling a task to run in the background.
