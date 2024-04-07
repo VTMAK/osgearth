@@ -426,8 +426,8 @@ namespace WEEJOBS_NAMESPACE
         //! when this object's result becomes available; that result will be the input
         //! value to the continuation function. The continuation function in turn must
         //! return a value (cannot be void).
-        template<typename FUNC, typename R = typename detail::result_of_t<FUNC(const T&, cancelable&)>>
-        inline future<R> then_dispatch(FUNC func, const context& con = {});
+        template<typename F, typename R = typename detail::result_of_t<F(const T&, cancelable&)>>
+        inline future<R> then_dispatch(F func, const context& con = {});
 
         //! Add a continuation to this future. Instead of the functor returning a value,
         //! it will instead have the option of resolving the incoming future/promise object.
