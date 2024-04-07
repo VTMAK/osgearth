@@ -770,8 +770,8 @@ namespace WEEJOBS_NAMESPACE
     //! @param task Function to run in a thread. Prototype is T(cancelable&)
     //! @param context Optional configuration for the asynchronous function call
     //! @return Future result of the async function call
-    template<typename FUNC, typename T = typename detail::result_of_t<FUNC(cancelable&)>>
-    inline future<T> dispatch(FUNC task, const context& context = {})
+    template<typename F, typename T = typename detail::result_of_t<F(cancelable&)>>
+    inline future<T> dispatch(F task, const context& context = {})
     {
         future<T> promise;
         bool can_cancel = context.can_cancel;
@@ -803,8 +803,8 @@ namespace WEEJOBS_NAMESPACE
     //! @param promise Optional user-supplied promise object
     //! @param context Optional configuration for the asynchronous function call
     //! @return Future result of the async function call
-    template<typename FUNC, typename T = typename detail::result_of_t<FUNC(cancelable&)>>
-    inline future<T> dispatch(FUNC task, future<T> promise, const context& context = {})
+    template<typename F, typename T = typename detail::result_of_t<F(cancelable&)>>
+    inline future<T> dispatch(F task, future<T> promise, const context& context = {})
     {
         bool can_cancel = context.can_cancel;
 
@@ -1044,10 +1044,10 @@ namespace WEEJOBS_NAMESPACE
     }
 
     template<typename T>
-    template<typename FUNC, typename R>
-    inline future<R> future<T>::then_dispatch(FUNC func, const context& con)
+    template<typename F, typename R>
+    inline future<R> future<T>::then_dispatch(F func, const context& con)
     {
-        // The future result of FUNC. 
+        // The future result of F. 
         // In this case, the continuation task will return a value that the system will use to resolve the promise.
         future<R> continuation_promise;
 
