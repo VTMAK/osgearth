@@ -401,9 +401,11 @@ ObserverGroup::traverse( osg::NodeVisitor& nv )
 }
 
 //----------------------------------------------------------------------------
-EnableAutoUnloadVisitor::EnableAutoUnloadVisitor() :
-    osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
+EnableAutoUnloadVisitor::EnableAutoUnloadVisitor(bool value) :
+    osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN),
+    _value(value)
 {
+    //nop
 }
 
 void EnableAutoUnloadVisitor::apply(osg::Node& node)
@@ -411,7 +413,7 @@ void EnableAutoUnloadVisitor::apply(osg::Node& node)
     LoadableNode* loadableNode = dynamic_cast<LoadableNode*>(&node);
     if (loadableNode)
     {
-        loadableNode->setAutoUnload(true);
+        loadableNode->setAutoUnload(_value);
     }
     traverse(node);
 }

@@ -92,10 +92,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
 
             if (inRange)
             {
-                if (_load_function && _loaded.empty() && !_loadGate.exchange(true))
-                {
-                    startLoad(_lastPriority, &nv);
-                }
+                startLoad(_lastPriority, &nv);
 
                 // traverse children
                 traverseChildren(nv);
@@ -169,8 +166,8 @@ PagedNode2::merge(int revision)
     // this method gets invoked.
     if (_revision == revision)
     {
-        // This is called from PagingManager.
-        // We're in the UPDATE traversal.
+        // This is either called from PagingManager (update traversal),
+        // or from startLoad() if synchronous loading is enabled.
         OE_SOFT_ASSERT_AND_RETURN(_loaded.available(), false);
         OE_SOFT_ASSERT_AND_RETURN(_loaded.value().valid(), false);
         OE_SOFT_ASSERT_AND_RETURN(_loaded.value()->getNumParents() == 0, false);
@@ -214,28 +211,32 @@ PagedNode2::computeBound() const
 void
 PagedNode2::startLoad(float priority, const osg::Object* host)
 {
-    OE_SOFT_ASSERT_AND_RETURN(_load_function != nullptr, void());
+    // cannot load without a load function.
+    if (!_load_function)
+        return;
+
+    // cannot load if the node is already loaded.
+    if (!_loaded.empty())
+        return;
+
+    // can only start the load once until unload() is called.
+    if (_loadGate.exchange(true))
+        return;
 
     // Load the asynchronous node.
     auto pnode_weak = osg::observer_ptr<PagedNode2>(this);
-
-    // Configure the jobs to run in a specific pool and with a dynamic priority.
-    jobs::context context;
-    context.pool = jobs::get_pool(PAGEDNODE_ARENA_NAME);
-    context.priority = [pnode_weak]() {
-            osg::ref_ptr<PagedNode2> pnode;
-            return pnode_weak.lock(pnode) ? pnode->_lastPriority : -FLT_MAX;
-        };
 
     // Job that will load the node and optionally compile it.
     auto load_and_compile_job = [pnode_weak, host](auto& promise)
         {
             osg::ref_ptr<osg::Node> result;
-            osg::ref_ptr<ProgressCallback> progress = new ProgressCallback(&promise);
 
             osg::ref_ptr<PagedNode2> pnode;
             if (pnode_weak.lock(pnode))
             {
+                osg::ref_ptr<ProgressCallback> progress =
+                    pnode->getSynchronousLoading() ? new ProgressCallback() : new ProgressCallback(&promise);
+
                 // invoke the loader function
                 result = pnode->_load_function(progress.get());
 
@@ -247,7 +248,7 @@ PagedNode2::startLoad(float priority, const osg::Object* host)
                         pnode->_callbacks->firePreMergeNode(result.get());
                     }
 
-                    if (pnode->_preCompile && result->getBound().valid())
+                    if (pnode->_preCompile && !pnode->getSynchronousLoading() && result->getBound().valid())
                     {
                         // Collect the GL objects for later compilation.
                         // Don't waste precious ICO time doing this later
@@ -275,9 +276,34 @@ PagedNode2::startLoad(float priority, const osg::Object* host)
             else promise.resolve(false);
         };
 
-    _loaded = jobs::dispatch(load_and_compile_job, _loaded, context);
+    if (getSynchronousLoading())
+    {
+        load_and_compile_job(_loaded);
 
-    _merged = _loaded.then_dispatch<bool>(merge_job, context);
+        if (_loaded.available() && _loaded.value().valid())
+            merge(_revision);
+        else
+            _merged.resolve(false);
+    }
+    else
+    {
+        // Configure the jobs to run in a specific pool and with a dynamic priority.
+        jobs::context context;
+        context.pool = jobs::get_pool(PAGEDNODE_ARENA_NAME);
+        context.priority = [pnode_weak]() {
+            osg::ref_ptr<PagedNode2> pnode;
+            return pnode_weak.lock(pnode) ? pnode->_lastPriority : -FLT_MAX;
+            };
+
+        _loaded = jobs::dispatch(load_and_compile_job, _loaded, context);
+
+        _merged = _loaded.then_dispatch<bool>(merge_job, context);
+    }
+}
+
+void PagedNode2::load()
+{
+    startLoad(0.0, nullptr);
 }
 
 void PagedNode2::unload()

@@ -19,8 +19,7 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
-#ifndef OSGEARTHUTIL_PAGEDNODE_H
-#define OSGEARTHUTIL_PAGEDNODE_H
+#pragma once
 
 #include <osgEarth/Common>
 #include <osgEarth/optional>
@@ -158,21 +157,26 @@ namespace osgEarth { namespace Util
             return _refinePolicy;
         }
 
-        //! Whether this node will automatically unload its content
-        //! when it goes not pass cull.
         bool getAutoUnload() const override {
             return _autoUnload;
         }
+
         void setAutoUnload(bool value) override {
             _autoUnload = value;
+        }
+        void setSynchronousLoading(bool value) override {
+            _loadAndMergeImmediately = value;
+        }
+
+        bool getSynchronousLoading() const override {
+            return _loadAndMergeImmediately;
         }
 
         bool isHighestResolution() const override;
 
-        //! Loads the content for this node (convenience function)
-        void load() override {
-            startLoad(0.0, nullptr);
-        }
+        //! Loads the content for this node (convenience function).
+        //! Call isLoaded() to see if the load is complete.
+        void load() override;
 
         //! Unloads the content for this node
         void unload() override;
@@ -220,6 +224,7 @@ namespace osgEarth { namespace Util
         float _lastRange = FLT_MAX;
         mutable float _lastPriority = 0.0f;
         RefinePolicy _refinePolicy = REFINE_REPLACE;
+        bool _loadAndMergeImmediately = false;
 
         bool merge(int revision);
         void traverseChildren(osg::NodeVisitor& nv);
@@ -285,5 +290,3 @@ namespace osgEarth { namespace Util
     };
 
 } }
-
-#endif // OSGEARTHUTIL_PAGEDNODE_H

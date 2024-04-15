@@ -19,8 +19,7 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
-#ifndef OSGEARTH_NODE_UTILS_H
-#define OSGEARTH_NODE_UTILS_H 1
+#pragma once
 
 #include <osgEarth/Common>
 #include <osg/View>
@@ -498,15 +497,19 @@ namespace osgEarth { namespace Util
 
 
      /**
-      * Enables auto unloading on any PagedNode2 in the scene graph
+      * Set auto unloading on any LoadableNode in the scene graph
       * This is useful if you've used the LoadDataVisitor to
       * preload an area and you no longer care about it.
       */
-    struct OSGEARTH_EXPORT EnableAutoUnloadVisitor : public osg::NodeVisitor
+    class OSGEARTH_EXPORT EnableAutoUnloadVisitor : public osg::NodeVisitor
     {
-        EnableAutoUnloadVisitor();
+    public:
+        EnableAutoUnloadVisitor(bool value = true);
 
         void apply(osg::Node& node);
+
+    private:
+        bool _value = true;
     };
 
     /**
@@ -552,7 +555,7 @@ namespace osgEarth { namespace Util
         MatrixStack _matrixStack;
         bool _fullyLoaded = true;
 
-        std::set < osg::ref_ptr < PagingManager> > _pagingManagers;
+        std::set<osg::ref_ptr<PagingManager>> _pagingManagers;
 
         std::vector< osg::BoundingSphered > _areasToLoad;
 
@@ -565,5 +568,3 @@ namespace osgEarth { namespace Util
     extern OSGEARTH_EXPORT void loadData(osg::Node* node, std::vector<osg::BoundingSphered>& areasToLoad);
 
 } }
-
-#endif // OSGEARTH_CACHING_H
