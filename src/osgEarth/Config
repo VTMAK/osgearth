@@ -32,10 +32,13 @@ namespace osgDB
     class Options;
 }
 
+#define OE_CONFIG_MOVE_SEMATICS
+
 namespace osgEarth
 {
     using namespace osgEarth::Util;
     using ConfigSet = std::vector<class Config>;
+    class URI;
 
     /**
      * Config is a general-purpose container for serializable data. You store an object's members
@@ -73,17 +76,19 @@ namespace osgEarth
             add(value);
         }
 
+#ifdef OE_CONFIG_MOVE_SEMATICS
         explicit Config(const std::string& key, Config&& value) :
             _key(key)
         {
             add(value);
         }
+        Config(Config&& rhs) = default;
+        Config& operator=(Config&& rhs) = default;
+#endif
 
         // Copy functions
         Config(const Config& rhs) = default;
-        Config(Config&& rhs) = default;
         Config& operator=(const Config& rhs) = default;
-        Config& operator=(Config&& rhs) = default;
 
         /**
          * Referrer is the context for resolving relative pathnames that occur in this object.
@@ -113,6 +118,9 @@ namespace osgEarth
 
         /** Populate this object from an XML input stream. */
         bool fromXML(std::istream& in);
+
+        //! Populate this object from a URI
+        bool fromURI(const URI&);
 
         /** Encode this object as JSON. */
         std::string toJSON(bool pretty = false) const;
@@ -196,9 +204,10 @@ namespace osgEarth
 
         /** Add a value as a child */
         template<typename T>
-        void add(const std::string& key, const T& value) {
+        Config& add(const std::string& key, const T& value) {
             _children.push_back(Config(key, value));
             _children.back().setReferrer(_referrer);
+            return _children.back();
         }
 
         //! Set a config as a child
@@ -208,25 +217,16 @@ namespace osgEarth
             return _children.back();
         }
 
-        //! Move a config as a child
-        Config& add(Config&& conf) {
-            _children.push_back(std::move(conf));
-            _children.back().setReferrer(_referrer);
-            conf = {};
-            return _children.back();
-        }
-
         /** Add a config as a child, assigning it a key */
         Config& add(const std::string& key, const Config& conf) {
             Config& result = add(conf);
             result.key() = key;
             return result;
         }
-        Config& add(const std::string& key, Config&& conf) {
-            Config& result = add(std::move(conf));
-            result.key() = key;
-            conf = {};
-            return result;
+
+        //! Add a config named key
+        Config& add(const std::string& key) {
+            return add(Config(key));
         }
 
         /** Add a set of config objects as children. */
@@ -234,6 +234,26 @@ namespace osgEarth
             for (ConfigSet::const_iterator i = set.begin(); i != set.end(); i++)
                 add(*i);
         }
+
+#ifdef OE_CONFIG_MOVE_SEMATICS
+        //! Move a config as a child
+        Config& add(Config&& conf) {
+            _children.push_back(std::move(conf));
+            _children.back().setReferrer(_referrer);
+            conf = {};
+            return _children.back();
+        }
+        Config& add(const std::string& key, Config&& conf) {
+            Config& result = add(std::move(conf));
+            result.key() = key;
+            conf = {};
+            return result;
+        }
+        Config& set(Config&& conf) {
+            remove(conf.key());
+            return add(std::move(conf));
+        }
+#endif
 
         /** Adds or replaces an optional value as a child, but only if it is set */
         template<typename T>
@@ -267,10 +287,6 @@ namespace osgEarth
         Config& set(const Config& conf) {
             remove(conf.key());
             return add(conf);
-        }
-        Config& set(Config&& conf) {
-            remove(conf.key());
-            return add(std::move(conf));
         }
 
         //! Adds or replaces a config as a child if it's not empty.
@@ -574,10 +590,10 @@ namespace osgEarth
             } \
             else return false; \
         } \
-        template<> inline void Config::add<TYPE>(const std::string& key, const TYPE& value) { \
+        template<> inline Config& Config::add<TYPE>(const std::string& key, const TYPE& value) { \
             Config conf = value.getConfig(); \
             conf.key() = key; \
-            add(std::move(conf)); \
+            return add(std::move(conf)); \
         } \
     } // namespace osgEarth
 
@@ -586,17 +602,16 @@ namespace osgEarth
     /**
      * Base class for all serializable options classes.
      */
-    class OSGEARTH_EXPORT ConfigOptions
+    class ConfigOptions
     {
     public:
-        ConfigOptions(const Config& conf = Config())
-            : _conf(conf) { }
-        ConfigOptions(const ConfigOptions& rhs)
-            : _conf(rhs.getConfig()) { } //rhs._conf ) { }
+        ConfigOptions() = default;
+        ConfigOptions(const ConfigOptions& rhs) = default;
+        ConfigOptions(const Config& conf) : _conf(conf) { }
 
-        virtual ~ConfigOptions();
-
-        const std::string& referrer() const { return _conf.referrer(); }
+        const std::string& referrer() const {
+            return _conf.referrer();
+        }
 
         ConfigOptions& operator = (const ConfigOptions& rhs) {
             if (this != &rhs) {
@@ -611,9 +626,15 @@ namespace osgEarth
             mergeConfig(rhs.getConfig());
         }
 
-        virtual Config getConfig() const;
+        virtual Config getConfig() const {
+            Config conf = _conf;
+            conf.setReferrer(referrer());
+            return conf;
+        }
 
-        bool empty() const { return _conf.empty(); }
+        bool empty() const {
+            return _conf.empty();
+        }
 
     protected:
         virtual void mergeConfig(const Config& conf) { }
@@ -625,16 +646,14 @@ namespace osgEarth
      * Base configoptions class for driver options.
      * @deprecated - will be removed.
      */
-    class OSGEARTH_EXPORT DriverConfigOptions : public ConfigOptions
+    class DriverConfigOptions : public ConfigOptions
     {
     public:
         DriverConfigOptions(const ConfigOptions& rhs = ConfigOptions())
-            : ConfigOptions(rhs) {
+            : ConfigOptions(rhs)
+        {
             fromConfig(_conf);
         }
-
-        /** dtor */
-        virtual ~DriverConfigOptions();
 
         /** Gets or sets the name of the driver to load */
         void setDriver(const std::string& value) { _driver = value; }
@@ -742,18 +761,18 @@ namespace osgEarth
     const TYPE & CLASS ::get ## FUNC () const { return options(). OPTION ().get(); }
 
 //! property macro
-#define OE_PROPERTY(TYPE, NAME) \
+#define OE_PROPERTY(TYPE, NAME, DEFVAL) \
     private: \
-    TYPE _ ## NAME ; \
+    TYPE _ ## NAME = DEFVAL; \
     public: \
     TYPE & NAME () { return _ ## NAME; } \
     TYPE & NAME ## _mutable() { return _ ## NAME; } \
     const TYPE & NAME () const { return _ ## NAME; }
 
 //! const property macro
-#define OE_PROPERTY_CONST(TYPE, NAME) \
+#define OE_PROPERTY_CONST(TYPE, NAME, DEFVAL) \
     private: \
-    TYPE _ ## NAME ; \
+    TYPE _ ## NAME = DEFVAL; \
     protected: \
     TYPE & NAME () { return _ ## NAME; } \
     TYPE & NAME ## _mutable() { return _ ## NAME; } \

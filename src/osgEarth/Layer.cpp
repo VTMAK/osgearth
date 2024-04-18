@@ -514,6 +514,17 @@ Layer::getTypeName() const
 
 #define LAYER_OPTIONS_TAG "osgEarth.LayerOptions"
 
+template<class T>
+struct Holder : public osg::Object {
+    META_Object(osgEarth, Holder<T>);
+    Holder() { }
+    Holder(const Holder<T>& rhs, const osg::CopyOp& op) : osg::Object(rhs, op), value(rhs.value) { }
+    Holder(const std::string name, const T& t) : value(t) {
+        setName(name);
+    }
+    T value;
+};
+
 osg::ref_ptr<Layer>
 Layer::create(const ConfigOptions& options)
 {
@@ -533,12 +544,12 @@ Layer::create(const ConfigOptions& options)
 
     // convey the configuration options:
     osg::ref_ptr<osgDB::Options> dbopt = Registry::instance()->cloneOrCreateOptions();
-    dbopt->setPluginData( LAYER_OPTIONS_TAG, (void*)&options );
-
-    //std::string pluginExtension = std::string( ".osgearth_" ) + name;
-    //std::string pluginExtension = std::string( "." ) + name;
+    dbopt->getOrCreateUserDataContainer()->addUserObject(new Holder<ConfigOptions>(LAYER_OPTIONS_TAG, options));
+    //dbopt->setPluginData( LAYER_OPTIONS_TAG, (void*)&options );
 
     osg::ref_ptr<Layer> result;
+
+    name = "osgearth_layer_" + name;
 
     // use this instead of osgDB::readObjectFile b/c the latter prints a warning msg.
     auto rw = osgDB::Registry::instance()->getReaderWriterForExtension(name);
@@ -562,12 +573,24 @@ Layer::create(const ConfigOptions& options)
     return result;
 }
 
+namespace {
+    ConfigOptions s_default_config_options;
+}
 const ConfigOptions&
 Layer::getConfigOptions(const osgDB::Options* options)
 {
-    static ConfigOptions s_default;
-    const void* data = options->getPluginData(LAYER_OPTIONS_TAG);
-    return data ? *static_cast<const ConfigOptions*>(data) : s_default;
+    //const void* data = options ? options->getPluginData(LAYER_OPTIONS_TAG) : nullptr;
+    //return data ? *static_cast<const ConfigOptions*>(data) : s_default_config_options;
+    if (options) {
+        auto* udc = options->getUserDataContainer();
+        if (udc) {
+            auto* obj = udc->getUserObject(LAYER_OPTIONS_TAG);
+            if (obj) {
+                return static_cast<const Holder<ConfigOptions>*>(obj)->value;
+            }
+        }
+    }
+    return s_default_config_options;
 }
 
 SceneGraphCallbacks*

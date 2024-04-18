@@ -320,6 +320,7 @@ SET(LIB_PUBLIC_HEADERS
     OverlayDecorator
     PagedNode
     PatchLayer
+    PBRMaterial
     PhongLightingEffect
     Picker
     PlaceNode
@@ -370,6 +371,7 @@ SET(LIB_PUBLIC_HEADERS
     SimpleOceanLayer
     SimplePager
     SimplexNoise
+    SimplifyFilter
     Skins
     Sky
     SkyView
@@ -730,6 +732,7 @@ set(TARGET_SRC
     OverlayDecorator.cpp
     PagedNode.cpp
     PatchLayer.cpp
+    PBRMaterial.cpp
     PhongLightingEffect.cpp
     PlaceNode.cpp
     PointDrawable.cpp
@@ -772,6 +775,7 @@ set(TARGET_SRC
     SimpleOceanLayer.cpp
     SimplePager.cpp
     SimplexNoise.cpp
+    SimplifyFilter.cpp
     Skins.cpp
     Sky.cpp
     SkyView.cpp
