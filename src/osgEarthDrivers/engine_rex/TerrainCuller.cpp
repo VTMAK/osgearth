@@ -244,6 +244,8 @@ TerrainCuller::apply(TileNode& node)
         // Render patch layers if applicable.
         _patchLayers.clear();
 
+        osg::BoundingBox buffer(0, 0, 0, 0, 0, 0);
+
         for(auto& patchLayer : _terrain.patchLayers())
         {
             // is the layer accepting this key?
@@ -259,6 +261,8 @@ TerrainCuller::apply(TileNode& node)
             {
                 continue;
             }
+
+            buffer.expandBy(patchLayer->getBuffer());
 
             _patchLayers.push_back(patchLayer.get());
         }
@@ -277,7 +281,11 @@ TerrainCuller::apply(TileNode& node)
             surface->computeLocalToWorldMatrix(*matrix,this);
             _cv->pushModelViewMatrix(matrix, surface->getReferenceFrame());
 
-            if (!_cv->isCulled(surface->getAlignedBoundingBox()))
+            // adjust the tile bounding box to account for the patch layer buffer.
+            auto bbox = surface->getAlignedBoundingBox();
+            bbox._min += buffer._min, bbox._max += buffer._max;
+
+            if (!_cv->isCulled(bbox))
             {
                 // Add the draw command:
                 for(auto patchLayer : _patchLayers)

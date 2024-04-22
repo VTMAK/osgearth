@@ -267,6 +267,10 @@ VegetationLayer::init()
 
     // evil
     //installDefaultOpacityShader();
+
+    // set a static bounding box buffer that can account for geometry in this layer.
+    // 25 meters on the sides and the top will be a rough guess for now.
+    _buffer.set(-25, -25, 0, 25, 25, 25);
 }
 
 VegetationLayer::~VegetationLayer()

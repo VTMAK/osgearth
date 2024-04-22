@@ -90,6 +90,14 @@ namespace osgEarth
         void setAcceptCallback(AcceptCallback* value) { _acceptCallback = value; }
         AcceptCallback* getAcceptCallback() const { return _acceptCallback.get(); }
 
+        //! Static bounding box buffer that the culling engine will use to
+        //! expand the corresponding terrain tile's axis-asligned bbox
+        //! during culling. This is necessary to account for the geometry that
+        //! may exist in the patch tile before it gets created.
+        const osg::BoundingBox& getBuffer() {
+            return _buffer;
+        }
+
 
     protected:
 
@@ -104,6 +112,9 @@ namespace osgEarth
         virtual GeoNode createNodeImplementation(const TileKey& key, ProgressCallback* progress) const {
             return GeoNode::INVALID;
         }
+
+        //! Culling buffer to account for layer geometry.
+        osg::BoundingBox _buffer = { 0,0,0,0,0,0 };
 
     private:
         osg::ref_ptr<AcceptCallback> _acceptCallback;
