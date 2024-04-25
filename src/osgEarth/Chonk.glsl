@@ -290,10 +290,18 @@ void oe_chonk_default_fragment(inout vec4 color)
         // apply PBR maps:
         vec4 texel = texture(sampler2D(oe_pbr_tex), oe_tex_uv);
 
-        oe_pbr.displacement = texel[0];
-        oe_pbr.roughness *= texel[1];
+        // VRV format (for now):
+        oe_pbr.metal = clamp(oe_pbr.metal + texel[0], 0, 1);
+        oe_pbr.roughness *= (1.0 - texel[1]); // inverse of gloss
         oe_pbr.ao *= texel[2];
-        oe_pbr.metal = clamp(oe_pbr.metal + texel[3], 0, 1);
+
+        //NOTE - the following is correct, or WILL be correct once we
+        // update the veg asset loader to use the new PBR format.
+        //oe_pbr.displacement = texel[0];
+        //oe_pbr.roughness *= texel[1];
+        //oe_pbr.ao *= texel[2];
+        //oe_pbr.metal = clamp(oe_pbr.metal + texel[3], 0, 1);
+        
     }
 
 #endif // !OE_IS_SHADOW_CAMERA
