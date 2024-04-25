@@ -218,7 +218,7 @@ namespace
         if (rr.failed())
             return Status(Status::ResourceUnavailable, rr.errorDetail());
         else
-            return rr.getImage();
+            return osg::ref_ptr<osg::Image>(rr.getImage());
     }
 }
 
