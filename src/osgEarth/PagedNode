@@ -174,43 +174,26 @@ namespace osgEarth { namespace Util
 
     public: // LoadableNode API
 
+        void load() override;
+        void unload() override;
+        bool isLoadComplete() const override;
+        bool isHighestResolution() const override;
+
         RefinePolicy getRefinePolicy() const override {
             return _refinePolicy;
         }
-
         bool getAutoUnload() const override {
             return _autoUnload;
         }
-
         void setAutoUnload(bool value) override {
             _autoUnload = value;
         }
-        void setSynchronousLoading(bool value) override {
-            _loadAndMergeImmediately = value;
-        }
-
-        bool getSynchronousLoading() const override {
-            return _loadAndMergeImmediately;
-        }
-
-        bool isHighestResolution() const override;
-
-        //! Loads the content for this node (convenience function).
-        //! Call isLoaded() to see if the load is complete.
-        void load() override;
-
-        //! Unloads the content for this node
-        void unload() override;
-
-        //! Whether the content is loaded.
-        bool isLoaded() const override;
-
 
     public: // osg::Node overrides
 
-        virtual void traverse(osg::NodeVisitor& nv) override;
+        void traverse(osg::NodeVisitor& nv) override;
 
-        virtual osg::BoundingSphere computeBound() const override;
+        osg::BoundingSphere computeBound() const override;
 
     protected:
 
@@ -245,7 +228,6 @@ namespace osgEarth { namespace Util
         float _lastRange = FLT_MAX;
         mutable float _lastPriority = 0.0f;
         RefinePolicy _refinePolicy = REFINE_REPLACE;
-        bool _loadAndMergeImmediately = false;
 
         bool merge(int revision);
         void traverseChildren(osg::NodeVisitor& nv);

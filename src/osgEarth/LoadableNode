@@ -24,7 +24,7 @@
 namespace osgEarth
 {
     /**
-     * Pure interface for a node that can load or unload data.
+     * Pure interface for an object that can load or unload data.
      */
     class /*interface*/ LoadableNode
     {
@@ -38,11 +38,10 @@ namespace osgEarth
         //! How to behave when higher resolution data is loaded
         virtual RefinePolicy getRefinePolicy() const = 0;
 
-        //! Whether this node's payload was succesfully loaded
-        virtual bool isLoaded() const = 0;
+        //! Whether a call to load() completed (successfully or not)
+        virtual bool isLoadComplete() const = 0;
 
-        //! Whether the payload associated with this node is the highest
-        //! resolution and no higher resolution data is available
+        //! Whether the node is the highest resolution node in the scene graph
         virtual bool isHighestResolution() const = 0;
 
         //! Whether to automatically discard the payload when the
@@ -52,11 +51,6 @@ namespace osgEarth
         //! Whether to automatically discard the payload when the
         //! system determines that this node is not currently in use
         virtual void setAutoUnload(bool value) = 0;
-
-        //! Whether to load data synchronously (immediately) or
-        //! asynchronously (in the background in coordination with a frame loop).
-        //! This MAY or MAY NOT be supported by the implementation.
-        virtual void setSynchronousLoading(bool value) { }
-        virtual bool getSynchronousLoading() const { return false; }
     };
 }
+
