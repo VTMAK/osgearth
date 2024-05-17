@@ -1040,11 +1040,6 @@ FeatureModelGraph::load(
         // over and over.
         result = new osg::Group();
     }
-    else
-    {
-        // For some unknown reason, this breaks when I insert an LOD. -gw
-        //RemoveEmptyGroupsVisitor::run( result );
-    }
 
     if (result->getNumChildren() == 0)
     {
@@ -1837,7 +1832,7 @@ FeatureModelGraph::createStyleGroup(const Style&          style,
     // we have decided to do nothing. :)
     CropFilter crop(
         _options.layout().isSet() && _options.layout()->cropFeatures() == true ?
-        CropFilter::METHOD_CROPPING : CropFilter::METHOD_CENTROID);
+        CropFilter::METHOD_CROP_TO_EXTENT : CropFilter::METHOD_CENTROID);
 
     unsigned sizeBefore = workingSet.size();
 
@@ -1854,7 +1849,7 @@ FeatureModelGraph::createStyleGroup(const Style&          style,
     if (_featureExtentClamped && _options.layout().isSet() && _options.layout()->cropFeatures() == false)
     {
         context.extent() = _usableFeatureExtent;
-        CropFilter crop2(CropFilter::METHOD_CROPPING);
+        CropFilter crop2(CropFilter::METHOD_CROP_TO_EXTENT);
         context = crop2.push(workingSet, context);
     }
 
