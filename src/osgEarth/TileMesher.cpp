@@ -769,7 +769,7 @@ TileMesher::createMeshWithConstraints(
 #endif
         }
 
-#if 1
+#if 0
         // do we want to add the constraint triangles back in?
         if (!insiders_to_remove.empty())
         {

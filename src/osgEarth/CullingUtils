@@ -232,32 +232,27 @@ namespace osgEarth
 
             void operator()(osg::Node* node, osg::NodeVisitor* nv);
 
-    // VRV PATCH
-    class OSGEARTH_EXPORT OcclusionQueryNodeFactory
-    {
-    public:
-        virtual osg::Group * createQueryNode(){return NULL;}
-        static OcclusionQueryNodeFactory * _occlusionFactory;
-
-    };
-    // VRV PATCH
-
-
-    /**
-     * Cull callback for cameras that sets the oe_Camera uniform.
-     */
-    class OSGEARTH_EXPORT InstallCameraUniform : public osg::NodeCallback
-    {
-    public:
-        META_Object(osgEarth, InstallCameraUniform);
+        protected:
+            osg::ref_ptr<Horizon>             _horizon;
+            osg::observer_ptr<osg::ClipPlane> _clipPlane;
+        };
         
-        void operator()(osg::Node* node, osg::NodeVisitor* nv);
-
+        
         struct OSGEARTH_EXPORT CullDebugger
         {
             Config dumpRenderBin(osgUtil::RenderBin* bin) const;
         };
 
+
+        // VRV PATCH
+        class OSGEARTH_EXPORT OcclusionQueryNodeFactory
+        {
+        public:
+            virtual osg::Group * createQueryNode(){return NULL;}
+            static OcclusionQueryNodeFactory * _occlusionFactory;
+
+        };
+        // VRV PATCH
 
         /**
          * Cull callback for cameras that sets the oe_Camera uniform.
