@@ -18,6 +18,7 @@
  */
 #pragma once
 #include <osgEarth/Export>
+#include <unordered_map>
 #include <unordered_set>
 
 // bring in weejobs in the jobs namespace
@@ -157,8 +158,8 @@ namespace osgEarth
             inline void lock(const T& key) {
                 std::unique_lock<std::mutex> lock(_m);
                 for (;;) {
-                    auto i = _keys.emplace(key);
-                    if (i.second == true) // insert successful
+                    auto i = _keys.emplace(key, std::this_thread::get_id());
+                    if (i.second == true || i.first->second == std::this_thread::get_id()) // insert successful or same thread
                         return;
                     _unlocked.wait(lock);
                 }
@@ -173,7 +174,7 @@ namespace osgEarth
         private:
             std::mutex _m;
             std::condition_variable_any _unlocked;
-            std::unordered_set<T> _keys;
+            std::unordered_map<T, std::thread::id> _keys;
         };
 
         //! Gate the locks for the duration of this object's scope

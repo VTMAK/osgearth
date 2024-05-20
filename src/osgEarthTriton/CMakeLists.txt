@@ -1,70 +1,50 @@
-IF(TRITON_FOUND)
+find_package(Triton REQUIRED)
 
-    SET(LIB_NAME osgEarthTriton)
+set(LIB_NAME osgEarthTriton)
 
-    IF(OSGEARTH_BUILD_SHARED_LIBS)
-        ADD_DEFINITIONS(-DOSGEARTHTRITON_LIBRARY)
-    ELSE ()
-        ADD_DEFINITIONS(-DOSGEARTHTRITON_LIBRARY_STATIC)
-    ENDIF()
+set(OSGEARTH_HAVE_TRITON_NODEKIT ON PARENT_SCOPE) # BuildConfig
 
-    SET(HEADER_PATH ${OSGEARTH_SOURCE_DIR}/include/${LIB_NAME})
+if(OSGEARTH_BUILD_SHARED_LIBS)
+    add_definitions(-DOSGEARTHTRITON_LIBRARY)
+else()
+    add_definitions(-DOSGEARTHTRITON_LIBRARY_STATIC)
+endif()
 
-    SET(LIB_PUBLIC_HEADERS
-    #   header files go here
-        Common
-        Export
-        TritonContext
-        TritonDrawable
-        TritonAPIWrapper
-        TritonCallback
-        TritonLayer
-        TritonHeightMap
-        TritonIntersections
-    )
+set(HEADER_PATH ${OSGEARTH_SOURCE_DIR}/include/${LIB_NAME})
 
-    ADD_LIBRARY(${LIB_NAME} 
-        ${OSGEARTH_DYNAMIC_OR_STATIC}
-        ${LIB_PUBLIC_HEADERS}
-    #  .cpp files go here
-        TritonContext.cpp
-        TritonDrawable.cpp
-        TritonAPIWrapper.cpp
-        TritonLayer.cpp
-        TritonHeightMap.cpp
-        TritonIntersections.cpp
-    )
+SET(TARGET_H
+    Common
+    Export
+    TritonContext
+    TritonDrawable
+    TritonAPIWrapper
+    TritonCallback
+    TritonLayer
+    TritonHeightMap
+    TritonIntersections
+)
 
-    INCLUDE_DIRECTORIES( 
-        ${OSG_INCLUDE_DIR}
-        ${OSGEARTH_SOURCE_DIR}
-        ${TRITON_INCLUDE_DIR}
-    )
+set(TARGET_SRC
+    TritonContext.cpp
+    TritonDrawable.cpp
+    TritonAPIWrapper.cpp
+    TritonLayer.cpp
+    TritonHeightMap.cpp
+    TritonIntersections.cpp)    
 
-    LINK_EXTERNAL(
-        ${LIB_NAME}
-        ${TARGET_EXTERNAL_LIBRARIES}
-        ${CMAKE_THREAD_LIBS_INIT} )
+add_osgearth_library(
+    TARGET ${LIB_NAME}
+    SOURCES ${TARGET_SRC}
+    PUBLIC_HEADERS ${TARGET_H} )
 
-    LINK_INTERNAL(
-        ${LIB_NAME}
-        osgEarth
-    )
+include_directories( 
+    ${OSG_INCLUDE_DIR}
+    ${OSGEARTH_SOURCE_DIR}
+    ${TRITON_INCLUDE_DIR}
+)
 
-    LINK_WITH_VARIABLES(
-        ${LIB_NAME} 
-        OSG_LIBRARY
-        OSGDB_LIBRARY
-        OSGUTIL_LIBRARY
-        TRITON_LIBRARY )
+target_link_libraries(${LIB_NAME}
+    PUBLIC osgEarth ${OPENSCENEGRAPH_LIBRARIES} ${OPENGL_LIBRARIES} ${TRITON_LIBRARY})
 
-    LINK_CORELIB_DEFAULT(
-        ${LIB_NAME}
-        ${CMAKE_THREAD_LIBS_INIT} )
-
-    # Add this project to the NodeKits solution folder
-    set_property( TARGET ${LIB_NAME} PROPERTY FOLDER "NodeKits" )
-
-    INCLUDE(ModuleInstall OPTIONAL)
-
-ENDIF(TRITON_FOUND)
+# Add this project to the NodeKits solution folder
+set_property( TARGET ${LIB_NAME} PROPERTY FOLDER "NodeKits" )

@@ -1,13 +1,10 @@
-IF(WEBP_FOUND)
+find_package(WebP)
 
-SET(TARGET_SRC
-	ReaderWriterWebP.cpp
-)
+if (WebP_FOUND)
+    message(STATUS "Found WebP ${WEBP_VERSION}")
+    add_osgearth_plugin(
+        TARGET osgdb_webp
+        SOURCES ReaderWriterWebP.cpp)
+    target_link_libraries(osgdb_webp PRIVATE WebP::webp)
+endif()
 
-INCLUDE_DIRECTORIES( ${WEBP_INCLUDE_DIR} )
-
-SET(TARGET_LIBRARIES_VARS WEBP_LIBRARY OPENTHREADS_LIBRARY OSG_LIBRARY OSGDB_LIBRARY)
-
-SETUP_PLUGIN(webp)
-
-ENDIF(WEBP_FOUND)
