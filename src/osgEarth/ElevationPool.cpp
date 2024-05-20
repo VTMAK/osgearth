@@ -19,7 +19,6 @@
 #include <osgEarth/ElevationPool>
 #include <osgEarth/Map>
 #include <osgEarth/Metrics>
-#define _DEBUG 1
 #include <osgEarth/rtree.h>
 #include <osgEarth/HeightFieldUtils>
 #include <osgEarth/Registry>
@@ -72,35 +71,7 @@ ElevationPool::ElevationPool() :
 
 namespace
 {
-#if 1
     using MaxLevelIndex = RTree<unsigned, double, 2>;
-#else
-    struct MaxLevelIndex
-    {
-        std::vector<osg::BoundingBox> _boxes;
-
-        void Insert(const double a_min[2], const double a_max[2], unsigned maxLevel)
-        {
-            osg::BoundingBox box(a_min[0], a_min[1], 0.0, a_max[0], a_max[1], 0.0);
-            _boxes.push_back(box);
-        }
-
-        template<class FUNC>
-        bool Search(const double a_min[2], const double a_max[2], FUNC&& callback)
-        {
-            osg::BoundingBox query(a_min[0], a_min[1], 0.0, a_max[0], a_max[1], 0.0);
-            for (unsigned i = 0; i < _boxes.size(); ++i)
-            {
-                if (query.intersects(_boxes[i]))
-                {
-                    if (callback(i) == false)
-                        return false;
-                }
-            }
-            return true;
-        }
-    };
-#endif
 }
 
 ElevationPool::~ElevationPool()
