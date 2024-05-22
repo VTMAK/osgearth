@@ -5,8 +5,6 @@ ELSE ()
     ADD_DEFINITIONS(-DOSGEARTHBUILDINGS_LIBRARY_STATIC)
 ENDIF()
 
-set(LIB_NAME osgEarthBuildings)
-
 set(HEADERS
     Analyzer
     BuildContext
@@ -67,11 +65,7 @@ set(SOURCES
 )
 
 add_osgearth_library(
-    TARGET ${LIB_NAME}
-    HEADERS ${HEADERS}
+    TARGET osgEarthBuildings
+    PUBLIC_HEADERS ${HEADERS}
     SOURCES ${SOURCES}
     FOLDER "NodeKits" )
-    
-if (TRACY_FOUND)
-    target_link_libraries(${LIB_NAME} PRIVATE ${TRACY_LIBRARY})
-endif()

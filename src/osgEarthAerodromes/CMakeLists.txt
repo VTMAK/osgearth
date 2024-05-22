@@ -5,8 +5,6 @@ ELSE (OSGEARTH_BUILD_SHARED_LIBS)
     ADD_DEFINITIONS(-DOSGEARTHAERODROME_LIBRARY_STATIC)
 ENDIF(OSGEARTH_BUILD_SHARED_LIBS)
 
-set(LIB_NAME osgEarthAerodromes)
-
 set(HEADERS
     AerodromeCatalog
     AerodromeFactory
@@ -39,11 +37,7 @@ set(SOURCES
     AerodromeRenderer.cpp )
 
 add_osgearth_library(
-    TARGET ${LIB_NAME}
-    HEADERS ${HEADERS}
+    TARGET osgEarthAerodromes
+    PUBLIC_HEADERS ${HEADERS}
     SOURCES ${SOURCES}
     FOLDER "NodeKits" )
-
-if (TRACY_FOUND)
-    target_link_libraries(${LIB_NAME} PRIVATE ${TRACY_LIBRARY})
-endif()
