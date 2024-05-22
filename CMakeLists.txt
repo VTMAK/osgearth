@@ -43,16 +43,18 @@ set(OSGEARTH_EMBEDDED_THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/src/third_party)
 # Platform-specific settings ............................................
 
 # Default installation folders. The platform-specific includes will
-# override these values as necessary.
-set(INSTALL_RUNTIME_FOLDER "bin")  # executables
-set(INSTALL_LIBRARY_FOLDER "bin")  # .dll/.so
-set(INSTALL_ARCHIVE_FOLDER "lib")  # .lib/.a
-set(INSTALL_PLUGINS_FOLDER "bin")  # parent folder of OSG plugins folder
+# override these values as necessary. The OSGEARTH_INSTALL_FOLDER_SUFFIX
+# variable lets the caller append a "64" (for example) if desired.
+set(INSTALL_RUNTIME_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # executables
+set(INSTALL_LIBRARY_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # .dll/.so
+set(INSTALL_ARCHIVE_FOLDER "lib${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # .lib/.a
+set(INSTALL_PLUGINS_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # parent folder of OSG plugins folder
 
 include(oe_ios)
 include(oe_osx)
 include(oe_unix)
 include(oe_win32)
+
 
 # Build options ..........................................................
 
