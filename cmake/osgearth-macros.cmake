@@ -343,7 +343,7 @@ macro(add_osgearth_library)
     
     # profiler:
     if(Tracy_FOUND)
-        target_link_libraries(${MY_TARGET} PRIVATE Tracy::TracyClient)
+        target_link_libraries(${MY_TARGET} PUBLIC Tracy::TracyClient)
     endif()
     
     # soversions - append SO version to shared object files on unix (e.g., osgearth.so.123)
