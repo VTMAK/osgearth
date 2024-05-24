@@ -131,11 +131,10 @@ endif()
 
 # integrated profiling with tracy?
 if(OSGEARTH_ENABLE_PROFILING)
-    message(STATUS "Looking for Tracy...")
     find_package(Tracy)
     if(Tracy_FOUND)
         message(STATUS "Found Tracy ... enabling frame profiling")
-        ADD_DEFINITIONS(-DOSGEARTH_PROFILING)
+        set(OSGEARTH_HAVE_TRACY 1)
     endif()
 endif()
 

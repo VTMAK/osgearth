@@ -56,7 +56,7 @@ namespace osgEarth {
     }
 }
 
-#ifdef OSGEARTH_PROFILING
+#ifdef OSGEARTH_HAVE_TRACY
 
 // uncomment this to attempt GPU profiling blocks
 //#define OSGEARTH_GPU_PROFILING
