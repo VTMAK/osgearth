@@ -67,7 +67,7 @@ namespace osgEarth
 #define OE_PROFILING_ZONE ZoneNamed( ___tracy_scoped_zone, osgEarth::Util::Metrics::enabled() )
 #define OE_PROFILING_ZONE_NAMED(functionName) ZoneNamedN(___tracy_scoped_zone, functionName, osgEarth::Util::Metrics::enabled())
 #define OE_PROFILING_ZONE_COLOR(color) ZoneScopedC(___tracy_scoped_zone, color, osgEarth::Util::Metrics::enabled())
-#define OE_PROFILING_ZONE_TEXT(text) _zoneSetText(___tracy_scoped_zone, text)
+#define OE_PROFILING_ZONE_TEXT(text)
 #define OE_PROFILING_PLOT(name, value) if (osgEarth::Util::Metrics::enabled()) {TracyPlot(name, value);}
 #define OE_PROFILING_FRAME_MARK if (osgEarth::Util::Metrics::enabled()) {FrameMark;}
 #define OE_LOCKABLE(type, varname) TracyLockable(type, varname)
