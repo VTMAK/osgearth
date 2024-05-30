@@ -21,7 +21,7 @@
 #include <osgEarth/Metrics>
 #include <osgViewer/ViewerBase>
 #include <osgViewer/View>
-#include <osgEarth/Memory>
+#include <osgEarth/MemoryUtils>
 #include <cstdlib>
 
 using namespace osgEarth::Util;
@@ -33,7 +33,7 @@ static bool s_metricsEnabled =
 static bool s_gpuMetricsEnabled = true;
 static bool s_gpuMetricsInstalled = false;
 
-#ifdef OSGEARTH_PROFILING
+#ifdef OSGEARTH_HAVE_TRACY
 
 #ifdef OSGEARTH_GPU_PROFILING
 void (GL_APIENTRY * osgEarth::MetricsGL::_glGenQueries)(GLsizei, GLuint*);
@@ -80,7 +80,7 @@ namespace
     };
 #endif
 }
-#endif // OSGEARTH_PROFILING
+#endif // OSGEARTH_HAVE_TRACY
 
 
 bool Metrics::enabled()
@@ -110,7 +110,8 @@ int Metrics::run(osgViewer::ViewerBase& viewer)
         viewer.realize();
     }
 
-#ifdef OSGEARTH_PROFILING
+#ifdef OSGEARTH_HAVE_TRACY
+
     if (s_gpuMetricsEnabled == false &&
         ::getenv("OE_PROFILE_GPU") != NULL)
     {
