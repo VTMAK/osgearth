@@ -48,8 +48,6 @@ namespace osgEarth { namespace MVT
 } } // osgEarth::MVT
 
 
-#ifdef OSGEARTH_HAVE_SQLITE3
-
 namespace osgEarth
 {
     /**
@@ -116,7 +114,6 @@ namespace osgEarth
 
 OSGEARTH_SPECIALIZE_CONFIG(osgEarth::MVTFeatureSource::Options);
 
-#endif // OSGEARTH_HAVE_SQLITE3
 
 #endif // OSGEARTH_HAVE_MVT
 

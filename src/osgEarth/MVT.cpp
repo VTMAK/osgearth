@@ -30,10 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "vector_tile.pb.h"
-
-#ifdef OSGEARTH_HAVE_SQLITE3
 #include <sqlite3.h>
-#endif
 
 using namespace osgEarth;
 using namespace osgEarth::MVT;
