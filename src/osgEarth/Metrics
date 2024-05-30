@@ -51,6 +51,7 @@ namespace osgEarth
 
 #ifdef OSGEARTH_HAVE_TRACY
 
+// if you used a config.cmake file to get tracy, TRACY_ENABLE is already defined
 #ifndef TRACY_ENABLE
 #define TRACY_ENABLE
 #endif

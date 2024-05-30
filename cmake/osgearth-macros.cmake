@@ -360,7 +360,7 @@ macro(add_osgearth_library)
         ARCHIVE DESTINATION ${INSTALL_ARCHIVE_FOLDER}
     )
 
-    # deploy the shaders for this library, if so requested.
+    # deploy the shaders for this library, if requested.
     if(OSGEARTH_INSTALL_SHADERS)
         install(
             FILES ${MY_SHADERS}
@@ -368,11 +368,9 @@ macro(add_osgearth_library)
     endif()
     
     # on Windows, install pdb files
-    if(WIN32)
-        # https://stackoverflow.com/a/40860436/4218920
-        if(OSGEARTH_INSTALL_PDBS)
-            install(FILES $<TARGET_PDB_FILE:${MY_TARGET}> DESTINATION ${INSTALL_LIBRARY_FOLDER} OPTIONAL)
-        endif()
+    # https://stackoverflow.com/a/40860436/4218920
+    if(OSGEARTH_INSTALL_PDBS)
+        install(FILES $<TARGET_PDB_FILE:${MY_TARGET}> DESTINATION ${INSTALL_LIBRARY_FOLDER} OPTIONAL)
     endif()
 
 

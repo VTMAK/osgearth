@@ -30,6 +30,14 @@ set(OSGEARTH_SOVERSION 154)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Detect out-of-source build. We'll need this for protobuf generated files.
+if (NOT "${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
+    message(STATUS "Detected an out-of-source build. Kudos.")    
+    set(OSGEARTH_OUT_OF_SOURCE_BUILD TRUE)
+else()
+    message(STATUS "Detected a in-source build.")  
+endif()
+
 # We have some custom .cmake scripts not in the official distribution.
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PROJECT_SOURCE_DIR}/cmake")
 
@@ -43,29 +51,27 @@ set(OSGEARTH_EMBEDDED_THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/src/third_party)
 # Platform-specific settings ............................................
 
 # Default installation folders. The platform-specific includes will
-# override these values as necessary. The OSGEARTH_INSTALL_FOLDER_SUFFIX
-# variable lets the caller append a "64" (for example) if desired.
-set(INSTALL_RUNTIME_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # executables
-set(INSTALL_LIBRARY_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # .dll/.so
-set(INSTALL_ARCHIVE_FOLDER "lib${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # .lib/.a
-set(INSTALL_PLUGINS_FOLDER "bin${OSGEARTH_INSTALL_FOLDER_SUFFIX}")  # parent folder of OSG plugins folder
+# override these values as necessary.
+set(INSTALL_RUNTIME_FOLDER "bin")  # executables
+set(INSTALL_LIBRARY_FOLDER "bin")  # .dll/.so
+set(INSTALL_ARCHIVE_FOLDER "lib")  # .lib/.a
+set(INSTALL_PLUGINS_FOLDER "bin")  # parent folder of OSG plugins folder
 
 include(oe_ios)
 include(oe_osx)
 include(oe_unix)
 include(oe_win32)
 
-
 # Build options ..........................................................
 
 option(OSGEARTH_BUILD_TOOLS "Build the osgEarth command-line tools" ON)
-option(OSGEARTH_BUILD_EXAMPLES "Build the osgEarth example applications" ON)
+option(OSGEARTH_BUILD_EXAMPLES "Build the osgEarth example applications" OFF)
 option(OSGEARTH_BUILD_CESIUM_NODEKIT "Build the Cesium nodekit (osgEarthCesium)" OFF)
 option(OSGEARTH_BUILD_TRITON_NODEKIT "Build support for SunDog Triton SDK" OFF)
 option(OSGEARTH_BUILD_SILVERLINING_NODEKIT "Build support for SunDog SilverLining SDK" OFF)
-option(OSGEARTH_ENABLE_GEOCODER "Enable the geocoder (GDAL/OGR must be built with geocoder support)" OFF)
+option(OSGEARTH_ENABLE_GEOCODER "Enable the geocoder (GDAL/OGR must be built with geocoder support)" ON)
 
-option(OSGEARTH_BUILD_DOCS "Include the documentation folder" ON)
+option(OSGEARTH_BUILD_DOCS "Include the documentation folder" OFF)
 mark_as_advanced(OSGEARTH_BUILD_DOCS)
 
 option(OSGEARTH_BUILD_TESTS "Build the osgEarth unit tests" OFF)
@@ -78,15 +84,12 @@ option(OSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT "Build the legacy procedural nodekit 
 mark_as_advanced(OSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT)
 
 option(OSGEARTH_BUILD_LEGACY_CONTROLS_API "Build the legacy Controls UI API" OFF)
-option(OSGEARTH_BUILD_CESIUM_NODEKIT "Build the Cesium nodekit (osgEarthCesium)" ON)
 mark_as_advanced(OSGEARTH_BUILD_LEGACY_CONTROLS_API)
 
 option(OSGEARTH_BUILD_ZIP_PLUGIN "Build osgEarth's zip plugin based on libzip" ON)
-option(OSGEARTH_BUILD_DOCS "Include the documentation folder" OFF)
 mark_as_advanced(OSGEARTH_BUILD_ZIP_PLUGIN)
 
-option(OSGEARTH_ENABLE_PROFILING "Enable profiling with Tracy" OFF)
-option(OSGEARTH_ENABLE_GEOCODER "Enable the geocoder (GDAL/OGR must be built with geocoder support)" ON)
+option(OSGEARTH_ENABLE_PROFILING "Enable profiling with Tracy" ON)
 mark_as_advanced(OSGEARTH_ENABLE_PROFILING)
 
 option(OSGEARTH_ASSUME_SINGLE_GL_CONTEXT "Assume the use of a single GL context for all GL objects (advanced)" ON)
@@ -99,7 +102,7 @@ option(OSGEARTH_INSTALL_SHADERS "Whether to deploy GLSL shaders when installing 
 mark_as_advanced(OSGEARTH_INSTALL_SHADERS)
 
 if(WIN32)
-    option(OSGEARTH_INTSALL_PDBS "Whether to deploy Windows .pdb files" OFF)
+    option(OSGEARTH_INSTALL_PDBS "Whether to deploy Windows .pdb files" OFF)
 endif()
 
 # Dependencies ...........................................................
@@ -133,8 +136,7 @@ endif()
 if(OSGEARTH_ENABLE_PROFILING)
     find_package(Tracy)
     if(Tracy_FOUND)
-        message(STATUS "Found Tracy ... enabling frame profiling")
-        set(OSGEARTH_HAVE_TRACY 1)
+        message(STATUS "Found Tracy. Enabling frame profiling.")
     endif()
 endif()
 

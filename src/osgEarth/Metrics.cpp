@@ -80,7 +80,7 @@ namespace
     };
 #endif
 }
-#endif
+#endif // OSGEARTH_HAVE_TRACY
 
 
 bool Metrics::enabled()
@@ -111,6 +111,7 @@ int Metrics::run(osgViewer::ViewerBase& viewer)
     }
 
 #ifdef OSGEARTH_HAVE_TRACY
+
     if (s_gpuMetricsEnabled == false &&
         ::getenv("OE_PROFILE_GPU") != NULL)
     {

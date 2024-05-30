@@ -2,7 +2,7 @@ find_package(RocksDB QUIET)
 
 if(RocksDB_FOUND)
 
-    message(STATUS "Foudn rocksdb - will build rocks cache")
+    message(STATUS "Found rocksdb")
 
     set(CMAKE_CXX_STANDARD 17)
     

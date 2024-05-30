@@ -198,7 +198,6 @@ SET(TARGET_H
     Filter
     FilterContext
     FilteredFeatureSource
-    FilterUsage
     FlatteningLayer
     Formatter
     FractalElevationLayer
@@ -825,6 +824,12 @@ if(Protobuf_FOUND AND Protobuf_PROTOC_EXECUTABLE)
     PROTOBUF_GENERATE_CPP(PROTO_GLYPHS_CPP PROTO_GLYPHS_H glyphs.proto)    
     list(APPEND TARGET_H ${PROTO_VECTOR_TILE_H} ${PROTO_GLYPHS_H})
     list(APPEND TARGET_SRC ${PROTO_VECTOR_TILE_CPP} ${PROTO_GLYPHS_CPP})
+    
+    if (OSGEARTH_OUT_OF_SOURCE_BUILD)
+        # for an out-of-source build, the binary folder will include any protobuf-generated
+        # header files; therefore we need to include them:
+        include_directories(${CMAKE_CURRENT_BINARY_DIR})
+    endif()
 endif()
 
 if(OSGEARTH_ENABLE_GEOCODER)
