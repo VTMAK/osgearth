@@ -44,6 +44,7 @@ namespace osgEarth
             OE_OPTION(bool, lightingEnabled, true);
             OE_OPTION(float, minPixels, 0.0f);
             OE_OPTION(ShaderPolicy, shaderPolicy, SHADERPOLICY_GENERATE);
+            OE_OPTION(ModelSourceOptions, driver); // legacy support - don't use in new code
             virtual Config getConfig() const;
         private:
             void fromConfig( const Config& conf );
@@ -81,10 +82,14 @@ namespace osgEarth
 
         Status openImplementation() override;
         osg::Node* getNode() const override;
+        void addedToMap(const Map*) override;
         void init() override;
 
     private:
         osg::ref_ptr<osg::Group> _root;
+
+        // legacy modelsource support
+        osg::ref_ptr<ModelSource> _modelSource; 
     };
 }
 

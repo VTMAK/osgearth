@@ -48,6 +48,10 @@ ModelLayer::Options::getConfig() const
 
     conf.set( "lighting", lightingEnabled() );
 
+    // LEGACY modelsource support
+    if (driver().isSet())
+        conf.merge(driver()->getConfig());
+
     return conf;
 }
 
@@ -65,6 +69,10 @@ ModelLayer::Options::fromConfig( const Config& conf )
     conf.get("shader_policy", "generate", shaderPolicy(), SHADERPOLICY_GENERATE);
 
     conf.get( "lighting", lightingEnabled());
+
+    // LEGACY modelsource support
+    if (conf.hasValue("driver"))
+        driver() = ModelSourceOptions(conf);
 }
 
 namespace
@@ -184,8 +192,37 @@ ModelLayer::openImplementation()
     if (parentStatus.isError())
         return parentStatus;
 
+    // Do we need to load a model source?
+    if (_modelSource.valid())
+    {
+        //nop
+    }
+
+    // Do we have a LEGACY modelsource driver?
+    else if (options().driver().isSet())
+    {
+        std::string driverName = options().driver()->getDriver();
+
+        OE_DEBUG << LC << "Opening; driver=\"" << driverName << "\"" << std::endl;
+
+        Status status;
+
+        // Try to create the model source:
+        _modelSource = ModelSourceFactory::create(options().driver().get());
+        if (_modelSource.valid())
+        {
+            _modelSource->setName(this->getName());
+            const Status& modelStatus = _modelSource->open(getReadOptions());
+            return modelStatus;
+        }
+        else
+        {
+            return Status(Status::ServiceUnavailable, Stringify() << "Failed to create driver \"" << driverName << "\"");
+        }
+    }
+
     // Do we have a model URL to load?
-    if (options().url().isSet())
+    else if (options().url().isSet())
     {
         osg::ref_ptr<osgDB::Options> localReadOptions =
             Registry::instance()->cloneOrCreateOptions(getReadOptions());
@@ -295,3 +332,21 @@ ModelLayer::getNode() const
 {
     return _root.get();
 }
+
+void
+ModelLayer::addedToMap(const Map* map)
+{
+    if (_modelSource.valid())
+    {
+        auto node = _modelSource->createNode(map, {});
+        if (node)
+        {
+            _root->addChild(node);
+        }
+        else
+        {
+            setStatus(Status::ResourceUnavailable, "Failed to load model source node");
+        }
+    }
+}
+
