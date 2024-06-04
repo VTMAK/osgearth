@@ -338,6 +338,8 @@ ModelLayer::addedToMap(const Map* map)
 {
     if (_modelSource.valid())
     {
+        _modelSource->setSceneGraphCallbacks(getSceneGraphCallbacks());
+
         auto node = _modelSource->createNode(map, {});
         if (node)
         {
