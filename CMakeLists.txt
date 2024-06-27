@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20)
 
 # VCPKG customization ....................................................
 
@@ -19,14 +19,14 @@ project(
 
 # SDK version number
 set(OSGEARTH_MAJOR_VERSION 3)
-set(OSGEARTH_MINOR_VERSION 5)
+set(OSGEARTH_MINOR_VERSION 6)
 set(OSGEARTH_PATCH_VERSION 0)
 set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEARTH_PATCH_VERSION})
 
 # Increment this each time the ABI changes
-set(OSGEARTH_SOVERSION 154)
+set(OSGEARTH_SOVERSION 157)
 
-# Require C++11
+# Require C++14
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -168,18 +168,20 @@ include_directories(
     ${OSGEARTH_SOURCE_DIR}/src
     ${OPENSCENEGRAPH_INCLUDE_DIR})
 
-# Dynamic vs Static Linking.
-# The utilities in osgearth-macros will use this value.
+
+# Shared v. static build .................................................
+
 option(OSGEARTH_BUILD_SHARED_LIBS "ON to build shared libraries; OFF to build static libraries." ON)
 if(OSGEARTH_BUILD_SHARED_LIBS)
     set(OSGEARTH_DYNAMIC_OR_STATIC "SHARED")
 else()
     set(OSGEARTH_DYNAMIC_OR_STATIC "STATIC")
 endif()
-
+message(STATUS "Building ${OSGEARTH_DYNAMIC_OR_STATIC} libraries")
 
 # Whether to append SOVERSIONs to libraries (unix)
 option(OSGEARTH_SONAMES "ON to append so-version numbers to libraries" ON)
+
 
 # Source code ............................................................
 

@@ -21,17 +21,14 @@
 */
 
 #include <osgViewer/Viewer>
-#include <osgEarth/Notify>
 #include <osgEarth/EarthManipulator>
 #include <osgEarth/ExampleResources>
 #include <osgEarth/MapNode>
-#include <osgEarth/Threading>
-#include <osgEarth/ShaderGenerator>
 #include <osgEarth/PhongLightingEffect>
-#include <osgDB/ReadFile>
 #include <osgGA/TrackballManipulator>
-#include <osgUtil/Optimizer>
 #include <iostream>
+#include <osgEarth/PlaceNode>
+#include <osgEarth/ObjectIDPicker>
 
 #include <osgEarth/Metrics>
 
@@ -43,9 +40,9 @@ using namespace osgEarth::Util;
 int
 usage(const char* name)
 {
-    OE_NOTICE
+    std::cout
         << "\nUsage: " << name << " file.earth" << std::endl
-        << MapNodeHelper().usage() << std::endl;
+        << Util::MapNodeHelper().usage() << std::endl;
 
     return 0;
 }
@@ -59,52 +56,43 @@ main(int argc, char** argv)
         return usage(argv[0]);
 
     osgEarth::initialize(arguments);
-
-    // create a viewer:
     osgViewer::Viewer viewer(arguments);
-    // This is normally called by Viewer::run but we are running our frame loop manually so we need to call it here.
-    viewer.setReleaseContextAtEndOfFrameHint(false);
-
-    // Tell the database pager to not modify the unref settings
-    viewer.getDatabasePager()->setUnrefImageDataAfterApplyPolicy( true, false );
-
-    // thread-safe initialization of the OSG wrapper manager. Calling this here
-    // prevents the "unsupported wrapper" messages from OSG
-    osgDB::Registry::instance()->getObjectWrapperManager()->findWrapper("osg::Image");
-
-    // install our default manipulator (do this before calling load)
-    viewer.setCameraManipulator( new EarthManipulator(arguments) );
-
-    // disable the small-feature culling
+    viewer.setCameraManipulator(new EarthManipulator(arguments));
     viewer.getCamera()->setSmallFeatureCullingPixelSize(-1.0f);
 
-    // load an earth file, and support all or our example command-line options
     auto node = MapNodeHelper().load(arguments, &viewer);
     if (node.valid())
     {
-        if (MapNode::get(node))
+        auto mapnode = MapNode::get(node);
+        if (mapnode)
         {
+            auto anno = new PlaceNode();
+            anno->setText("Hello, World!");
+            anno->setPosition(GeoPoint(mapnode->getMapSRS(), -122.5, 45.5));
+            Registry::objectIndex()->tagNode(anno, anno);
+            mapnode->addChild(anno);
+
+            auto picker = new ObjectIDPicker();
+            picker->setView(&viewer);
+            picker->setGraph(mapnode);
+            mapnode->addChild(picker);
+
+            picker->onClick([&](const ObjectID& id)
+                {
+                    if (id != OSGEARTH_OBJECTID_EMPTY)
+                    {
+                        auto place = Registry::objectIndex()->get<AnnotationNode>(id);
+                        if (place)
+                        {
+                            std::cout << "Clicked on \"" << place->getText() << "\"" << std::endl;
+                        }
+                    }
+                });
+
+
             viewer.setSceneData(node);
+            return viewer.run();
         }
-        else
-        {
-            // not an earth file? Just view as a normal OSG node or image with basic lighting
-            viewer.setCameraManipulator(new osgGA::TrackballManipulator);
-
-            osg::LightSource* sunLS = new osg::LightSource();
-            sunLS->getLight()->setPosition(osg::Vec4d(1, -1, 1, 0));
-            auto group = new osg::Group();
-            group->addChild(sunLS);
-            group->addChild(node);
-            auto phong = new PhongLightingEffect();
-            phong->attach(group->getOrCreateStateSet());
-            ShaderGenerator gen;
-            gen.run(group);
-
-            viewer.setSceneData(group);
-        }
-
-        return Metrics::run(viewer);
     }
 
     return usage(argv[0]);

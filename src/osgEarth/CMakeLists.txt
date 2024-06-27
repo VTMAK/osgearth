@@ -15,7 +15,6 @@ find_package(SQLite3 REQUIRED)
 
 # optional
 find_package(geos QUIET)
-find_package(Protobuf QUIET)
 find_package(blend2d QUIET)
 find_package(blosc QUIET)
 find_package(spdlog QUIET)
@@ -23,6 +22,14 @@ find_package(meshoptimizer QUIET)
 
 if(OSGEARTH_BUILD_ZIP_PLUGIN)
     find_package(LibZip QUIET)
+endif()
+
+if(OSGEARTH_PROTOBUF_FORCE_CONFIG_MODE)
+    # https://stackoverflow.com/a/56896032/4218920
+    set(protobuf_MODULE_COMPATIBLE ON CACHE BOOL "")
+    find_package(Protobuf CONFIG QUIET)
+else()
+    find_package(Protobuf QUIET)
 endif()
 
 
@@ -813,6 +820,8 @@ set(TARGET_SRC
     ${SHADERS_CPP}
 )
 
+# whether to build the osgEarth::Util::Controls API, which has been
+# mostly replaced by ImGui
 if(OSGEARTH_BUILD_LEGACY_CONTROLS_API)
     list(APPEND TARGET_SRC
         ActivityMonitorTool.cpp
@@ -821,9 +830,9 @@ endif()
 
 
 # generate the google protocol buffers headers and sources
-if(Protobuf_FOUND AND Protobuf_PROTOC_EXECUTABLE)
-    PROTOBUF_GENERATE_CPP(PROTO_VECTOR_TILE_CPP PROTO_VECTOR_TILE_H vector_tile.proto) 
-    PROTOBUF_GENERATE_CPP(PROTO_GLYPHS_CPP PROTO_GLYPHS_H glyphs.proto)    
+if(Protobuf_FOUND AND Protobuf_PROTOC_EXECUTABLE)    
+    protobuf_generate_cpp(PROTO_VECTOR_TILE_CPP PROTO_VECTOR_TILE_H vector_tile.proto) 
+    protobuf_generate_cpp(PROTO_GLYPHS_CPP PROTO_GLYPHS_H glyphs.proto)    
     list(APPEND TARGET_H ${PROTO_VECTOR_TILE_H} ${PROTO_GLYPHS_H})
     list(APPEND TARGET_SRC ${PROTO_VECTOR_TILE_CPP} ${PROTO_GLYPHS_CPP})
     
@@ -839,8 +848,6 @@ if(OSGEARTH_ENABLE_GEOCODER)
     list(APPEND TARGET_H Geocoder)
     list(APPEND TARGET_SRC Geocoder.cpp)
 endif()
-
-message(STATUS "Building ${LIB_NAME} as a ${OSGEARTH_DYNAMIC_OR_STATIC} library")
 
 # Declare the dynamic headers -- we'll generate them later when all the HAVE vars are set.
 set(OSGEARTH_VERSION_HEADER "${OSGEARTH_BUILDTIME_INCLUDE_DIR}/osgEarth/Version")

@@ -268,7 +268,7 @@ SplatCatalog::createSplatTextureDef(const osgDB::Options* dbOptions,
             range->_materialTextureIndex = -1;
             if ( range->_detail.isSet() )
             {
-                range->_detail->_textureIndex = -1;
+                range->_detail.mutable_value()._textureIndex = -1;
             }
         }
     }
@@ -358,7 +358,7 @@ SplatCatalog::createSplatTextureDef(const osgDB::Options* dbOptions,
                 {
                     texIndex = k->second;
                 }
-                range->_detail->_textureIndex = texIndex;
+                range->_detail.mutable_value()._textureIndex = texIndex;
             }
         }
     }

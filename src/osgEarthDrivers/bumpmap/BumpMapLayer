@@ -16,32 +16,26 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#include "KML_LinearRing"
+#pragma once
 
-using namespace osgEarth_kml;
+#include "BumpMapOptions"
+#include "BumpMapTerrainEffect"
+#include <osgEarth/VisibleLayer>
 
-void
-KML_LinearRing::parseStyle( xml_node<>* node, KMLContext& cs, Style& style )
+namespace osgEarth
 {
-    KML_Geometry::parseStyle(node, cs, style);
+    class TerrainEngine;
 
-    // need a line symbol minimally
-    LineSymbol* line = style.get<LineSymbol>();
-    if ( !line )
+    /**
+        * Layer that installs a bumpmapping terrain effect.
+        */
+    class BumpMapLayer : public VisibleLayer
     {
-        line = style.getOrCreate<LineSymbol>();
-        line->stroke().mutable_value().color() = osg::Vec4f(1,1,1,1);
-    }
+    public:
+        META_Layer(osgEarth, BumpMapLayer, BumpMapOptions, VisibleLayer, bumpmap);
 
-    if ( getValue(node, "tessellate") == "1" )
-    {
-        line->tessellation() = 20;
-    }
-}
+        void prepareForRendering(TerrainEngine* engine) override;
 
-void
-KML_LinearRing::parseCoords( xml_node<>* node, KMLContext& cx )
-{
-    _geom = new Ring();
-    KML_Geometry::parseCoords( node, cx );
+        osg::ref_ptr<BumpMapTerrainEffect> _effect;
+    };
 }
