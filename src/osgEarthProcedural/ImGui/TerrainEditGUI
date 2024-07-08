@@ -18,8 +18,8 @@
  */
 #pragma once
 
+#include <osgEarth/ImGui/ImGuiPanel>
 #include <osgEarthProcedural/LifeMapLayer>
-#include <osgEarth/ImGui/ImGui>
 #include <osgEarth/DecalLayer>
 #include <osgEarth/MapNode>
 #include <osgEarth/TerrainEngineNode>
@@ -38,7 +38,6 @@ namespace osgEarth
         using namespace osgEarth::Contrib;
         using namespace osgEarth::Threading;
         using namespace osgEarth::Util;
-        using namespace osgEarth::GUI;
 
         struct CraterRenderer
         {
@@ -108,7 +107,7 @@ namespace osgEarth
                         float r = 2.0f / 255.0f;
                         float a = 2.0f * (lc_iter.u() - 0.5f);
                         float b = 2.0f * (lc_iter.v() - 0.5f);
-                        float d = clamp(static_cast<float>(sqrt((a * a) + (b * b))), 0.0f, 1.0f);
+                        //float d = clamp(static_cast<float>(sqrt((a * a) + (b * b))), 0.0f, 1.0f);
                         //TODO uncomment me for a nice circle
                         //if (d < 1.0f)
                         {
@@ -205,7 +204,7 @@ namespace osgEarth
         };
 
 
-        class TerrainEditGUI : public BaseGUI
+        class TerrainEditGUI : public ImGuiPanel
         {
         private:
             bool _installed = false;
@@ -231,7 +230,7 @@ namespace osgEarth
             osg::ref_ptr<Feature> _ditchFeature;
 
         public:
-            TerrainEditGUI() : BaseGUI("Terrain Editing")
+            TerrainEditGUI() : ImGuiPanel("Terrain Editing")
             {
             }
 

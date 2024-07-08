@@ -257,6 +257,13 @@ RexTerrainEngineNode::onSetMap()
         _morphingSupported = false;
     }
 
+    // tessellation check
+    if (_optionsConcrete.gpuTessellation() == true &&
+        GLUtils::useNVGL() == false)
+    {
+        OE_WARN << LC << "GPU tessellation is only supported in NVGL mode. Disabling." << std::endl;
+    }
+
     // morphing imagery LODs requires we bind parent textures to their own unit.
     if (options.getMorphImagery() && _morphingSupported)
     {
@@ -1252,6 +1259,7 @@ RexTerrainEngineNode::removeImageLayer(ImageLayer* layerRemoved)
                     OE_INFO << LC << "Binding (" << binding.samplerName() << " unit " << binding.unit() << ") cleared\n";
                     binding.usage().clear();
                     binding.unit() = -1;
+                    binding.sourceUID().clear();
 
                     // Request an update to reset the shared sampler in the scene graph
                     // GW: running this anyway below (PurgeOrphanedLayers), so no need..?
