@@ -24,7 +24,7 @@ set(OSGEARTH_PATCH_VERSION 0)
 set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEARTH_PATCH_VERSION})
 
 # Increment this each time the ABI changes
-set(OSGEARTH_SOVERSION 158)
+set(OSGEARTH_SOVERSION 159)
 
 # Require C++14
 set(CMAKE_CXX_STANDARD 14)
@@ -66,6 +66,7 @@ include(oe_win32)
 
 option(OSGEARTH_BUILD_TOOLS "Build the osgEarth command-line tools" ON)
 option(OSGEARTH_BUILD_EXAMPLES "Build the osgEarth example applications" OFF)
+option(OSGEARTH_BUILD_IMGUI_NODEKIT "Build the osgEarth ImGui nodekit and ImGui-based apps" ON)
 option(OSGEARTH_BUILD_CESIUM_NODEKIT "Build the Cesium nodekit (osgEarthCesium)" OFF)
 option(OSGEARTH_BUILD_TRITON_NODEKIT "Build support for SunDog Triton SDK" OFF)
 option(OSGEARTH_BUILD_SILVERLINING_NODEKIT "Build support for SunDog SilverLining SDK" OFF)
@@ -124,14 +125,6 @@ endif()
 find_package(OpenGL REQUIRED)
 find_package(OpenSceneGraph REQUIRED COMPONENTS osg osgDB osgGA osgManipulator osgShadow osgSim osgText osgUtil osgViewer OpenThreads)
 
-# optional - GLEW supports ImGui
-find_package(GLEW)
-
-if(GLEW_FOUND AND EXISTS "${OSGEARTH_EMBEDDED_THIRD_PARTY_DIR}/imgui/imgui.cpp")
-    set(OSGEARTH_HAVE_IMGUI 1)
-endif()
-
-
 # integrated profiling with tracy?
 if(OSGEARTH_ENABLE_PROFILING)
     find_package(Tracy)
@@ -149,8 +142,6 @@ endif()
 if(OSGEARTH_ASSUME_SINGLE_THREADED_OSG)
     add_definitions(-DOSGEARTH_SINGLE_THREADED_OSG)
 endif()
-
-
 
 # Bring in our utility macros that sub-projects will use to configure themselves.
 include(cmake/osgearth-macros.cmake)
