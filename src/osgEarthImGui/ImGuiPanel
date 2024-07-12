@@ -17,22 +17,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 #pragma once
-<<<<<<<< HEAD:src/osgEarth/ImGui/ImGui
-
-#include <GL/glew.h>
-#ifndef IMGUI_VERSION
-#include <imgui.h>
-#include <imgui_internal.h>
-#include <misc/cpp/imgui_stdlib.h>
-#endif
-========
->>>>>>>> upstream-local/b-imgui:src/osgEarthImGui/ImGuiPanel
 
 #include <osgEarthImGui/Common>
 
 #include <osgEarth/BuildConfig>
 #include <osgEarth/Config>
 #include <osgEarth/GLUtils>
+#include <osgEarth/MapNode>
+#include <osgEarth/Terrain>
+#include <osgEarth/GeoData>
 
 #include <osgDB/ReadFile>
 #include <osg/observer_ptr>
@@ -42,91 +35,6 @@
 #include <memory>
 
 namespace osgEarth
-<<<<<<<< HEAD:src/osgEarth/ImGui/ImGui
-{    
-    /**
-    * And OSG realize operation that will initialize the GLEW library
-    * as required for ImGui
-    */
-    class ImGuiRealizeOperation : public osg::Operation
-    {
-    public:
-        ImGuiRealizeOperation()
-            : osg::Operation("ImGuiGlewInitOperation", false)
-        {
-        }
-
-        void operator()(osg::Object* object) override
-        {
-            osg::GraphicsContext* context = dynamic_cast<osg::GraphicsContext*>(object);
-            if (context)
-            {
-#ifdef GLEW_OK
-                if (glewInit() != GLEW_OK)
-                {
-                    OE_FATAL << "glewInit() failed" << std::endl;
-                }
-#endif
-            }
-        }
-    };
-
-    /**
-    * Generic OSG event handler that will render ImGui elements.
-    * Subclass this and override "draw" to render your own ImGui interface,
-    * and add this instance as an event handler to your viewer.
-    */
-    class ImGuiEventHandler : public osgGA::GUIEventHandler
-    {
-    public:
-        using RealizeOperation = osgEarth::ImGuiRealizeOperation;
-
-        bool handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdapter& aa) override;
-
-        virtual void load(void* section, const std::string& key, const std::string& value) { }
-
-        virtual void save(osgEarth::Config& conf) { }
-
-        virtual void* findByName(const char* name) { return nullptr; }
-
-        virtual void* findByType(const std::type_info& type) { return nullptr; }
-
-        bool getAutoAdjustProjectionMatrix() const { return _autoAdjustProjectionMatrix; }
-
-        void setAutoAdjustProjectionMatrix(bool value) { _autoAdjustProjectionMatrix = value; }
-
-        // Put your ImGui code inside this function
-        virtual void draw(osg::RenderInfo& renderInfo) = 0;
-
-        void newFrame(osg::RenderInfo& renderInfo);
-        void render(osg::RenderInfo& renderInfo);
-        bool _show = true;
-
-    private:
-        struct ImGuiNewFrameCallback;
-        struct ImGuiRenderCallback;
-
-        double _time = 0.0;
-        bool _initialized = false;
-        bool _firstFrame = true;
-        bool _autoAdjustProjectionMatrix = true;
-        bool _dragging = false;
-
-        static void* handleStartEntry(ImGuiContext* ctx, ImGuiSettingsHandler* handler, const char* name);
-
-        static void handleReadSetting(ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line);
-
-        static void handleWriteSettings(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* out_buf);
-
-        void installSettingsHandler();
-
-        ImGuiKey convertKey(int osgKey);
-
-        ImGuiButtonFlags convertMouseButton(int osgButtonMask);
-    };
-}
-
-========
 {
     // base class for GUI elements that allows you to toggle visibility
     // no export. header only.
@@ -289,7 +197,6 @@ namespace osgEarth
     };
 }
 
->>>>>>>> upstream-local/b-imgui:src/osgEarthImGui/ImGuiPanel
 // various additions to ImGui.
 namespace ImGuiLTable
 {
