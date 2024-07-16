@@ -204,6 +204,7 @@ SET(TARGET_H
     Fill
     Filter
     FilterContext
+    FilterUsage
     FilteredFeatureSource
     FlatteningLayer
     Formatter
