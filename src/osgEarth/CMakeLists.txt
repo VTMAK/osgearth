@@ -148,7 +148,6 @@ SET(TARGET_H
     Config
     Containers
     ContourMap
-    Controls
     ConvertTypeFilter
     Coverage
     CoverageLayer
@@ -463,7 +462,8 @@ SET(TARGET_H
 if(OSGEARTH_BUILD_LEGACY_CONTROLS_API)
     list(APPEND TARGET_H
         ActivityMonitorTool
-        MouseCoordsTool)
+        MouseCoordsTool
+        Controls)
 endif()
 
 set(TARGET_SRC
@@ -515,7 +515,6 @@ set(TARGET_SRC
     CompressedArray.cpp
     Config.cpp
     ContourMap.cpp
-    Controls.cpp
     ConvertTypeFilter.cpp
     CoverageLayer.cpp
     CoverageSymbol.cpp
@@ -801,7 +800,8 @@ set(TARGET_SRC
 if(OSGEARTH_BUILD_LEGACY_CONTROLS_API)
     list(APPEND TARGET_SRC
         ActivityMonitorTool.cpp
-        MouseCoordsTool.cpp)
+        MouseCoordsTool.cpp
+        Controls.cpp)
 endif()
 
 
