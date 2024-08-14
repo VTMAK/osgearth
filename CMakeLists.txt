@@ -19,12 +19,12 @@ project(
 
 # SDK version number
 set(OSGEARTH_MAJOR_VERSION 3)
-set(OSGEARTH_MINOR_VERSION 6)
+set(OSGEARTH_MINOR_VERSION 7)
 set(OSGEARTH_PATCH_VERSION 0)
 set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEARTH_PATCH_VERSION})
 
 # Increment this each time the ABI changes
-set(OSGEARTH_SOVERSION 160)
+set(OSGEARTH_SOVERSION 161)
 
 # Require C++14
 set(CMAKE_CXX_STANDARD 14)
@@ -65,23 +65,23 @@ include(oe_win32)
 # Build options ..........................................................
 
 option(OSGEARTH_BUILD_TOOLS "Build the osgEarth command-line tools" ON)
-option(OSGEARTH_BUILD_EXAMPLES "Build the osgEarth example applications" OFF)
+option(OSGEARTH_BUILD_EXAMPLES "Build the osgEarth example applications" ON)
 option(OSGEARTH_BUILD_IMGUI_NODEKIT "Build the osgEarth ImGui nodekit and ImGui-based apps" ON)
 option(OSGEARTH_BUILD_CESIUM_NODEKIT "Build the Cesium nodekit (osgEarthCesium)" OFF)
 option(OSGEARTH_BUILD_TRITON_NODEKIT "Build support for SunDog Triton SDK" OFF)
 option(OSGEARTH_BUILD_SILVERLINING_NODEKIT "Build support for SunDog SilverLining SDK" OFF)
-option(OSGEARTH_ENABLE_GEOCODER "Enable the geocoder (GDAL/OGR must be built with geocoder support)" ON)
+option(OSGEARTH_ENABLE_GEOCODER "Enable the geocoder (GDAL/OGR must be built with geocoder support)" OFF)
 
-option(OSGEARTH_BUILD_DOCS "Include the documentation folder" OFF)
+option(OSGEARTH_BUILD_DOCS "Include the documentation folder" ON)
 mark_as_advanced(OSGEARTH_BUILD_DOCS)
 
 option(OSGEARTH_BUILD_TESTS "Build the osgEarth unit tests" OFF)
 mark_as_advanced(OSGEARTH_BUILD_TESTS)
 
-option(OSGEARTH_BUILD_PROCEDURAL_NODEKIT "Build the procedural terrain nodekit (osgEarthProcedural)" ON)
+option(OSGEARTH_BUILD_PROCEDURAL_NODEKIT "Build the procedural terrain nodekit (osgEarthProcedural)" OFF)
 mark_as_advanced(OSGEARTH_BUILD_PROCEDURAL_NODEKIT)
 
-option(OSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT "Build the legacy procedural nodekit (osgEarthSplat)" ON)
+option(OSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT "Build the legacy procedural nodekit (osgEarthSplat)" OFF)
 mark_as_advanced(OSGEARTH_BUILD_LEGACY_SPLAT_NODEKIT)
 
 option(OSGEARTH_BUILD_LEGACY_CONTROLS_API "Build the legacy Controls UI API" OFF)
@@ -90,16 +90,16 @@ mark_as_advanced(OSGEARTH_BUILD_LEGACY_CONTROLS_API)
 option(OSGEARTH_BUILD_ZIP_PLUGIN "Build osgEarth's zip plugin based on libzip" ON)
 mark_as_advanced(OSGEARTH_BUILD_ZIP_PLUGIN)
 
-option(OSGEARTH_ENABLE_PROFILING "Enable profiling with Tracy" ON)
+option(OSGEARTH_ENABLE_PROFILING "Enable profiling with Tracy" OFF)
 mark_as_advanced(OSGEARTH_ENABLE_PROFILING)
 
-option(OSGEARTH_ASSUME_SINGLE_GL_CONTEXT "Assume the use of a single GL context for all GL objects (advanced)" ON)
+option(OSGEARTH_ASSUME_SINGLE_GL_CONTEXT "Assume the use of a single GL context for all GL objects (advanced)" OFF)
 mark_as_advanced(OSGEARTH_ASSUME_SINGLE_GL_CONTEXT)
 
-option(OSGEARTH_ASSUME_SINGLE_THREADED_OSG "Assume OSG will always be configured to run in SingleThreaded mode (advanced)" ON)
+option(OSGEARTH_ASSUME_SINGLE_THREADED_OSG "Assume OSG will always be configured to run in SingleThreaded mode (advanced)" OFF)
 mark_as_advanced(OSGEARTH_ASSUME_SINGLE_THREADED_OSG)
 
-option(OSGEARTH_INSTALL_SHADERS "Whether to deploy GLSL shaders when installing (OFF=inlined shaders)" ON)
+option(OSGEARTH_INSTALL_SHADERS "Whether to deploy GLSL shaders when installing (OFF=inlined shaders)" OFF)
 mark_as_advanced(OSGEARTH_INSTALL_SHADERS)
 
 if(WIN32)
