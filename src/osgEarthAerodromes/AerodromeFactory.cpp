@@ -225,12 +225,6 @@ AerodromeFactory::init(const osgDB::Options* options)
 
     _dbOptions = options;
 
-    // create and initialize a renderer
-    _renderer = s_renderer_factory ? s_renderer_factory() : new AerodromeRenderer();
-    _renderer->setStyleSheet(_catalog->styleSheet());
-    _renderer->setClampToTerrain(_clampToTerrain);
-    _renderer->initialize(_map.get(), _dbOptions.get());
-
     // setup the PagedLODs
     seedAerodromes(_catalog.get(), _dbOptions.get());
 }
@@ -495,32 +489,37 @@ AerodromeFactory::createAerodrome(
     return aerodrome.release();
 }
 
-AerodromeNode* AerodromeFactory::getAerodromeNode(const std::string& icao)
+AerodromeNode* AerodromeFactory::getAerodromeNode(const std::string& icao) const
 {
-    if (!_renderer.valid())
-        return 0L;
+    // create and initialize a renderer
+    osg::ref_ptr<AerodromeRenderer> renderer = s_renderer_factory ? s_renderer_factory() : new AerodromeRenderer();
+    if (!renderer.valid())
+        return nullptr;
 
-    Threading::ScopedWriteLock lock(_mutex);
+    renderer->setStyleSheet(_catalog->styleSheet());
+    renderer->setClampToTerrain(_clampToTerrain);
+    renderer->initialize(_map.get(), _dbOptions.get());
+
+    Threading::scoped_lock_if(_serialMutex, _serialLoading);
+    //Threading::ScopedWriteLock lock(_mutex);
 
     OE_START_TIMER(getAerodromeNode);
 
     // create AerodromeNode
     OE_START_TIMER(create);
-    osg::ref_ptr<AerodromeNode> node = createAerodrome(_catalog.get(), icao, _buildTerminals, _dbOptions.get());
-    float createTime = OE_STOP_TIMER(create);
 
-    // render
-    OE_START_TIMER(render);
-    if (_renderer.valid())
-        node->accept(*_renderer.get());
+    osg::ref_ptr<AerodromeNode> node = createAerodrome(_catalog.get(), icao, _buildTerminals, _dbOptions.get());
+
+    node->accept(*renderer.get());
 
     // Generate shaders (using a cache)
     osg::ref_ptr<osgEarth::StateSetCache> cache = new osgEarth::StateSetCache();
-    osgEarth::Registry::shaderGenerator().run( node.get(), "Aerodrome", cache.get() );
-    float renderTime = OE_STOP_TIMER(render);
+    osgEarth::ShaderGenerator gen;
+    gen.run(node.get(), "Aerodrome", cache.get());
+    //osgEarth::Registry::shaderGenerator().run( node.get(), "Aerodrome", cache.get() );
 
     float s = OE_STOP_TIMER(getAerodromeNode);
-    OE_INFO << LC << std::setprecision(3) << "Built \"" << icao << "\" - create=" << createTime << "s, render=" << renderTime << "s, total=" << s << "s\n";
+    OE_INFO << LC << std::setprecision(3) << "Built \"" << icao << "\" - duration=" << s << "s" << std::endl;
 
     if (node.valid() && node->getBound().valid())
     {

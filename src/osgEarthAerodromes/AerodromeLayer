@@ -68,6 +68,9 @@ namespace osgEarth { namespace Aerodrome
         //! Render bin name
         OE_OPTION(std::string, renderBin);
 
+        //! Whether to serialize (one at a time) aerodrome loads
+        OE_OPTION(bool, serialLoading, false);
+
     public:
         Config getConfig() const
         {
@@ -80,6 +83,7 @@ namespace osgEarth { namespace Aerodrome
             if (!icaoExclusions().empty())
                 conf.set("exclude_icaos", joinStrings(icaoExclusions(), ','));
             conf.set("clamp_to_terrain", clampToTerrain());
+            conf.set("serial_loading", serialLoading());
             return conf;
         }
 
@@ -100,6 +104,7 @@ namespace osgEarth { namespace Aerodrome
             conf.get("render_bin", renderBin());
             StringTokenizer(conf.value("exclude_icaos"), _icaoExclusions, ", ", "", false, true);
             conf.get("clamp_to_terrain", clampToTerrain());
+            conf.get("serial_loading", serialLoading());
         }
     };
 

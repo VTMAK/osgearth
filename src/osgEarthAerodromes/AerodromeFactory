@@ -75,15 +75,11 @@ namespace osgEarth { namespace Aerodrome
         //! Map to reference for geometry generation
         const Map* getMap() const { return _map.get(); }
 
-        //! Object that creates aerodrome geometries
-        AerodromeRenderer* getRenderer() { return _renderer.get(); }
-        void setRenderer(AerodromeRenderer* renderer) { _renderer = renderer; }
-
         //! creates an AerodromeNode from AerodromeCatalog
         static AerodromeNode* createAerodrome(AerodromeCatalog* catalog, const std::string& icao, bool buildTerminals, const osgDB::Options* options=0L);
 
         //! gets the aerodrome scene graph assocaited with the provided ICAO (airport code)
-        AerodromeNode* getAerodromeNode(const std::string& icao);
+        AerodromeNode* getAerodromeNode(const std::string& icao) const;
 
         //! Set a creator object for aerodrome renderer implementations.
         using RendererFactory = std::function<AerodromeRenderer*()>;
@@ -111,10 +107,10 @@ namespace osgEarth { namespace Aerodrome
         osg::observer_ptr<const Map> _map;
         osg::ref_ptr<AerodromeCatalog> _catalog;
         osg::ref_ptr<const osgDB::Options> _dbOptions;
-        osg::ref_ptr<AerodromeRenderer> _renderer;
         osg::ref_ptr<SceneGraphCallbacks> _sceneGraphCallbacks;
-        mutable Threading::ReadWriteMutex _mutex;
-        int _lodSSE;
+
+        bool _serialLoading = false;
+        mutable std::mutex _serialMutex;
 
         bool _buildTerminals = true;
         std::unordered_set<std::string> _icaoExclusions;
