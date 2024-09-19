@@ -1057,6 +1057,10 @@ namespace
                 return HTTPResponse(0);
             }
 
+            // Enable automatic HTTP decompression of known types.
+            BOOL enableDecompression = TRUE;
+            InternetSetOption(hConnection, INTERNET_OPTION_HTTP_DECODING, &enableDecompression, sizeof(enableDecompression));
+
             HINTERNET hRequest = HttpOpenRequest(
                 hConnection,            // handle from InternetConnect
                 "GET",                  // verb
@@ -1075,7 +1079,8 @@ namespace
                 return HTTPResponse(0);
             }
 
-            while( !HttpSendRequest(hRequest, NULL, 0, NULL, 0) )
+            const char* headers = "Accept-Encoding: gzip, deflate";
+            while( !HttpSendRequest(hRequest, headers, strlen(headers), NULL, 0) )
             {
                 DWORD errorNum = GetLastError();
 
@@ -1580,14 +1585,12 @@ HTTPClient::doGet(const HTTPRequest&    request,
 
         if (remoteResponse.getCode() == ReadResult::RESULT_NOT_MODIFIED)
         {
-            OE_DEBUG << LC << uri.full() << " not modified, using cached result" << std::endl;
             // Touch the cached item to update it's last modified timestamp so it doesn't expire again immediately.
             if (bin)
                 bin->touch(uri.cacheKey());
         }
         else
         {
-            OE_DEBUG << LC << "Got remote result for " << uri.full() << std::endl;
             response = remoteResponse;
 
             if (response.isOK())

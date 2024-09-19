@@ -24,7 +24,7 @@ set(OSGEARTH_PATCH_VERSION 0)
 set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEARTH_PATCH_VERSION})
 
 # Increment this each time the ABI changes
-set(OSGEARTH_SOVERSION 161)
+set(OSGEARTH_SOVERSION 162)
 
 # Require C++14
 set(CMAKE_CXX_STANDARD 14)
@@ -145,6 +145,7 @@ endif()
 
 # Bring in our utility macros that sub-projects will use to configure themselves.
 include(cmake/osgearth-macros.cmake)
+include(cmake/install-package-config-files.cmake)
 
 # Detect the OSG version so we can append it to plugin DLLs just like OSG does.
 detect_osg_version()
@@ -188,18 +189,6 @@ add_subdirectory(src)
 if(OSGEARTH_BUILD_DOCS)
     add_subdirectory(docs)
 endif()
-
-
-# CMake Config File Creation .............................................
-
-include(cmake/install-package-config-files.cmake)
-
-osgearth_install_package_config_files(
-    osgEarth
-    ${OSGEARTH_VERSION}
-    ${CMAKE_INSTALL_PREFIX}/include
-    ${CMAKE_INSTALL_PREFIX}/${INSTALL_LIBRARY_FOLDER})
-    
     
     
 # IDE configuration ......................................................

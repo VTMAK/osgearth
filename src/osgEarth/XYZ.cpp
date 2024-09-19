@@ -228,7 +228,7 @@ XYZImageLayer::openImplementation()
 
     if (!getProfile())
     {
-        OE_INFO << LC << "No profile; assuming spherical mercator" << std::endl;
+        OE_INFO << LC << "No profile; assuming spherical-mercator" << std::endl;
         setProfile(Profile::create("spherical-mercator"));
     }
 
@@ -271,12 +271,13 @@ XYZElevationLayer::init()
 void
 XYZElevationLayer::setProfile(const Profile* profile)
 {
+    // do not use profile after callin this function
     ElevationLayer::setProfile(profile);
 
-    if (profile)
+    if (getProfile())
     {
         // update the options for proper serialization
-        options().profile() = profile->toProfileOptions();
+        options().profile() = getProfile()->toProfileOptions();
     }
 }
 

@@ -22,7 +22,7 @@
 
 #define LC "[GeoTransform] "
 
-#define OE_TEST OE_DEBUG
+#define OE_TEST OE_NULL
 
 using namespace osgEarth;
 
@@ -202,7 +202,6 @@ GeoTransform::traverse(osg::NodeVisitor& nv)
                 _findTerrainInUpdateTraversal = false;
                 ADJUST_UPDATE_TRAV_COUNT(this, -1);
                 setTerrain(mapNode->getTerrain());
-                OE_DEBUG << LC << "Discovered terrain.\n";
             }
         }
 

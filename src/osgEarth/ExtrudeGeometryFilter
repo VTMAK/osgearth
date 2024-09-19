@@ -215,6 +215,7 @@ namespace osgEarth { namespace Util
                                const osg::Vec4&     wallColor,
                                const osg::Vec4&     wallBaseColor,
                                const SkinResource*  wallSkin,
+                               float                shadeMin,
                                FeatureIndexBuilder* index);
 
         bool buildRoofGeometry(const Structure&     structure,

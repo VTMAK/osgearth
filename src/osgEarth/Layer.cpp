@@ -128,8 +128,7 @@ Layer::Layer(const Layer& rhs, const osg::CopyOp& op) :
 
 Layer::~Layer()
 {
-    OE_DEBUG << LC << "~Layer" << std::endl;
-    // close(); ?
+    //nop
 }
 
 void
@@ -409,7 +408,7 @@ Layer::openImplementation()
         CacheBin* bin = _cacheSettings->getCache()->addBin(_runtimeCacheId);
         if (bin)
         {
-            OE_DEBUG << LC << "Cache bin is [" << _runtimeCacheId << "]\n";
+            OE_DEBUG << LC << "Cache bin is [" << _runtimeCacheId << "]" << std::endl;
             _cacheSettings->setCacheBin(bin);
         }
         else
@@ -529,7 +528,6 @@ Layer::create(const ConfigOptions& options)
     // convey the configuration options:
     osg::ref_ptr<osgDB::Options> dbopt = Registry::instance()->cloneOrCreateOptions();
     dbopt->getOrCreateUserDataContainer()->addUserObject(new Holder<ConfigOptions>(LAYER_OPTIONS_TAG, options));
-    //dbopt->setPluginData( LAYER_OPTIONS_TAG, (void*)&options );
 
     osg::ref_ptr<Layer> result;
 

@@ -112,7 +112,7 @@ StyleSheet::Options::fromConfig(const Config& conf)
         if (scriptConf.hasValue("url"))
         {
             _script->uri = URI(scriptConf.value("url"), conf.referrer());
-            OE_INFO << LC << "Loading script from \"" << _script->uri->full() << std::endl;
+            OE_DEBUG << LC << "Loading script from \"" << _script->uri->full() << "\"" << std::endl;
             _script->code = _script->uri->getString();
         }
         else
@@ -125,9 +125,6 @@ StyleSheet::Options::fromConfig(const Config& conf)
 
         std::string lang = scriptConf.value("language");
         _script->language = lang.empty() ? "javascript" : lang;
-
-        //std::string profile = scriptConf.value("profile");
-        //_script->profile = profile;
     }
 
     // read any style class definitions. either "class" or "selector" is allowed
@@ -149,7 +146,12 @@ StyleSheet::Options::fromConfig(const Config& conf)
     {
         const Config& styleConf = *i;
 
-        if (styleConf.value("type") == "text/css")
+        // if there is a non-empty "text" value, assume it is CSS.
+        bool has_css = 
+            (styleConf.value("type") == "text/css") ||
+            (trim(styleConf.value()).empty() == false);
+
+        if (has_css)
         {
             // for CSS data, there may be multiple styles in one CSS block. So
             // parse them all out and add them to the stylesheet.
@@ -172,7 +174,6 @@ StyleSheet::Options::fromConfig(const Config& conf)
             {
                 Config blockConf(styleConf);
                 blockConf.setValue(*i);
-                //OE_INFO << LC << "Style block = " << blockConf.toJSON() << std::endl;
                 Style style(blockConf, &styles());
                 _styles[style.getName()] = style;
             }
@@ -258,6 +259,21 @@ StyleSheet::getStyle( const std::string& name, bool fallBackOnDefault ) const
     }
     else {
         return 0L;
+    }
+}
+
+std::pair<const Style*, int>
+StyleSheet::getStyleAndIndex(const std::string& name) const
+{
+    StyleMap::const_iterator i = options().styles().find(name);
+    if (i != options().styles().end())
+    {
+        int index = std::distance(options().styles().begin(), i);
+        return { &i->second, index };
+    }
+    else
+    {
+        return { nullptr, -1 };
     }
 }
 

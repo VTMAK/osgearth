@@ -297,7 +297,7 @@ TiledFeatureModelLayer::createTileImplementation(const TileKey& key, ProgressCal
 
                         feature->set("level", (long long)key.getLevelOfDetail());
 
-                        const std::string& styleString = feature->eval(styleExprCopy, &fc);
+                        const std::string& styleString = feature->eval(styleExprCopy, &fc); 
                         if (!styleString.empty() && styleString != "null")
                         {
                             styleToFeatures[styleString].push_back(feature);
@@ -327,7 +327,8 @@ TiledFeatureModelLayer::createTileImplementation(const TileKey& key, ProgressCal
                     }
                     else
                     {
-                        style = getStyleSheet()->getStyle(styleString);
+                        // no default fallback!
+                        style = getStyleSheet()->getStyle(styleString, false);
                     }
 
                     if (style)
@@ -385,6 +386,8 @@ TiledFeatureModelLayer::createTileImplementation(const TileKey& key, ProgressCal
 const Profile*
 TiledFeatureModelLayer::getProfile() const
 {
+    OE_HARD_ASSERT(getFeatureSource() != nullptr);
+    OE_HARD_ASSERT(getFeatureSource()->getFeatureProfile() != nullptr);
     OE_SOFT_ASSERT_AND_RETURN(getFeatureSource() != nullptr, nullptr);
     OE_SOFT_ASSERT_AND_RETURN(getFeatureSource()->getFeatureProfile() != nullptr, nullptr);
 

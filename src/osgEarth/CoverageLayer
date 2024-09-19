@@ -164,7 +164,6 @@ namespace osgEarth
                         Config conf;
                         conf.fromJSON(r.getString());
                         result.setConfig(conf);
-                        OE_DEBUG << _layer->getName() << " " << key.str() << " read from mem cache" << std::endl;
                         return true;
                     }
                 }
@@ -190,7 +189,6 @@ namespace osgEarth
                         Config conf;
                         conf.fromJSON(r.getString());
                         result.setConfig(conf);
-                        OE_DEBUG << _layer->getName() << " " << key.str() << " read from disk cache" << std::endl;
                         return true;
                     }
                 }
@@ -220,7 +218,6 @@ namespace osgEarth
                     Config conf = result.getConfig();
                     so = new StringObject(conf.toJSON(false));
                     bin->write(memCacheKey, so.get(), nullptr);
-                    OE_DEBUG << _layer->getName() << " " << key.str() << " write to mem cache" << std::endl;
                 }
 
                 // If we got a result, the cache is valid and we are caching in the map profile,
@@ -235,7 +232,6 @@ namespace osgEarth
                         so = new StringObject(conf.toJSON(false));
                     }
                     cacheBin->write(cacheKey, so.get(), nullptr);
-                    OE_DEBUG << _layer->getName() << " " << key.str() << " write to disk cache" << std::endl;
                 }
             }
 
