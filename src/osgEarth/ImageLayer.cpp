@@ -677,6 +677,7 @@ ImageLayer::assembleImage(const TileKey& key, ProgressCallback* progress)
         {
             unsigned cols = getTileSize();
             unsigned rows = getTileSize();
+            unsigned layers = sources.front().second.getImage()->r();
 
             // sort the sources by LOD (highest first).
             std::sort(
@@ -691,7 +692,7 @@ ImageLayer::assembleImage(const TileKey& key, ProgressCallback* progress)
 
             // new output:
             auto mosaic = new osg::Image();
-            mosaic->allocateImage(cols, rows, 1, GL_RGBA, GL_UNSIGNED_BYTE);
+            mosaic->allocateImage(cols, rows, layers, GL_RGBA, GL_UNSIGNED_BYTE);
 
             // Working set of points. it's much faster to xform an entire vector all at once.
             std::vector<osg::Vec3d> points;
@@ -750,20 +751,23 @@ ImageLayer::assembleImage(const TileKey& key, ProgressCallback* progress)
             ImageUtils::PixelWriter write_mosaic(mosaic);
 
             osg::Vec4f pixel;
-            for (unsigned r = 0; r < rows; ++r)
+            for (unsigned layer = 0; layer < layers; ++layer)
             {
-                for (unsigned c = 0; c < cols; ++c)
+                for (unsigned r = 0; r < rows; ++r)
                 {
-                    unsigned i = r * cols + c;
-                    pixel.set(0, 0, 0, 0);
-
-                    // check each source (high to low LOD) until we get a valid pixel.
-                    for (unsigned k = 0; k < sources.size() && pixel.a() == 0.0f; ++k)
+                    for (unsigned c = 0; c < cols; ++c)
                     {
-                        readers[k].readCoordWithoutClamping(pixel, points[i].x(), points[i].y());
-                    }
+                        unsigned i = r * cols + c;
+                        pixel.set(0, 0, 0, 0);
 
-                    write_mosaic(pixel, c, r);
+                        // check each source (high to low LOD) until we get a valid pixel.
+                        for (unsigned k = 0; k < sources.size() && pixel.a() == 0.0f; ++k)
+                        {
+                            readers[k].readCoordWithoutClamping(pixel, points[i].x(), points[i].y(), layer);
+                        }
+
+                        write_mosaic(pixel, c, r, layer);
+                    }
                 }
             }
 
