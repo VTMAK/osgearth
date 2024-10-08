@@ -715,13 +715,13 @@ ImageLayer::assembleImage(const TileKey& key, ProgressCallback* progress)
             }
 
             // build a grid of sample points:
-            for (unsigned r = 0; r < rows; ++r)
+            for (unsigned t = 0; t < rows; ++t)
             {
-                double y = miny + (0.5 * dy) + (dy * (double)r);
-                for (unsigned c = 0; c < cols; ++c)
+                double y = miny + (0.5 * dy) + (dy * (double)t);
+                for (unsigned s = 0; s < cols; ++s)
                 {
-                    double x = minx + (0.5 * dx) + (dx * (double)c);
-                    points[r * cols + c] = { x, y, 0.0 };
+                    double x = minx + (0.5 * dx) + (dx * (double)s);
+                    points[t * cols + s] = { x, y, 0.0 };
                 }
             }
 
@@ -749,27 +749,22 @@ ImageLayer::assembleImage(const TileKey& key, ProgressCallback* progress)
             }
 
             ImageUtils::PixelWriter write_mosaic(mosaic);
-
             osg::Vec4f pixel;
-            for (unsigned layer = 0; layer < layers; ++layer)
-            {
-                for (unsigned r = 0; r < rows; ++r)
+
+            write_mosaic.forEachPixel([&](auto& iter)
                 {
-                    for (unsigned c = 0; c < cols; ++c)
+                    unsigned i = iter.t() * cols + iter.s();
+                    pixel.set(0, 0, 0, 0);
+
+                    // check each source (high to low LOD) until we get a valid pixel.
+                    for (unsigned k = 0; k < sources.size() && pixel.a() == 0.0f; ++k)
                     {
-                        unsigned i = r * cols + c;
-                        pixel.set(0, 0, 0, 0);
-
-                        // check each source (high to low LOD) until we get a valid pixel.
-                        for (unsigned k = 0; k < sources.size() && pixel.a() == 0.0f; ++k)
-                        {
-                            readers[k].readCoordWithoutClamping(pixel, points[i].x(), points[i].y(), layer);
-                        }
-
-                        write_mosaic(pixel, c, r, layer);
+                        readers[k].readCoordWithoutClamping(pixel, points[i].x(), points[i].y(), iter.r());
                     }
+
+                    write_mosaic(pixel, iter);
                 }
-            }
+            );
 
             return GeoImage(mosaic, key.getExtent());
         }            

@@ -23,6 +23,8 @@
 
 using namespace osgEarth;
 
+#include "ImGuiPanel"
+
 namespace
 {
     struct PreDrawOp : public osg::Camera::DrawCallback
@@ -201,6 +203,14 @@ void ImGuiEventHandler::render(osg::RenderInfo& ri)
             camera->getProjectionMatrixAsOrtho(left, right, bottom, top, znear, zfar);
             camera->setProjectionMatrixAsOrtho(viewport->x(), viewport->x() + viewport->width(), viewport->y(), viewport->y() + viewport->height(), znear, zfar);
         }
+    }
+
+    if (_dirtySettings)
+    {
+        if (ImGui::GetCurrentContext())
+            ImGui::MarkIniSettingsDirty();
+
+        _dirtySettings = false;
     }
 }
 
