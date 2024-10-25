@@ -972,8 +972,8 @@ ImageUtils::mix(osg::Image* dest, const osg::Image* src, float a)
     ImageIterator i(src);
 
     i.forEachPixel([&]() {
-        read_src(src_value, i.s(), i.t());
-        read_dest(dest_value, i.s(), i.t());
+        read_src(src_value, i.s(), i.t(), i.r());
+        read_dest(dest_value, i.s(), i.t(), i.r());
         float sa = srcHasAlpha ? a * src_value.a() : a;
         float da = destHasAlpha ? dest_value.a() : 1.0f;
         dest_value.set(
@@ -981,7 +981,7 @@ ImageUtils::mix(osg::Image* dest, const osg::Image* src, float a)
             dest_value.g()*(1.0f - sa) + src_value.g()*sa,
             dest_value.b()*(1.0f - sa) + src_value.b()*sa,
             osg::maximum(sa, da));
-        write_dest(dest_value, i.s(), i.t());
+        write_dest(dest_value, i.s(), i.t(), i.r());
         });
 
     return true;
