@@ -189,6 +189,8 @@ namespace osgEarth { namespace Aerodrome
         /** ICAO code attribute name */
         OE_OPTION(std::string, icaoAttr, "apt_icao");
         OE_OPTION(TextureOptions, textureOptions);
+        OE_OPTION(std::string, linearFeaturesColor, "#C0A627CC");
+        OE_OPTION(float, linearFeaturesWidth, 1.0f);
 
         OE_OPTION_LAYER(FeatureSource, featureSource);
 
@@ -209,6 +211,8 @@ namespace osgEarth { namespace Aerodrome
             Config conf = ConfigOptions::getConfig();
             conf.set( "icao_attr", _icaoAttr );
             conf.set( "texture", _textureOptions );
+            conf.set( "linear_features_color", _linearFeaturesColor );
+            conf.set("linear_features_width", _linearFeaturesWidth);
 
             for(ModelOptionsSet::const_iterator i = _modelOptions.begin(); i != _modelOptions.end(); ++i)
                 conf.add("model", i->getConfig());
@@ -227,6 +231,8 @@ namespace osgEarth { namespace Aerodrome
         void fromConfig( const Config& conf ) {
             conf.get( "icao_attr", _icaoAttr );
             conf.get( "texture", _textureOptions );
+            conf.get("linear_features_color", _linearFeaturesColor);
+            conf.get("linear_features_width", _linearFeaturesWidth);
             
             ConfigSet models = conf.children("model");
             for (ConfigSet::const_iterator i = models.begin(); i != models.end(); i++)
