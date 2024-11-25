@@ -6,4 +6,5 @@ if (WebP_FOUND)
         TARGET osgdb_webp
         SOURCES ReaderWriterWebP.cpp)
     target_link_libraries(osgdb_webp PRIVATE WebP::webp)
+    target_link_libraries(osgdb_webp PRIVATE WebP::sharpyuv)
 endif()
