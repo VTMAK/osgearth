@@ -223,6 +223,26 @@ SpatialReference::SpatialReference(const Key& key) :
         _setup.vert = key.vertLower;
     }
 
+    else if (
+        key.horizLower == "moon" ||
+        key.horizLower == "esri104903")
+    {
+        _setup.name = "Moon";
+        _setup.type = INIT_PROJ;
+        _setup.horiz = "+proj=longlat +R=1737400 +no_defs +units=m +type=crs";
+        _setup.vert = key.vertLower;
+    }
+
+    else if (
+        key.horizLower.find("+proj=longlat") == 0 &&
+        key.horizLower.find("+R=1737400") != std::string::npos)
+    {
+        _setup.name = "Moon";
+        _setup.type = INIT_PROJ;
+        _setup.horiz = key.horiz;
+        _setup.vert = key.vertLower;
+    }
+
     // custom srs for the unified cube
     else if (
         key.horizLower == "unified-cube" )
@@ -1213,6 +1233,27 @@ SpatialReference::transformUnits(const Distance&         distance,
     }
 }
 
+double
+SpatialReference::transformDistance(const Distance& input, const UnitsType& outputUnits, double referenceLatitude) const
+{
+    auto inputUnits = input.getUnits();
+
+    if (inputUnits.isAngle() && outputUnits.isLinear())
+    {
+        auto meters = getEllipsoid().longitudinalDegreesToMeters(input.as(Units::DEGREES), referenceLatitude);
+        return Units::convert(Units::METERS, outputUnits, meters);
+    }
+    else if (inputUnits.isLinear() && outputUnits.isAngle())
+    {
+        auto degrees = getEllipsoid().metersToLongitudinalDegrees(input.as(Units::METERS), referenceLatitude);
+        return Units::convert(Units::DEGREES, outputUnits, degrees);
+    }
+    else
+    {
+        return input.as(outputUnits);
+    }
+}
+
 bool
 SpatialReference::transformExtentToMBR(
     const SpatialReference* to_srs,
@@ -1561,6 +1602,10 @@ SpatialReference::init()
                 _bounds.set(166000, 0, 0.0, 834000, 9330000, 0.0);
             else
                 _bounds.set(166000, 1116915, 0.0, 834000, 10000000, 0.0);
+        }
+        else if (projection_lc == "equirectangular") // plate carre
+        {
+            _bounds.set(MERC_MINX, MERC_MINY * 0.5, 0.0, MERC_MAXX, MERC_MAXY * 0.5, 0.0);
         }
     }
 }

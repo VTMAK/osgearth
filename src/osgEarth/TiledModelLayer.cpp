@@ -78,6 +78,22 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
 {
     osg::ref_ptr<osg::Node> result;
 
+    // check the L2 cache
+    {
+        ScopedReadLock lock(_localcacheMutex);
+        L2Cache::Record r;
+        if (_localcache.get(key, r))
+        {
+            OE_INFO << "L2 hit(" << key.str() << ")" << std::endl;
+            return r.value();
+        }
+    }
+
+    // only create one at a time per key
+    ScopedGate<TileKey> sentry(_gate, key);
+
+    //OE_INFO << "createTile(" << key.str() << ")" << std::endl;
+
     if (key.getProfile()->isHorizEquivalentTo(getProfile()))
     {
         result = createTileImplementation(key, progress);
@@ -116,14 +132,37 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
 
     if (result.valid())
     {
-        if (_textures.valid())
+        if (_textures.valid()) // nvgl
         {
             forEachNodeOfType<StyleGroup>(result, [&](StyleGroup* group)
                 {
-                    auto drawable = new ChonkDrawable();
-                    drawable->add(group, _chonkFactory);
-                    group->removeChildren(0, group->getNumChildren());
-                    group->addChild(drawable);
+                    osg::ref_ptr<osg::Node> output;
+                    auto xform = findTopMostNodeOfType<osg::MatrixTransform>(group);
+                    osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+
+                    if (xform)
+                    {
+                        for (unsigned i = 0; i < xform->getNumChildren(); ++i)
+                        {
+                            drawable->add(xform->getChild(i), _chonkFactory);
+                        }
+                        xform->removeChildren(0, xform->getNumChildren());
+                        xform->addChild(drawable);
+                        output = xform;
+                    }
+                    else
+                    {
+                        if (drawable->add(group, _chonkFactory))
+                        {
+                            output = drawable;
+                        }
+                    }
+
+                    if (output)
+                    {
+                        group->removeChildren(0, group->getNumChildren());
+                        group->addChild(output);
+                    }
 
                     auto* render = group->_style.get<RenderSymbol>();
                     if (render)
@@ -134,6 +173,12 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
         {
             osgEarth::Registry::shaderGenerator().run(result.get(), _statesetCache);
         }
+    }
+
+    if (result.valid())
+    {
+        ScopedWriteLock lock(_localcacheMutex);
+        _localcache.insert(key, result);
     }
 
     return result;
@@ -234,7 +279,46 @@ void TiledModelLayer::create()
         pager->setCreateNodeFunction([layer_weak{ osg::observer_ptr<TiledModelLayer>(this) }](const TileKey& key, ProgressCallback* progress)
             {
                 osg::ref_ptr<TiledModelLayer> layer;
-                return layer_weak.lock(layer) ? layer->createTile(key, progress) : osg::ref_ptr<osg::Node>();
+                if (!layer_weak.lock(layer))
+                    return osg::ref_ptr<osg::Node>();
+
+                auto output = layer->createTile(key, progress);
+
+#if 0
+                if (output.valid() && layer->options().useNVGL() == true && layer->_textures.valid())
+                {
+                    auto xform = findTopMostNodeOfType<osg::MatrixTransform>(output.get());
+
+                    // Convert the geometry into chonks
+                    ChonkFactory factory(layer->_textures);
+
+                    factory.setGetOrCreateFunction(
+                        ChonkFactory::getWeakTextureCacheFunction(
+                            layer->_texturesCache, layer->_texturesCacheMutex));
+
+                    osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+
+                    if (xform)
+                    {
+                        for (unsigned i = 0; i < xform->getNumChildren(); ++i)
+                        {
+                            drawable->add(xform->getChild(i), factory);
+                        }
+                        xform->removeChildren(0, xform->getNumChildren());
+                        xform->addChild(drawable);
+                        output = xform;
+                    }
+                    else
+                    {
+                        if (drawable->add(output.get(), factory))
+                        {
+                            output = drawable;
+                        }
+                    }
+                }
+#endif
+
+                return output;
             });
 
         pager->setAdditive(this->getAdditive());

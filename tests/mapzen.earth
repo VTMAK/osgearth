@@ -1,0 +1,17 @@
+<Map name="MapZen Elevation">
+    <options screen_space_error="75">
+        <terrain skirt_ratio="0.05" lod_method="screen_space"/>
+    </options>
+    
+    <XYZElevation name="MapZen global elevation (S3)">
+        <url>https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png</url>
+        <elevation_encoding>terrarium</elevation_encoding>
+        <stitch_edges>true</stitch_edges>
+    </XYZElevation>
+
+    <ContourMap name="Color Ramp"/>
+    
+    <gdaldem name="Hill Shade" blend="modulate" opacity="0.15">
+        <processing>hillshade</processing>
+    </gdaldem>
+</Map>

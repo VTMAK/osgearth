@@ -222,7 +222,7 @@ Feature::Feature(const Feature& rhs) : //, const osg::CopyOp& copyOp) :
 
 Feature::Feature(Feature&& rhs) // : osg::Object(rhs)
 {
-    _fid = rhs._fid;
+    _fid = std::move(rhs._fid);
     _attrs = std::move(rhs._attrs);
     _style = std::move(rhs._style);
     _geoInterp = std::move(rhs._geoInterp);
@@ -783,46 +783,13 @@ void Feature::transform( const SpatialReference* srs )
     setSRS( srs );
 }
 
-void Feature::splitAcrossDateLine(FeatureList& splitFeatures)
+void
+Feature::splitAcrossAntimeridian()
 {
-    splitFeatures.clear();
-
      // If the feature is geodetic, try to split it across the dateline.
     if (getSRS() && getSRS()->isGeodetic())
     {
-        GeoExtent extent(getSRS(), getGeometry()->getBounds());
-        // Only split the feature if it crosses the antimerdian
-        if (extent.crossesAntimeridian())
-        {
-            // This tries to split features across the dateline in three different zones.  -540 to -180, -180 to 180, and 180 to 540.
-            double minLon = -540;
-            for (int i = 0; i < 3; i++)
-            {
-                double offset = minLon - -180.0;
-                double maxLon = minLon + 360.0;
-                Bounds bounds(minLon, -90.0, 0.0, maxLon, 90.0, 0.0);
-                osg::ref_ptr< Geometry > croppedGeometry;
-                if (getGeometry()->crop(bounds, croppedGeometry))
-                {
-                    // If the geometry was cropped, offset the x coordinate so it's within normal longitude ranges.
-                    for (int j = 0; j < croppedGeometry->size(); j++)
-                    {
-                        (*croppedGeometry)[j].x() -= offset;
-                    }
-                    osg::ref_ptr< Feature > croppedFeature = new Feature(*this);
-                    // Make sure the feature is wound correctly.
-                    croppedGeometry->rewind(osgEarth::Geometry::ORIENTATION_CCW);
-                    croppedFeature->setGeometry(croppedGeometry.get());
-                    splitFeatures.push_back(croppedFeature);
-                }
-                minLon += 360.0;
-            }
-        }
-    }
-
-    // If we didn't actually split the feature then just add the original
-    if (splitFeatures.empty())
-    {
-        splitFeatures.push_back( this );
+        auto* split_geom = getGeometry()->splitAcrossAntimeridian();
+        setGeometry(split_geom);
     }
 }

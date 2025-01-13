@@ -53,20 +53,28 @@ namespace osgEarth
     public:
         META_Layer(osgEarth, ContourMapLayer, Options, VisibleLayer, ContourMap);
 
-        //! Sets a custom transfer function
+        //! Sets a transfer function that maps elevations to colors.
+        //! To change the color ramp at runtime, it is not sufficient to simply
+        //! edit the transfer function - you must call dirty() or setTransferFunction()
+        //! on this layer to apply properly.
         void setTransferFunction(osg::TransferFunction1D* xf);
+
+        //! Gets the transfer function
         osg::TransferFunction1D* getTransferFunction() const { return _xfer.get(); }
+
+        //! Re-applies the transfer function after editing it
+        void dirty();
 
     public: // Layer
 
         //! Called by constructors
-        virtual void init() override;
+        void init() override;
 
         //! MapNode will call this function when terrain resources are available
-        virtual void prepareForRendering(TerrainEngine*) override;
+        void prepareForRendering(TerrainEngine*) override;
 
         //! Release resources on close
-        virtual Status closeImplementation() override;
+        Status closeImplementation() override;
 
     protected:
 

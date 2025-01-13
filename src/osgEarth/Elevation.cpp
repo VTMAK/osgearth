@@ -35,6 +35,8 @@ osgEarth::createEmptyElevationTexture()
     *((GLfloat*)image->data()) = 0.0f;
     osg::Texture2D* tex = new osg::Texture2D(image);
     tex->setInternalFormat(GL_R32F);
+    tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+    tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
     tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
     tex->setName("empty:elevation");
     return tex;
@@ -52,6 +54,8 @@ osgEarth::createEmptyNormalMapTexture()
     write(packed, 0, 0);
     osg::Texture2D* tex = new osg::Texture2D(image);
     tex->setInternalFormat(GL_RG8);
+    tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+    tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
     tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
     tex->setName("empty:normalmap");
     return tex;
@@ -99,7 +103,7 @@ ElevationTexture::ElevationTexture(
         _read.setSampleAsTexture(false);
 
         _resolution = Distance(
-            getExtent().height() / ((double)(getImage(0)->s()-1)),
+            getExtent().height() / ((double)(getImage(0)->t()-1)),
             getExtent().getSRS()->getUnits());
     }
 }
@@ -321,7 +325,8 @@ NormalMapGenerator::createNormalMap(
         return NULL;
     }
 
-    Distance res(0.0, key.getProfile()->getSRS()->getUnits());
+    auto* srs = key.getProfile()->getSRS();
+    Distance res(0.0, srs->getUnits());
     double dx, dy;
     osg::Vec4 riPixel;
 
@@ -335,8 +340,10 @@ NormalMapGenerator::createNormalMap(
             int p = (4 * write.s() * t + 4 * s);
 
             res.set(points[p].w(), res.getUnits());
-            dx = res.asDistance(Units::METERS, y_or_lat);
-            dy = res.asDistance(Units::METERS, 0.0);
+            dx = srs->transformDistance(res, Units::METERS, y_or_lat);
+            dy = srs->transformDistance(res, Units::METERS, 0.0);
+            //dx = res.asDistance(Units::METERS, y_or_lat);
+            //dy = res.asDistance(Units::METERS, 0.0);
 
             riPixel.r() = 0.0f;
 

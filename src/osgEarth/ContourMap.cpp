@@ -80,17 +80,23 @@ void
 ContourMapLayer::setTransferFunction(osg::TransferFunction1D* xfer)
 {
     _xfer = xfer;
+    dirty();
+}
+
+void
+ContourMapLayer::dirty()
+{
+    OE_SOFT_ASSERT_AND_RETURN(_xfer.valid() && _xferMin.valid() && _xferRange.valid(), void());
+
     _xferTexture->setImage(_xfer->getImage());
     _xferMin->set(_xfer->getMinimum());
     _xferRange->set(_xfer->getMaximum() - _xfer->getMinimum());
-
-    //OE_WARN << "min=" << _xfer->getMinimum() << ", range=" << (_xfer->getMaximum()-_xfer->getMinimum()) << std::endl;
 }
 
 void
 ContourMapLayer::init()
 {
-    VisibleLayer::init();
+    super::init();
 
     setRenderType(RENDERTYPE_TERRAIN_SURFACE);
 
@@ -137,16 +143,18 @@ ContourMapLayer::init()
     }
     else
     {
-        float s = 2500.0f;
-        xfer->setColor(-1.0000 * s, osg::Vec4f(0, 0, 0.5, 1), false);
-        xfer->setColor(-0.2500 * s, osg::Vec4f(0, 0, 1, 1), false);
-        xfer->setColor(0.0000 * s, osg::Vec4f(0, .5, 1, 1), false);
-        xfer->setColor(0.0010 * s, Color("#C2B280FF"), false);
-        xfer->setColor(0.0062 * s, osg::Vec4f(.84, .84, .25, 1), false);
-        xfer->setColor(0.1250 * s, osg::Vec4f(.125, .62, 0, 1), false);
-        xfer->setColor(0.3250 * s, osg::Vec4f(.80, .70, .47, 1), false);
-        xfer->setColor(0.7500 * s, osg::Vec4f(.5, .5, .5, 1), false);
-        xfer->setColor(1.0000 * s, osg::Vec4f(1, 1, 1, 1), false);
+        xfer->setColor(-7500.0f, Color("#000016"));
+        xfer->setColor(-2500.0f, Color("#00007f"));
+        xfer->setColor(-625.0f, Color("#0000ff"));
+        xfer->setColor(0.0f, Color("#007fff"));
+        xfer->setColor(2.5f, Color("#c2b280"));
+        xfer->setColor(50.0f, Color("#d6d63f"));
+        xfer->setColor(250.0f, Color("#1f9e00"));
+        xfer->setColor(1000.0f, Color("#30632c"));
+        xfer->setColor(1750.0f, Color("#a37714"));
+        xfer->setColor(2250.0f, Color("#6c2f2f"));
+        xfer->setColor(2600.0f, Color("#7f7f7f"));
+        xfer->setColor(3000.0f, Color("#ffffff"));
     }
 
     xfer->updateImage();
@@ -156,7 +164,7 @@ ContourMapLayer::init()
 void
 ContourMapLayer::prepareForRendering(TerrainEngine* engine)
 {
-    VisibleLayer::prepareForRendering(engine);
+    super::prepareForRendering(engine);
 
     if (!engine->getResources()->reserveTextureImageUnitForLayer(_reservation, this, "ContourMap"))
     {
@@ -174,5 +182,5 @@ ContourMapLayer::closeImplementation()
 {
     _reservation.release();
 
-    return VisibleLayer::closeImplementation();
+    return super::closeImplementation();
 }

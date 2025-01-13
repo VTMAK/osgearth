@@ -241,61 +241,153 @@ Geometry::buffer(double distance,
 #endif // OSGEARTH_HAVE_GEOS
 }
 
+namespace
+{
+    // Function to check if a point is inside the clipping edge
+    bool inside(const osg::Vec3d& p, const osg::Vec3d& edgeStart, const osg::Vec3d& edgeEnd)
+    {
+        return (edgeEnd.x() - edgeStart.x()) * (p.y() - edgeStart.y()) -
+            (edgeEnd.y() - edgeStart.y()) * (p.x() - edgeStart.x()) >= 0;
+    }
+
+    // Function to calculate the intersection point of two lines
+    osg::Vec3d intersection(const osg::Vec3d& p1, const osg::Vec3d& p2, const osg::Vec3d& edgeStart, const osg::Vec3d& edgeEnd)
+    {
+        double a1 = p2.y() - p1.y();
+        double b1 = p1.x() - p2.x();
+        double c1 = a1 * p1.x() + b1 * p1.y();
+
+        double a2 = edgeEnd.y() - edgeStart.y();
+        double b2 = edgeStart.x() - edgeEnd.x();
+        double c2 = a2 * edgeStart.x() + b2 * edgeStart.y();
+
+        double determinant = a1 * b2 - a2 * b1;
+
+        osg::Vec3d result = {
+            (b2 * c1 - b1 * c2) / determinant,
+            (a1 * c2 - a2 * c1) / determinant,
+            0.0 };
+
+        result.z() = p1.z() + (result.x() - p1.x()) / (p2.x() - p1.x()) * (p2.z() - p1.z()); // Interpolating Z
+        return result;
+    }
+
+    // Sutherland-Hodgman Polygon Clipping (input poly must be OPEN)
+    std::vector<osg::Vec3d> clipPolygon(const std::vector<osg::Vec3d>& input, const std::vector<osg::Vec3d>& boundary)
+    {
+        std::vector<osg::Vec3d> output = input;
+
+        for(unsigned i=0; i< boundary.size(); ++i)
+        {
+            const osg::Vec3d& edgeStart = boundary[i];
+            const osg::Vec3d& edgeEnd = i < boundary.size() - 1 ? boundary[i + 1] : boundary[0];
+
+            std::vector<osg::Vec3d> input = output;
+            output.clear();
+
+            for (size_t i = 0; i < input.size(); ++i)
+            {
+                osg::Vec3d curr = input[i];
+                osg::Vec3d prev = input[(i + input.size() - 1) % input.size()];
+
+                if (inside(curr, edgeStart, edgeEnd))
+                {
+                    if (!inside(prev, edgeStart, edgeEnd))
+                    {
+                        output.push_back(intersection(prev, curr, edgeStart, edgeEnd));
+                    }
+                    output.push_back(curr);
+                }
+                else if (inside(prev, edgeStart, edgeEnd))
+                {
+                    output.push_back(intersection(prev, curr, edgeStart, edgeEnd));
+                }
+            }
+        }
+
+        return output;
+    }
+}
+
+#if 0
 bool
-Geometry::crop( const Polygon* cropPoly, osg::ref_ptr<Geometry>& output ) const
+Geometry::crop(const Ring* boundary, osg::ref_ptr<Geometry>& output) const
+{
+    OE_SOFT_ASSERT_AND_RETURN(boundary, false);
+    OE_SOFT_ASSERT_AND_RETURN(boundary->size() > 2, false);
+    std::vector<osg::Vec3d> points;
+    points.reserve(size());
+    for (const auto& point : *this)
+    {
+        if (boundary->contains2D(point.x(), point.y()))
+            points.emplace_back(point);
+    }
+    output = this->cloneAs(getType());
+    output->asVector().swap(points);
+    return true;
+}
+#endif
+
+osg::ref_ptr<Geometry>
+Geometry::crop(const Ring* boundary) const
 {
 #ifdef OSGEARTH_HAVE_GEOS
-    GEOSContextHandle_t handle = initGEOS_r(OSGEARTH_WarningHandler, OSGEARTH_GEOSErrorHandler);
 
     bool success = false;
-    output = 0L;
+    osg::ref_ptr<Geometry> output;
 
     if (getType() == TYPE_POINT)
     {
-        if (cropPoly->contains2D(front().x(), front().y()))
+        if (boundary->contains2D(front().x(), front().y()))
             output = this->clone();
-        return true;
+        return output;
     }
     else if (getType() == TYPE_POINTSET)
     {
-        osg::ref_ptr<PointSet> pointSet = new PointSet;
+        std::vector<osg::Vec3d> points;
         for (const auto& point : *this)
         {
-            if (cropPoly->contains2D(point.x(), point.y()))
-                pointSet->push_back(point);
+            if (boundary->contains2D(point.x(), point.y()))
+                points.emplace_back(point);
         }
-        output = pointSet;
-        return true;
+        if (!points.empty())
+        {
+            output = this->cloneAs(getType());
+            output->asVector().swap(points);
+        }
+        return output;
     }
+
+    GEOSContextHandle_t handle = initGEOS_r(OSGEARTH_WarningHandler, OSGEARTH_GEOSErrorHandler);
 
     //Create the GEOS Geometries
     GEOSGeometry* inGeom = GEOS::importGeometry(handle, this);
-    GEOSGeometry* cropGeom = GEOS::importGeometry(handle, cropPoly);
+    GEOSGeometry* boundaryGeom = GEOS::importGeometry(handle, boundary);
 
-    if ( inGeom && cropGeom)
+    if (inGeom && boundaryGeom)
     {
-        GEOSGeometry* outGeom = GEOSIntersection_r(handle, inGeom, cropGeom);
+        GEOSGeometry* outGeom = GEOSIntersection_r(handle, inGeom, boundaryGeom);
         if ( outGeom )
         {
-            output = GEOS::exportGeometry(handle, outGeom );
+            output = GEOS::exportGeometry(handle, outGeom);
 
-            if ( output.valid())
+            if (output.valid())
             {
-                if ( output->isValid() )
+                if (output->isValid())
                 {
                     success = true;
                 }
                 else
                 {
                     // GEOS result is invalid
-                    output = 0L;
+                    output = nullptr;
                 }
             }
             else
             {
                 // set output to empty geometry to indicate the (valid) empty case,
                 // still returning false but allows for check.
-                if (GEOSGeomGetNumPoints_r(handle, outGeom ) == 0)
+                if (GEOSGeomGetNumPoints_r(handle, outGeom) == 0)
                 {
                     output = new osgEarth::Geometry(TYPE_UNKNOWN);
                 }
@@ -306,31 +398,31 @@ Geometry::crop( const Polygon* cropPoly, osg::ref_ptr<Geometry>& output ) const
     }
 
     //Destroy the geometry
-    GEOSGeom_destroy_r(handle, cropGeom);
+    GEOSGeom_destroy_r(handle, boundaryGeom);
     GEOSGeom_destroy_r(handle, inGeom);
 
     finishGEOS_r(handle);
 
-    return success;
+    return output;
 
 #else // OSGEARTH_HAVE_GEOS
 
     OE_WARN << LC << "Crop failed - GEOS not available" << std::endl;
-    return false;
+    return { };
 
 #endif // OSGEARTH_HAVE_GEOS
 }
 
-bool
-Geometry::crop( const Bounds& bounds, osg::ref_ptr<Geometry>& output ) const
+osg::ref_ptr<Geometry>
+Geometry::crop(const Bounds& bounds) const
 {
-    osg::ref_ptr<Polygon> poly = new Polygon;
-    poly->resize( 4 );
-    (*poly)[0].set(bounds.xMin(), bounds.yMin(), 0);
-    (*poly)[1].set(bounds.xMax(), bounds.yMin(), 0);
-    (*poly)[2].set(bounds.xMax(), bounds.yMax(), 0);
-    (*poly)[3].set(bounds.xMin(), bounds.yMax(), 0);
-    return crop(poly.get(), output);
+    Ring boundary;
+    boundary.resize(4);
+    boundary[0].set(bounds.xMin(), bounds.yMin(), 0);
+    boundary[1].set(bounds.xMax(), bounds.yMin(), 0);
+    boundary[2].set(bounds.xMax(), bounds.yMax(), 0);
+    boundary[3].set(bounds.xMin(), bounds.yMax(), 0);
+    return crop(&boundary);
 }
 
 bool
@@ -696,19 +788,25 @@ Geometry::close()
         push_back( front() );
 }
 
-void
-Geometry::forEachPart(bool includePolygonHoles, const std::function<void(Geometry*)>& func)
+Geometry*
+Geometry::splitAcrossAntimeridian()
 {
-    GeometryIterator i(this, includePolygonHoles);
-    i.forEach(func);
+    return this;
 }
 
-void
-Geometry::forEachPart(bool includePolygonHoles, const std::function<void(const Geometry*)>& func) const
-{
-    ConstGeometryIterator i(this, includePolygonHoles);
-    i.forEach(func);
-}
+//void
+//Geometry::forEachPart(bool includePolygonHoles, const std::function<void(Geometry*)>& func)
+//{
+//    GeometryIterator i(this, includePolygonHoles);
+//    i.forEach(func);
+//}
+//
+//void
+//Geometry::forEachPart(bool includePolygonHoles, const std::function<void(const Geometry*)>& func) const
+//{
+//    ConstGeometryIterator i(this, includePolygonHoles);
+//    i.forEach(func);
+//}
 
 //----------------------------------------------------------------------------
 
@@ -887,6 +985,101 @@ Ring::contains2D( double x, double y ) const
     return result;
 }
 
+osg::ref_ptr<Geometry>
+Ring::crop(const Ring* boundary) const
+{
+    auto new_points = clipPolygon(this->asVector(), boundary->asVector());
+    if (!new_points.empty())
+    {
+        auto* new_geom = cloneAs(getType());
+        new_geom->asVector().swap(new_points);
+        return new_geom;
+    }
+    return {};
+}
+
+namespace
+{
+    template<class RING>
+    void split(const RING* input, osg::ref_ptr<RING>& left, osg::ref_ptr<RING>& right, bool& is_left, int& ptr)
+    {
+        // check the current side's back() against the next point in the input.
+        RING* current = is_left ? left.get() : right.get();
+        auto& p0 = current->back();
+        auto& p1 = (*input)[ptr];
+
+        if (p0.x() > 90.0 && p1.x() < -90.0)
+        {
+            // we're crossing the dateline. Split the segment.
+            double t = (180.0 - p0.x()) / ((p1.x() + 360.0) - p0.x());
+            double y = p0.y() + t * (p1.y() - p0.y());
+            left->push_back(osg::Vec3d(180.0, y, 0.0));
+            right->push_back(osg::Vec3d(-180.0, y, 0.0));
+            is_left = !is_left;
+            if (is_left) left->push_back(p1); else right->push_back(p1);
+            while (ptr < input->size() - 1)
+                split(input, left, right, is_left, ++ptr);
+        }
+        else if (p0.x() < -90.0 && p1.x() > 90.0)
+        {
+            // we're crossing the dateline. Split the segment.
+            double t = (180.0 - p1.x()) / ((p0.x() + 360.0) - p1.x());
+            double y = p1.y() + t * (p0.y() - p1.y());
+            left->push_back(osg::Vec3d(180.0, y, 0.0));
+            right->push_back(osg::Vec3d(-180.0, y, 0.0));
+            is_left = !is_left;
+            if (is_left) left->push_back(p1); else right->push_back(p1);
+            while (ptr < input->size() - 1)
+                split(input, left, right, is_left, ++ptr);
+        }
+        else
+        {
+            current->push_back(p1);
+        }
+    }
+
+    template<class RING>
+    void split(const RING* input, osg::ref_ptr<RING>& left, osg::ref_ptr<RING>& right)
+    {
+        left = new RING();
+        right = new RING();
+
+        int ptr = 0;
+        bool is_left = (*input)[0].x() > 0.0;
+        if (is_left)
+            left->push_back((*input)[0]);
+        else
+            right->push_back((*input)[0]);
+
+        while (ptr < input->size() - 1)
+        {
+            split(input, left, right, is_left, ++ptr);
+        }
+    }
+}
+
+Geometry*
+Ring::splitAcrossAntimeridian()
+{
+    if (size() < 3)
+        return this;
+
+    osg::ref_ptr<Ring> left, right;
+    split(this, left, right);
+
+    if (left->size() > 0 && right->size() > 0)
+    {
+        auto mg = new MultiGeometry();
+        mg->add(left);
+        mg->add(right);
+        return mg;
+    }
+    else
+    {
+        return this;
+    }
+}
+
 //----------------------------------------------------------------------------
 
 Polygon::Polygon(const Polygon& rhs) :
@@ -965,6 +1158,62 @@ Polygon::getSignedDistance2D(const osg::Vec3d& a) const
         r = std::min(r, hole->getSignedDistance2D(a));
 
     return r;
+}
+
+osg::ref_ptr<Geometry>
+Polygon::crop(const Ring* boundary) const
+{
+    auto new_points = clipPolygon(this->asVector(), boundary->asVector());
+    if (!new_points.empty())
+    {
+        auto* new_poly = new Polygon(&new_points);
+        for (auto& hole : _holes)
+        {
+            auto copy_of_hole = hole->asVector();
+            std::reverse(copy_of_hole.begin(), copy_of_hole.end());
+
+            auto new_hole = clipPolygon(copy_of_hole, boundary->asVector());
+            if (!new_hole.empty())
+            {
+                std::reverse(new_hole.begin(), new_hole.end());
+                new_poly->_holes.push_back(new Ring(&new_hole));
+            }
+        }
+        return new_poly;
+    }
+    return {};
+}
+
+Geometry*
+Polygon::splitAcrossAntimeridian()
+{
+    if (size() < 3)
+        return this;
+
+    osg::ref_ptr<Polygon> left, right;
+    split(this, left, right);
+
+    if (left->size() > 0 && right->size() > 0)
+    {
+        for (auto& hole : _holes)
+        {
+            osg::ref_ptr<Ring> leftHole, rightHole;
+            split(hole.get(), leftHole, rightHole);
+            if (leftHole->size() > 0)
+                left->_holes.push_back(hole);
+            if (rightHole->size() > 0)
+                right->_holes.push_back(hole);
+        }
+
+        auto mg = new MultiGeometry();
+        mg->add(left);
+        mg->add(right);
+        return mg;
+    }
+    else
+    {
+        return this;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -1143,6 +1392,56 @@ MultiGeometry::contains2D(double x, double y) const
             return true;
     }
     return false;
+}
+
+osg::ref_ptr<Geometry>
+MultiGeometry::crop(const Ring* boundary) const
+{
+    osg::ref_ptr<MultiGeometry> mg;
+
+    for (const auto& part : _parts)
+    {
+        auto cropped = part->crop(boundary);
+        if (cropped.valid())
+        {
+            if (!mg) mg = new MultiGeometry();
+            mg->add(cropped);
+        }
+    }
+    if (mg->_parts.empty())
+        return {};
+    else if (mg->_parts.size() == 1)
+        return mg->_parts.front();
+    else
+        return mg;
+}
+
+Geometry*
+MultiGeometry::splitAcrossAntimeridian()
+{
+    osg::ref_ptr<MultiGeometry> mg;
+
+    for (const auto& part : _parts)
+    {
+        auto* split = part->splitAcrossAntimeridian();
+        if (split != part)
+        {
+            if (!mg.valid())
+            {
+                mg = new MultiGeometry();
+            }
+
+            // breaks up multigeometries (because you cannot next them)
+            GeometryIterator i(split, false);
+            while (i.hasMore())
+            {
+                auto* part = i.next();
+                mg->add(part);
+            }
+        }
+    }
+
+    return mg;
 }
 
 //----------------------------------------------------------------------------

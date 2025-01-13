@@ -238,7 +238,7 @@ namespace osgEarth
                         osg::Vec3d world;
                         mp.toWorld(world);
 
-                        ImGui::Text("Lat %.3f  Lon %.3f  Z %.3f", mp.y(), mp.x(), mp.z());
+                        ImGui::Text("Lat %.5f  Lon %.5f  Z %.3f", mp.y(), mp.x(), mp.z());
                         ImGui::Text("X %d  Y %d  Z %d", (int)world.x(), (int)world.y(), (int)world.z());
                     }
                     else
@@ -377,7 +377,7 @@ namespace osgEarth
             measureStyle.getOrCreate<LineSymbol>()->tessellation() = (_clamp_measure ? 64 : 0);
             measureStyle.getOrCreate<AltitudeSymbol>()->clamping() = AltitudeSymbol::CLAMP_TO_TERRAIN;
             measureStyle.getOrCreate<AltitudeSymbol>()->technique() = AltitudeSymbol::TECHNIQUE_SCENE;
-            measureStyle.getOrCreate<RenderSymbol>()->depthOffset().mutable_value().enabled() = true;
+            measureStyle.getOrCreate<RenderSymbol>()->depthOffset().mutable_value().automatic() = true;
 
             _measureFeature = new Feature(new LineString(), _mapNode->getMapSRS());
             _measureCursor = new FeatureNode(_measureFeature.get(), measureStyle);

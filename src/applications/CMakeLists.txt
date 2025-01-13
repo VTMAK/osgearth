@@ -1,11 +1,14 @@
 if(NOT OSGEARTH_BUILD_PLATFORM_IPHONE)
 
+    if(NOT OSGEARTH_BUILD_SHARED_LIBS)
+        add_definitions(-DOSGEARTH_LIBRARY_STATIC)
+    endif()
+
     # Tools:
     if(OSGEARTH_BUILD_TOOLS)
         set(TARGET_DEFAULT_LABEL_PREFIX "Tool")
         set(TARGET_DEFAULT_APPLICATION_FOLDER "Tools")
         add_subdirectory(osgearth_viewer)
-        add_subdirectory(osgearth_imgui)
         add_subdirectory(osgearth_tfs)
         add_subdirectory(osgearth_boundarygen)
         add_subdirectory(osgearth_version)
@@ -14,6 +17,10 @@ if(NOT OSGEARTH_BUILD_PLATFORM_IPHONE)
         add_subdirectory(osgearth_conv)
         add_subdirectory(osgearth_3pv)
         add_subdirectory(osgearth_clamp)
+        
+        if(OSGEARTH_BUILD_IMGUI_NODEKIT)
+            add_subdirectory(osgearth_imgui)
+        endif()
         
         if(OSGEARTH_BUILD_PROCEDURAL_NODEKIT)
             add_subdirectory(osgearth_exportvegetation)
