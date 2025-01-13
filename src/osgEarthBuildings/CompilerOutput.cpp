@@ -149,7 +149,7 @@ namespace
                         osg::Texture* tex = dynamic_cast<osg::Texture*>(sa);
                         if (tex)
                         {
-                            osg::ref_ptr<osg::Texture> sharedTex = _cache->getOrInsert(tex);
+                            auto sharedTex = _cache->getOrInsert(tex);
                             if (sharedTex.valid() && sharedTex.get() != tex)
                             {
                                 j->second.first = sharedTex;
@@ -212,7 +212,7 @@ CompilerOutput::getSkinStateSet(SkinResource* skin, const osgDB::Options* readOp
     if (!ss.valid())
     {
         ss = new osg::StateSet();
-        osg::ref_ptr<osg::Texture> tex = _texCache->getOrCreate(skin, readOptions);
+        auto tex = _texCache->getOrCreate(skin, readOptions);
         if (tex.valid())
         {
             ss->setTextureAttributeAndModes(0, tex, osg::StateAttribute::ON);

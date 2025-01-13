@@ -64,11 +64,11 @@ namespace osgEarth { namespace Buildings
     {
         std::mutex _mutex;
 
-        osg::ref_ptr<osg::Texture> getOrCreate(SkinResource* skin, const osgDB::Options* readOptions)
+        osg::ref_ptr<osg::StateAttribute> getOrCreate(SkinResource* skin, const osgDB::Options* readOptions)
         {
             std::lock_guard<std::mutex> lock(_mutex);
 
-            osg::ref_ptr<osg::Texture> tex;
+            osg::ref_ptr<osg::StateAttribute> tex;
 
             auto iter = _cache.find(skin->imageURI()->full());
             if (iter != _cache.end())
@@ -78,7 +78,8 @@ namespace osgEarth { namespace Buildings
 
             if (!tex.valid())
             {
-                tex = skin->createTexture(readOptions);
+                tex = skin->createStateAttribute(readOptions);
+                //tex = skin->createTexture(readOptions);
                 if (tex.valid())
                 {
                     _cache[skin->imageURI()->full()] = tex;
@@ -88,9 +89,9 @@ namespace osgEarth { namespace Buildings
             return tex;
         }
 
-        osg::ref_ptr<osg::Texture> getOrInsert(osg::Texture* tex)
+        osg::ref_ptr<osg::StateAttribute> getOrInsert(osg::Texture* tex)
         {
-            osg::ref_ptr<osg::Texture> result = tex;
+            osg::ref_ptr<osg::StateAttribute> result = tex;
 
             if (tex &&
                 tex->getNumImages() > 0 &&
@@ -100,7 +101,7 @@ namespace osgEarth { namespace Buildings
             {
                 std::lock_guard<std::mutex> lock(_mutex);
 
-                osg::ref_ptr<osg::Texture>& t = _cache[tex->getImage(0)->getFileName()];
+                auto& t = _cache[tex->getImage(0)->getFileName()];
                 if (!t.valid())
                 {
                     t = tex;
@@ -118,7 +119,7 @@ namespace osgEarth { namespace Buildings
 
             for (auto iter : _cache)
             {
-                osg::ref_ptr<osg::Texture>& tex = iter.second;
+                auto& tex = iter.second;
                 if (tex.valid())
                 {
                     tex->releaseGLObjects(state);
@@ -131,7 +132,7 @@ namespace osgEarth { namespace Buildings
             std::lock_guard<std::mutex> lock(_mutex);
             for (auto iter : _cache)
             {
-                osg::ref_ptr<osg::Texture>& tex = iter.second;
+                auto& tex = iter.second;
                 if (tex.valid())
                 {
                     tex->resizeGLObjectBuffers(size);
@@ -146,7 +147,7 @@ namespace osgEarth { namespace Buildings
         }
 
         // todo: consider changing this to an observer_ptr -gw
-        std::unordered_map<std::string, osg::ref_ptr<osg::Texture> > _cache;
+        std::unordered_map<std::string, osg::ref_ptr<osg::StateAttribute> > _cache;
     };
 
     /**
@@ -229,7 +230,7 @@ namespace osgEarth { namespace Buildings
         /** Returns the StateSet unique to this skin resource (may be empty) - used for caching. */
         osg::StateSet* getSkinStateSet(SkinResource* skin, const osgDB::Options* readOptions);
 
-        osg::Texture* getTexture(SkinResource* skin, const osgDB::Options* readOptions) {
+        osg::StateAttribute* getTexture(SkinResource* skin, const osgDB::Options* readOptions) {
             return _texCache->getOrCreate(skin, readOptions);
         }
 

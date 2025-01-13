@@ -302,7 +302,6 @@ namespace osgEarth
 
             void draw(ContourMapLayer* layer)
             {
-                bool dirty = false;
                 if (!visible) return;
                 ImGui::Begin("Edit Contours", &visible);
                 auto xfer = layer->getTransferFunction();
