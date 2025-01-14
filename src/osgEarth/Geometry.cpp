@@ -1408,7 +1408,7 @@ MultiGeometry::crop(const Ring* boundary) const
             mg->add(cropped);
         }
     }
-    if (mg->_parts.empty())
+    if (!mg.valid() || mg->_parts.empty())
         return {};
     else if (mg->_parts.size() == 1)
         return mg->_parts.front();
