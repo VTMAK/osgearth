@@ -117,7 +117,7 @@ SkinResource::createStateAttribute(const osgDB::Options* readOptions) const
         auto status = pbr_texture->load(material().value(), readOptions);
         if (!status.isOK())
         {
-            OE_WARN << LC << "One or more errors loading material for skin " << name().value() << std::endl;
+            OE_WARN << LC << "One or more errors loading material for skin " << name() << std::endl;
             return nullptr;
         }
 

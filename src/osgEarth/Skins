@@ -66,7 +66,7 @@ namespace osgEarth
             /** inline image (not serializable) */
             OE_OPTION_REFPTR(osg::Image, image);
 
-            OE_OPTION(std::string, name);
+            //OE_OPTION(std::string, name);
 
             //! Source data for the textures.
             //! Use this OR imageURI.
