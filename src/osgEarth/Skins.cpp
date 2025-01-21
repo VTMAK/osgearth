@@ -123,14 +123,8 @@ SkinResource::createStateAttribute(const osgDB::Options* readOptions) const
 
         if (isTiled() == true)
         {
-            for (auto& tex : { pbr_texture->albedo, pbr_texture->normal, pbr_texture->pbr })
-            {
-                if (tex.valid())
-                {
-                    tex->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
-                    tex->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
-                }
-            }
+            pbr_texture->setWrap(osg::Texture::WRAP_S, osg::Texture::REPEAT);
+            pbr_texture->setWrap(osg::Texture::WRAP_T, osg::Texture::REPEAT);
         }
 
         return pbr_texture.release();
