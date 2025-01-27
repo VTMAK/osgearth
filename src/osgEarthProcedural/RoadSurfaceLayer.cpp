@@ -195,129 +195,12 @@ RoadSurfaceLayer::getStyleSheet() const
     return options().styleSheet().getLayer();
 }
 
-namespace
-{
-    typedef std::vector< std::pair< Style, FeatureList > > StyleToFeatures;
-
-    void addFeatureToMap(Feature* feature, const Style& style, StyleToFeatures& map)
-    {
-        bool added = false;
-
-        if (!style.getName().empty())
-        {
-            // Try to find the style by name
-            for (int i = 0; i < map.size(); i++)
-            {
-                if (map[i].first.getName() == style.getName())
-                {
-                    map[i].second.push_back(feature);
-                    added = true;
-                    break;
-                }
-            }
-        }
-
-        if (!added)
-        {
-            FeatureList list;
-            list.push_back(feature);
-            map.push_back(std::pair< Style, FeatureList>(style, list));
-        }
-    }
-
-    void sortFeaturesIntoStyleGroups(StyleSheet* styles, FeatureList& features, FilterContext &context, StyleToFeatures& map)
-    {
-        if (styles == nullptr)
-            return;
-
-        if (styles->getSelectors().size() > 0)
-        {
-            for (StyleSelectors::const_iterator i = styles->getSelectors().begin();
-                i != styles->getSelectors().end();
-                ++i)
-            {
-                const StyleSelector& sel = i->second;
-
-                if (sel.styleExpression().isSet())
-                {
-                    // establish the working bounds and a context:
-                    StringExpression styleExprCopy(sel.styleExpression().get());
-
-                    for (FeatureList::iterator itr = features.begin(); itr != features.end(); ++itr)
-                    {
-                        Feature* feature = itr->get();
-
-                        // resolve the style:
-                        Style combinedStyle;
-
-                        if (feature->style().isSet())
-                        {
-                            // embedde style:
-                            combinedStyle = feature->style().get();
-                        }
-                        else
-                        {
-                            // evaluated style:
-                            const std::string& styleString = feature->eval(styleExprCopy, &context);
-                            if (!styleString.empty() && styleString != "null")
-                            {
-                                // if the style string begins with an open bracket, it's an inline style definition.
-                                if (styleString.length() > 0 && styleString[0] == '{')
-                                {
-                                    Config conf("style", styleString);
-                                    conf.setReferrer(sel.styleExpression().get().uriContext().referrer());
-                                    conf.set("type", "text/css");
-                                    combinedStyle = Style(conf);
-                                }
-
-                                // otherwise, look up the style in the stylesheet. Do NOT fall back on a default
-                                // style in this case: for style expressions, the user must be explicity about
-                                // default styling; this is because there is no other way to exclude unwanted
-                                // features.
-                                else
-                                {
-                                    const Style* selectedStyle = styles->getStyle(styleString, false);
-                                    if (selectedStyle)
-                                        combinedStyle = *selectedStyle;
-                                }
-                            }
-                        }
-
-                        if (!combinedStyle.empty())
-                        {
-                            addFeatureToMap(feature, combinedStyle, map);
-                        }
-
-                    }
-                }
-            }
-        }
-        else
-        {
-            const Style* style = styles->getDefaultStyle();
-            for (FeatureList::iterator itr = features.begin(); itr != features.end(); ++itr)
-            {
-                Feature* feature = itr->get();
-                // resolve the style:
-                if (feature->style().isSet())
-                {
-                    addFeatureToMap(feature, feature->style().get(), map);
-                }
-                else
-                {
-                    addFeatureToMap(feature, *style, map);
-                }
-            }
-        }
-    }
-}
-
 GeoImage
 RoadSurfaceLayer::createImageImplementation(const TileKey& key, ProgressCallback* progress) const
 {
     if (getStatus().isError())
     {
-        return GeoImage::INVALID;
+        return GeoImage(getStatus());
     }
 
     // take local refs to isolate this method from the member objects
@@ -329,20 +212,20 @@ RoadSurfaceLayer::createImageImplementation(const TileKey& key, ProgressCallback
     if (!featureSource.valid())
     {
         setStatus(Status(Status::ServiceUnavailable, "No feature source"));
-        return GeoImage::INVALID;
+        return GeoImage(getStatus());
     }
 
     if (featureSource->getStatus().isError())
     {
         setStatus(featureSource->getStatus());
-        return GeoImage::INVALID;
+        return GeoImage(getStatus());
     }
 
     osg::ref_ptr<const FeatureProfile> featureProfile = featureSource->getFeatureProfile();
     if (!featureProfile.valid())
     {
         setStatus(Status(Status::ConfigurationError, "Feature profile is missing"));
-        return GeoImage::INVALID;
+        return GeoImage(getStatus());
     }
 
     if (!rasterizer.valid() || !session.valid())
@@ -354,10 +237,8 @@ RoadSurfaceLayer::createImageImplementation(const TileKey& key, ProgressCallback
     if (!featureSRS)
     {
         setStatus(Status(Status::ConfigurationError, "Feature profile has no SRS"));
-        return GeoImage::INVALID;
+        return GeoImage(getStatus());
     }
-
-#if 1
 
     GeoExtent featureExtent = key.getExtent().transform(featureSRS);
 
@@ -480,183 +361,4 @@ RoadSurfaceLayer::createImageImplementation(const TileKey& key, ProgressCallback
     }
 
     return GeoImage::INVALID;
-
-#else
-
-    // Fetch the set of features to render
-    FeatureList features;
-    getFeatures(featureSource.get(), key, features, progress);
-
-    if (!features.empty())
-    {
-        GeoExtent featureExtent = key.getExtent().transform(featureSRS);
-
-        // Create the output extent:
-        GeoExtent outputExtent = key.getExtent();
-
-        // Establish a local tangent plane near the output extent. This will allow
-        // the compiler to render the tile in a location cartesian space.
-        const SpatialReference* keySRS = outputExtent.getSRS();
-        osg::Vec3d pos(outputExtent.west(), outputExtent.south(), 0);
-        osg::ref_ptr<const SpatialReference> srs = keySRS->createTangentPlaneSRS(pos);
-        outputExtent = outputExtent.transform(srs.get());
-
-        // Set the LTP as our output SRS.
-        // The geometry compiler will transform all our features into the
-        // LTP so we can render using an orthographic camera (TileRasterizer)
-        FilterContext fc(session.get(), featureProfile.get(), featureExtent);
-        fc.setOutputSRS(outputExtent.getSRS());
-
-        // compile the features into a node.
-        GeometryCompiler compiler;
-        StyleToFeatures mapping;
-
-        sortFeaturesIntoStyleGroups(styleSheet.get(), features, fc, mapping);
-        osg::ref_ptr< osg::Group > group;
-        if (!mapping.empty())
-        {
-            OE_PROFILING_ZONE_NAMED("Style");
-
-            group = new osg::Group();
-            for (unsigned int i = 0; i < mapping.size(); i++)
-            {
-                auto& style = mapping[i].first;
-                osg::ref_ptr<osg::Node> node = compiler.compile(mapping[i].second, style, fc);
-                if (node.valid() && node->getBound().valid())
-                {
-                    group->addChild(node);
-
-                    auto* render = style.get<RenderSymbol>();
-                    if (render)
-                        render->applyTo(node.get());
-                }
-            }
-        }
-
-        if (group && group->getBound().valid())
-        {
-            // Make sure there's actually geometry to render in the output extent
-            // since rasterization is expensive!
-            osg::Polytope polytope;
-            outputExtent.createPolytope(polytope);
-
-            osg::ref_ptr<osgUtil::PolytopeIntersector> intersector = new osgUtil::PolytopeIntersector(polytope);
-            osgUtil::IntersectionVisitor visitor(intersector);
-            group->accept(visitor);
-
-            if (intersector->getIntersections().empty())
-            {
-                //OE_DEBUG << LC << "RSL: skipped an EMPTY bounds without rasterizing :) for " << key.str() << std::endl;
-                return GeoImage::INVALID;
-            }
-
-
-            OE_PROFILING_ZONE_NAMED("Rasterize");
-
-            group->setName(key.str());
-
-            Future<osg::ref_ptr<osg::Image>> result = rasterizer->render(
-                group.release(),
-                outputExtent);
-
-            // Since we join on the rasterizer future immediately, we need to make sure
-            // the join cancels properly with a custom cancel predicate that checks for
-            // the existence and status of the host layer.
-            osg::observer_ptr<const Layer> layer(this);
-
-            osg::ref_ptr<ProgressCallback> local_progress = new ProgressCallback(
-                progress,
-                [layer]() {
-                    osg::ref_ptr<const Layer> safe;
-                    return !layer.lock(safe) || !safe->isOpen() || !jobs::alive();
-                }
-            );
-
-            // Immediately blocks on the result.
-            // That is OK - we are hopefully in a loading thread.
-            osg::ref_ptr<osg::Image> image = result.join(local_progress.get());
-
-            // Empty image means the texture did not render anything
-            if (image.valid() && image->data() != nullptr)
-            {
-                if (!ImageUtils::isEmptyImage(image.get()))
-                {
-                    return GeoImage(image.get(), key.getExtent());
-                }
-                else
-                {
-                    //OE_DEBUG << LC << "RSL: skipped an EMPTY image result for " << key.str() << std::endl;
-                    return GeoImage::INVALID;
-                }
-            }
-            else
-            {
-                return GeoImage::INVALID;
-            }
-        }
-    }
-
-    return GeoImage::INVALID;
-#endif
-}
-
-void
-RoadSurfaceLayer::getFeatures(
-    FeatureSource* fs,
-    const TileKey& key,
-    FeatureList& output,
-    ProgressCallback* progress) const
-{
-    OE_PROFILING_ZONE;
-
-    OE_SOFT_ASSERT_AND_RETURN(fs != nullptr, void());
-
-    // Get the collection of keys accounting for the buffer width
-    std::unordered_set<TileKey> keys;
-    fs->getKeys(key, options().featureBufferWidth().get(), keys);
-
-    // Collect all the features, using a small LRU cache and a
-    // Gate to optimize fetching and sharing with other threads
-    osg::ref_ptr<FeatureCursor> cursor;
-
-    for (const auto& subkey : keys)
-    {
-        FeatureList sublist;
-
-        FeatureListCache::Record r;
-        if (_lru->get(subkey, r))
-        {
-            sublist = r.value();
-        }
-        else
-        {
-            // the Gate prevents 2 threads that requesting the same TileKey
-            // at the same time from the featuresource.
-            ScopedGate<TileKey> gatelock(_keygate, subkey);
-
-            // double-check the cache now that we are gate-locked:
-            if (_lru->get(subkey, r))
-            {
-                sublist = r.value();
-            }
-            else
-            {
-                cursor = fs->createFeatureCursor(subkey, _filterChain, nullptr, progress);
-                if (cursor.valid())
-                {
-                    cursor->fill(
-                        sublist, 
-                        [](const Feature* f) { return f->getGeometry()->isLinear(); });
-
-                    _lru->insert(subkey, sublist);
-                }
-            }
-        }
-
-        // Clone features onto the end of the output list.
-        // We must always clone since osgEarth modifies the feature data
-        // TODO: check whether this is actually true
-        for (auto& f : sublist)
-            output.push_back(new Feature(*f));
-    }
 }
