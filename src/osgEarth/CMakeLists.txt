@@ -255,7 +255,6 @@ SET(TARGET_H
     InstanceSymbol
     IntersectionPicker
     IOTypes
-    JoinPointsLinesFilter
     JsonUtils
     LabelNode
     LandCover
@@ -618,7 +617,6 @@ set(TARGET_SRC
     InstanceSymbol.cpp
     IntersectionPicker.cpp
     IOTypes.cpp
-    JoinPointsLinesFilter.cpp
     JsonUtils.cpp
     LabelNode.cpp
     LandCover.cpp
