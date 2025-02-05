@@ -23,7 +23,6 @@
 #include <osgEarth/Query>
 #include <osgEarth/MetadataNode>
 #include <osgEarth/StyleSheet>
-#include <osgEarth/Metrics>
 #include <osgEarth/Utils>
 #include <osgEarth/NodeUtils>
 #include <osgEarth/Chonk>
@@ -351,7 +350,6 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     if (!map.valid())
         return nullptr;
 
-    OE_PROFILING_ZONE;
     unsigned numFeatures = 0;
     
     std::string activityName("Load building tile " + tileKey.str());
@@ -430,8 +428,8 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
             // Envelope is a localized environment for optimized clamping performance:
             ElevationPool::Envelope envelope;
 
-            Distance clampingResolution;
-            UnitsType units = tileKey.getProfile()->getSRS()->getUnits();
+            auto units = tileKey.getProfile()->getSRS()->getUnits();
+            Distance clampingResolution(0.0, units);
 
             const AltitudeSymbol* alt = style ? style->getSymbol<AltitudeSymbol>() : nullptr;
             if (alt && alt->clampingResolution().isSet())
@@ -439,12 +437,12 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 // use the resolution in the symbology if available
                 clampingResolution.set(alt->clampingResolution().get(), units);
             }
-            else
-            {
-                // otherwise use the tilekey's resolution
-                std::pair<double, double> resPair = tileKey.getResolution(osgEarth::ELEVATION_TILE_SIZE);
-                clampingResolution.set(resPair.second, tileKey.getProfile()->getSRS()->getUnits());
-            }
+            //else
+            //{
+            //    // otherwise use the tilekey's resolution
+            //    std::pair<double, double> resPair = tileKey.getResolution(osgEarth::ELEVATION_TILE_SIZE);
+            //    clampingResolution.set(resPair.second, tileKey.getProfile()->getSRS()->getUnits());
+            //}
 
             map->getElevationPool()->prepareEnvelope(
                 envelope,
