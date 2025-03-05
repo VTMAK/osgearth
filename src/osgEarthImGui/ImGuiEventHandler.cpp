@@ -71,6 +71,12 @@ ImGuiEventHandler::newFrame(osg::RenderInfo& renderInfo)
     if (_firstFrame)
     {
         ImGui::CreateContext();
+        ImNodes::CreateContext();
+        //ImNodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
+        ImNodesIO& imNodesio = ImNodes::GetIO();
+        imNodesio.LinkDetachWithModifierClick.Modifier = &ImGui::GetIO().KeyCtrl;
+        imNodesio.MultipleSelectModifier.Modifier = &ImGui::GetIO().KeyCtrl;
+
         ImGui_ImplOpenGL3_Init();
         auto& io = ImGui::GetIO();
 #ifdef IMGUI_HAS_DOCK
@@ -110,8 +116,11 @@ namespace
 void ImGuiEventHandler::handleReadSetting(
     ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line)
 {
-    std::vector<std::string> tokens;
-    StringTokenizer(std::string(line), tokens, "=");
+    auto tokens = StringTokenizer()
+        .delim("=")
+        .standardQuotes()
+        .tokenize(std::string(line));
+
     if (tokens.size() == 2)
     {
         s_guiHandler->load(entry, tokens[0], tokens[1]);

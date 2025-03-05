@@ -131,7 +131,11 @@ namespace
         Config libraries = conf.child("libraries");
         if (!libraries.value().empty())
         {
-            for(auto& lib : tokenize(libraries.value(), ";, \t", "", false))
+            auto libs = StringTokenizer()
+                .delim(";")
+                .tokenize(libraries.value());
+
+            for (StringVector::iterator itr = libs.begin(); itr != libs.end(); ++itr)
             {
                 std::string libName = osgDB::Registry::instance()->createLibraryNameForNodeKit(lib);
                 osgDB::Registry::LoadStatus status = osgDB::Registry::instance()->loadLibrary(libName);
