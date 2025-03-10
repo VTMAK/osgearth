@@ -102,9 +102,14 @@ namespace osgEarth { namespace Aerodrome
             conf.get("build_terminals", buildTerminals());
             conf.get("render_order", renderOrder());
             conf.get("render_bin", renderBin());
-            StringTokenizer(conf.value("exclude_icaos"), _icaoExclusions, ", ", "", false, true);
             conf.get("clamp_to_terrain", clampToTerrain());
             conf.get("serial_loading", serialLoading());
+
+            _icaoExclusions = StringTokenizer()
+                .delim(",").delim(" ")
+                .keepEmpties(false)
+                .trimTokens(true)
+                .tokenize(conf.value("exclude_icaos"));
         }
     };
 

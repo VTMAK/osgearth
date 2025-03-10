@@ -160,8 +160,14 @@ BuildingFactory::create(Feature*               feature,
                 if ( tagsExpr.isSet() )
                 {
                     std::string tagString = trim(feature->eval(tagsExpr.mutable_value(), _session.get()));
-                    if ( !tagString.empty() )
-                        StringTokenizer(tagString, tags, " ", "\"", false);
+                    if (!tagString.empty())
+                    {
+                        tags = StringTokenizer()
+                            .whitespaceDelims()
+                            .standardQuotes()
+                            .keepEmpties(false)
+                            .tokenize(tagString);
+                    }
                 }
 
                 else
