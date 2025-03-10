@@ -192,8 +192,7 @@ AerodromeRenderer::apply(LinearFeatureNode& node)
     // setup the style
     Style style;
     style.getOrCreate<LineSymbol>()->stroke()->color() = Color(*node.getOptions().linearFeaturesColor());
-    style.getOrCreate<LineSymbol>()->stroke()->width() = *node.getOptions().linearFeaturesWidth();
-    style.getOrCreate<LineSymbol>()->stroke()->widthUnits() = Units::METERS;
+    style.getOrCreate<LineSymbol>()->stroke()->width() = Distance(node.getOptions().linearFeaturesWidth().value(), Units::METERS);
     style.getOrCreate<AltitudeSymbol>()->clamping() = AltitudeSymbol::CLAMP_NONE;
 
     // use the BuildGeometryFilter to render the linear feature
@@ -1083,8 +1082,7 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Colo
     else
     {
         style.getOrCreate<LineSymbol>()->stroke()->color() = color;
-        style.getOrCreate<LineSymbol>()->stroke()->width() = 1.0f;
-        style.getOrCreate<LineSymbol>()->stroke()->widthUnits() = Units::METERS;
+        style.getOrCreate<LineSymbol>()->stroke()->width() = Distance(1.0f, Units::METERS);
     }
 
     if (height > 0.0)

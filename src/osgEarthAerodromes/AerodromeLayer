@@ -39,7 +39,7 @@ namespace osgEarth { namespace Aerodrome
         AerodromeLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt )
         {
             // init properties here
-            range().setDefault(Distance("15000m"));
+            range().setDefault(Distance(15000, Units::METERS));
             buildTerminals().setDefault(true);
             clampToTerrain().setDefault(false);
             fromConfig( _conf );
