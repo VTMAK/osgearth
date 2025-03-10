@@ -32,6 +32,7 @@ namespace osgEarth
             TileKey _showPlacementsLastTileKey;
             osg::ref_ptr<osg::Node> _boxgeom;
             GeoPoint _pointUnderMouse;
+            std::string _groupName = "trees";
 
             VegetationLayerGUI() : ImGuiPanel("Vegetation"),
                 _first(true),
@@ -259,13 +260,11 @@ namespace osgEarth
                         _veglayer->setShowTileBoundingBoxes(showTileBBox);
                     }
 
-                    static std::map<const Biome*, unsigned> biomeCounts;
-                    ImGui::Checkbox("Show asset bounding boxes", &_showPlacements);
-                    if (_showPlacements)
+                    // a group name that applies to the next 2 options
+                    const char* group_items[] = { "trees", "bushes", "undergrowth" };
+                    static unsigned group_item = 0;
+                    if (_showPlacements || _simulateTreePlacement)
                     {
-                        const char* group_items[] = { "trees", "bushes", "undergrowth" };
-                        static unsigned group_item = 0;
-                        ImGui::SameLine();
                         if (ImGuiLTable::BeginCombo("Group", group_items[group_item])) {
                             for (int n = 0; n < IM_ARRAYSIZE(group_items); n++) {
                                 const bool is_selected = (group_item == n);
@@ -276,14 +275,19 @@ namespace osgEarth
                             }
                             ImGuiLTable::EndCombo();
                         }
-                        const char* group_name = group_items[group_item];
+                    }
+                    _groupName = group_items[group_item];
 
+                    static std::map<const Biome*, unsigned> biomeCounts;
+                    ImGui::Checkbox("Show asset bounding boxes", &_showPlacements);
+                    if (_showPlacements)
+                    {
                         biomeCounts.clear();
 
                         auto& p = _pointUnderMouse;
                         if (p.isValid())
                         {
-                            auto lod = _veglayer->options().group(group_name).lod().get();
+                            auto lod = _veglayer->options().group(_groupName.c_str()).lod().get();
                             TileKey key = _mapNode->getMap()->getProfile()->createTileKey(p, lod);
                             if (key != _showPlacementsLastTileKey)
                             {
@@ -293,7 +297,7 @@ namespace osgEarth
 
                                 _veglayer->getAssetPlacements(
                                     key,
-                                    group_name,
+                                    _groupName,
                                     true,
                                     placements,
                                     nullptr);
@@ -543,7 +547,7 @@ namespace osgEarth
                 if (_simulateTreePlacement)
                 {
                     auto& p = _pointUnderMouse;
-                    _simulateTreePlacementOutput = _veglayer->simulateAssetPlacement(p, "trees");
+                    _simulateTreePlacementOutput = _veglayer->simulateAssetPlacement(p, _groupName);
                 }
                 else
                 {

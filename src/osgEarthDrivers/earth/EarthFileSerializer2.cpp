@@ -135,7 +135,7 @@ namespace
                 .delim(";")
                 .tokenize(libraries.value());
 
-            for (StringVector::iterator itr = libs.begin(); itr != libs.end(); ++itr)
+            for(auto& lib : libs)
             {
                 std::string libName = osgDB::Registry::instance()->createLibraryNameForNodeKit(lib);
                 osgDB::Registry::LoadStatus status = osgDB::Registry::instance()->loadLibrary(libName);
