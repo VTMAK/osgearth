@@ -27,6 +27,7 @@
 #include <osgEarth/NodeUtils>
 #include <osgEarth/Chonk>
 #include <osgEarth/Capabilities>
+#include <osgEarth/NetworkMonitor>
 
 #include <osgUtil/Optimizer>
 #include <osgUtil/Statistics>
@@ -349,6 +350,8 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
     osg::ref_ptr<const Map> map = _session->getMap();
     if (!map.valid())
         return nullptr;
+
+    NetworkMonitor::ScopedRequestLayer layerRequest(getName());
 
     unsigned numFeatures = 0;
     

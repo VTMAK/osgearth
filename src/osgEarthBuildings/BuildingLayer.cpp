@@ -181,7 +181,7 @@ BuildingLayer::createSceneGraph()
 
     auto filters = FeatureFilterChain::create(options().filters(), getReadOptions());
 
-    pager->setName("BuildingPager");
+    pager->setName(getName());
     pager->setAdditive(options().additiveLODs().get());
     pager->setElevationPool(map->getElevationPool());
     pager->setSession(_session.get());
