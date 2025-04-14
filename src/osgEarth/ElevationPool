@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
+/* osgEarth
  * Copyright 2008-2016 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ * MIT License
  */
 #pragma once
 
@@ -44,15 +30,6 @@ namespace osgEarth
         using Pointer = osg::ref_ptr<ElevationTexture>;
         using WeakLUT = std::unordered_map<Internal::RevElevationKey, WeakPointer>;
 
-    private:
-        struct OSGEARTH_EXPORT StrongLRU {
-            StrongLRU(unsigned maxSize=64u);
-            Mutexed<std::queue<Pointer>> _lru;
-            unsigned _maxSize;
-            void push(Pointer& p);
-            void clear();
-        };
-
     public:
         //! User data that a client can use to speed up queries in
         //! a local geographic area or sample a custom set of layers.
@@ -77,13 +54,13 @@ namespace osgEarth
             void clear();
 
         private:
-            StrongLRU _lru;
+            LRUCache<Internal::RevElevationKey, Pointer> _lru;
             ElevationLayerVector _elevationLayers;
             friend class ElevationPool;
         };
 
         /**
-         * Object for doing lots of queries in a localized area.
+         * Object for doing lots of queries in a localized area at a specific LOD.
          * Call prepareEnvelope to initialize one.
          */
         class OSGEARTH_EXPORT Envelope
@@ -243,10 +220,9 @@ namespace osgEarth
         // LRU container that stores the last N strong references to accessed tiles.
         // Not used directly - just used to hold ref_ptrs to things so they stay
         // alive in the global LUT (see above).
-        StrongLRU _L2;
+        mutable LRUCache<Internal::RevElevationKey, Pointer> _L2;
 
-        // internal: spatial index of data extents
-        void* _index;
+        std::map<const ElevationLayer*, void*> _layerIndex;
 
         // elevation tile size
         unsigned _tileSize;
@@ -269,10 +245,10 @@ namespace osgEarth
             unsigned maxLOD,
             const Map* map,
             WorkingSet* ws,
-            ProgressCallback* progress);
+            ProgressCallback* progress);        
 
-        //! Best LOD this a point, or -1 if no data in index
-        int getLOD(double x, double y) const;
+        //! Best LOD this a point for the working set, or -1 if no data in index
+        int getLOD(double x, double y, WorkingSet*);
 
         osg::ref_ptr<ElevationTexture> getOrCreateRaster(
             const Internal::RevElevationKey& key,
@@ -283,10 +259,7 @@ namespace osgEarth
 
         bool findExistingRaster(
             const Internal::RevElevationKey& key,
-            WorkingSet* ws,
-            osg::ref_ptr<ElevationTexture>& result,
-            bool* fromWorkingSet,
-            bool* fromL2Cache,
+            osg::ref_ptr<ElevationTexture>& result,            
             bool* fromGlobalWeakLUT);
     };
 

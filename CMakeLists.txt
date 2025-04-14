@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.20)
 if (${CMAKE_TOOLCHAIN_FILE} MATCHES ".*vcpkg.cmake.*")
     message(STATUS "Building with vcpkg toolchain.")
     set(USING_VCPKG ON)
-    set(VCPKG_OVERLAY_TRIPLETS ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/triplets)
 endif()
 
 
@@ -20,15 +19,16 @@ project(
 # SDK version number
 set(OSGEARTH_MAJOR_VERSION 3)
 set(OSGEARTH_MINOR_VERSION 7)
-set(OSGEARTH_PATCH_VERSION 2)
+set(OSGEARTH_PATCH_VERSION 3)
 set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEARTH_PATCH_VERSION})
 
 # Increment this each time the ABI changes
-set(OSGEARTH_SOVERSION 170)
+set(OSGEARTH_SOVERSION 172)
 
-# Require C++14
+# Require C++14, don't fall back, and don't use compiler-specific extensions:
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Detect out-of-source build. We'll need this for protobuf generated files.
 if (NOT "${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
@@ -49,12 +49,20 @@ include_directories(${OSGEARTH_BUILDTIME_INCLUDE_DIR})
 set(OSGEARTH_EMBEDDED_THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/src/third_party)
 
 include(GNUInstallDirs)
-if(WIN32)
-    set(OSGEARTH_INSTALL_PLUGINSDIR "${CMAKE_INSTALL_BINDIR}" CACHE STRING "Parent folder of OSG plugins folder")
+
+if(BUILDING_VCPKG_PORT)
+    # this path taken when vcpkg is building from the portfile.
+    set(OSGEARTH_INSTALL_PLUGINSDIR "plugins")
+    set(OSGEARTH_INSTALL_CMAKEDIR "${CMAKE_INSTALL_DATADIR}/osgearth")
 else()
-    set(OSGEARTH_INSTALL_PLUGINSDIR "${CMAKE_INSTALL_LIBDIR}" CACHE STRING "Parent folder of OSG plugins folder")
+    if(WIN32)
+        set(OSGEARTH_INSTALL_PLUGINSDIR "${CMAKE_INSTALL_BINDIR}" CACHE STRING "Parent folder of OSG plugins folder")
+    else()
+        set(OSGEARTH_INSTALL_PLUGINSDIR "${CMAKE_INSTALL_LIBDIR}" CACHE STRING "Parent folder of OSG plugins folder")
+    endif()
+    set(OSGEARTH_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/osgearth" CACHE STRING "osgEarth CMake package install directory")
 endif()
-set(OSGEARTH_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/osgearth" CACHE STRING "osgEarth CMake package install directory")
+
 set(OSGEARTH_INSTALL_DATADIR "${CMAKE_INSTALL_DATADIR}/osgearth" CACHE STRING "osgEarth data directory")
 
 # Platform-specific settings ............................................

@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 #include "FileSystemCache"
 #include <osgEarth/Cache>
@@ -474,7 +460,7 @@ namespace
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
 
         // mangle "key" into a legal path name
-        URI fileURI( key, _metaPath );
+        URI fileURI(osgDB::concatPaths(_binPath, key));
         std::string path = fileURI.full() + OSG_EXT;
 
         osg::ref_ptr<const osgDB::Options> dbo = mergeOptions(readOptions);        
@@ -575,7 +561,7 @@ namespace
             return false;
 
         // convert the key into a legal filename:
-        URI fileURI( key, _metaPath );
+        URI fileURI(osgDB::concatPaths(_binPath, key));        
 
         // combine custom options with cache options:
         osg::ref_ptr<const osgDB::Options> dbo = mergeOptions(raw_writeOptions);

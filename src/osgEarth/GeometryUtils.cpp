@@ -1,23 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
-* Copyright 2020 Pelican Mapping
-* http://osgearth.org
-*
-* osgEarth is free software; you can redistribute it and/or modify
-* it under the terms of the GNU Lesser General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+* Copyright 2025 Pelican Mapping
+* MIT License
 */
 
 #include <osgEarth/GeometryUtils>
@@ -62,22 +45,42 @@ osgEarth::GeometryUtils::geometryToIsoWKT( const Geometry* geometry )
     return result;
 }
 
-std::string 
-osgEarth::GeometryUtils::geometryToGeoJSON( const Geometry* geometry )
+std::string
+osgEarth::GeometryUtils::geometryToGeoJSON(const Geometry* input, const SpatialReference* srs)
 {
-    OGRGeometryH g = OgrUtils::createOgrGeometry( geometry );
+    const Geometry* geometry = input;
+
+    if (srs && !srs->isGeographic())
+    {
+        // GeoJSON is ALWAYS in geographic coordinates.
+        auto* geog = srs->getGeographicSRS();
+        auto* cloned = input->clone();
+        GeometryIterator(cloned, true).forEach([&](Geometry* part)
+            {
+                srs->transform(part->asVector(), geog);
+            });
+        geometry = cloned;
+    }
+
+    OGRGeometryH g = OgrUtils::createOgrGeometry(geometry);
     std::string result;
     if (g)
     {
-        char* buf;   
-        buf = OGR_G_ExportToJson( g );
+        char* buf;
+        buf = OGR_G_ExportToJson(g);
         if (buf)
         {
             result = std::string(buf);
-            CPLFree( buf );
+            CPLFree(buf);
         }
-        OGR_G_DestroyGeometry( g );
+        OGR_G_DestroyGeometry(g);
     }
+
+    if (geometry != input)
+    {
+        delete geometry;
+    }
+
     return result;
 }
 

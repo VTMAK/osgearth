@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 
 #include <osgEarth/SelectExtentTool>
@@ -28,11 +14,7 @@ using namespace osgEarth::Contrib;
 //#define SHOW_EXTENT 1
 
 
-SelectExtentTool::SelectExtentTool( osgEarth::MapNode* mapNode ):
-_enabled(true),
-_mouseDown(false),
-_mouseButtonMask(osgGA::GUIEventAdapter::LEFT_MOUSE_BUTTON),
-_modKeyMask(0)
+SelectExtentTool::SelectExtentTool(osgEarth::MapNode* mapNode)
 {
     _root = new osg::Group();
     _mapNode = mapNode;
@@ -41,11 +23,6 @@ _modKeyMask(0)
         _mapNode->addChild(_root.get());
     }
     rebuild();
-}
-
-SelectExtentTool::~SelectExtentTool()
-{
-    //nop
 }
 
 void
@@ -69,14 +46,18 @@ SelectExtentTool::rebuild()
     _feature = new Feature(new Ring(), getMapNode()->getMapSRS());
     _feature->geoInterp() = GEOINTERP_RHUMB_LINE;
 
-    // define a style for the line
-    LineSymbol* ls = _feature->style().mutable_value().getOrCreate<LineSymbol>();
+    // define a style for the selection graphics
+    auto* ls = _feature->style().mutable_value().getOrCreate<LineSymbol>();
     ls->stroke().mutable_value().color() = Color::Yellow;
     ls->stroke().mutable_value().width() = Distance(3.0f, Units::PIXELS);
     ls->tessellationSize() = Distance(100, Units::KILOMETERS);
 
-    RenderSymbol* render = _feature->style().mutable_value().getOrCreate<RenderSymbol>();
-    render->depthTest() = false;
+    auto* poly = _feature->style()->getOrCreate<PolygonSymbol>();
+    poly->fill()->color() = Color(Color::Black, 0.15f);
+
+    auto* alt = _feature->style()->getOrCreate<AltitudeSymbol>();
+    alt->clamping() = alt->CLAMP_TO_TERRAIN;
+    alt->technique() = alt->TECHNIQUE_DRAPE;
 
     _featureNode = new FeatureNode( _feature.get() );
     _featureNode->setMapNode(getMapNode());
@@ -93,12 +74,15 @@ SelectExtentTool::handle( const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdap
         return false;
     }
     
-    if ((ea.getEventType() == ea.PUSH) &&
-        (ea.getButton() & _mouseButtonMask) != 0 &&
-        (ea.getModKeyMask() == _modKeyMask))
+    if (ea.getEventType() == ea.PUSH)
     {
-        _mouseDown = getMapNode()->getGeoPointUnderMouse(aa.asView(), ea.getX(), ea.getY(), _mouseDownPoint);
-        return true;
+        if ((ea.getButton() & _mouseButtonMask) != 0 &&
+            ((ea.getModKeyMask() & _modKeyMask)) != 0)
+        {
+            clear();
+            _mouseDown = getMapNode()->getGeoPointUnderMouse(aa.asView(), ea.getX(), ea.getY(), _mouseDownPoint);
+            return true;
+        }
     }
 
     else if (
@@ -126,9 +110,21 @@ SelectExtentTool::handle( const osgGA::GUIEventAdapter& ea, osgGA::GUIActionAdap
         (ea.getEventType() == ea.RELEASE))
     {
         _mouseDown = false;
-        if (_callback != nullptr)
+
+        if (_featureVisible)
         {
-            _callback(_extent);
+            if (onSelect)
+            {
+                onSelect.fire(_extent);
+            }
+        }
+        else
+        {
+            clear();
+            if (onSelect)
+            {
+                onSelect.fire(GeoExtent::INVALID);
+            }
         }
         return true;
     }
@@ -145,12 +141,14 @@ SelectExtentTool::updateFeature(const GeoExtent& e)
     line->push_back(osg::Vec3d(e.xMin(), e.yMax(), 0));
     _feature->setGeometry(line);
     _featureNode->dirty();
+    _featureVisible = true;
 }
 
 void SelectExtentTool::clear()
 {
     _feature->getGeometry()->clear();
     _featureNode->dirty();
+    _featureVisible = false;
 }
 
 void
@@ -163,12 +161,6 @@ void
 SelectExtentTool::setModKeyMask(int value)
 {
     _modKeyMask = value;
-}
-
-void
-SelectExtentTool::setCallback(const Callback& value)
-{
-    _callback = value;
 }
 
 Style&

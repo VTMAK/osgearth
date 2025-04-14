@@ -1,23 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
-* Copyright 2020 Pelican Mapping
-* http://osgearth.org
-*
-* osgEarth is free software; you can redistribute it and/or modify
-* it under the terms of the GNU Lesser General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+* Copyright 2025 Pelican Mapping
+* MIT License
 */
 #include <osgEarthImGui/ImGuiApp>
 #include <osgEarth/EarthManipulator>
@@ -27,7 +10,6 @@
 #include <osgEarthImGui/LayersGUI>
 #include <osgEarthImGui/ContentBrowserGUI>
 #include <osgEarthImGui/NetworkMonitorGUI>
-#include <osgEarthImGui/NotifyGUI>
 #include <osgEarthImGui/SceneGraphGUI>
 #include <osgEarthImGui/TextureInspectorGUI>
 #include <osgEarthImGui/ViewpointsGUI>
@@ -58,6 +40,10 @@
 #include <osgEarthImGui/CesiumIonGUI>
 #endif
 
+#include <osgEarth/SelectExtentTool>
+
+#include <osgEarthImGui/FeatureEditGUI>
+
 #define LC "[imgui] "
 
 using namespace osgEarth;
@@ -78,6 +64,8 @@ main(int argc, char** argv)
     osg::ArgumentParser arguments(&argc, argv);
     if (arguments.read("--help"))
         return usage(argv[0]);
+
+    bool extras = arguments.read("--extras");
 
     osgEarth::initialize(arguments);
 
@@ -136,6 +124,11 @@ main(int argc, char** argv)
         ui->add("Procedural", new osgEarth::Procedural::NodeGraphGUI());
 #endif
 
+        if (extras)
+        {
+            ui->add("Extras", new osgEarth::FeatureEditGUI());
+        }
+
         ui->onStartup = []()
         {
             ImGui::GetIO().FontAllowUserScaling = true;
@@ -143,6 +136,17 @@ main(int argc, char** argv)
 
         // Put it on the front of the list so events don't filter through to other handlers.
         viewer.getEventHandlers().push_front(ui);
+
+        // Install a select-extent tool that panels can access.
+        auto selectTool = new Contrib::SelectExtentTool(MapNode::get(node));
+        selectTool->getStyle().getOrCreateSymbol<LineSymbol>()->stroke()->color() = Color::Red;
+        selectTool->setModKeyMask(osgGA::GUIEventAdapter::MODKEY_SHIFT);
+        selectTool->onSelect([ui](const osgEarth::GeoExtent& extent)
+            {
+                ui->setSelectedExtent(extent);
+            });
+
+        viewer.getEventHandlers().push_front(selectTool);
 
         viewer.setSceneData(node);
         return viewer.run();

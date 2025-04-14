@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
+/* osgEarth
  * Copyright 2008-2014 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ * MIT License
  */
 #ifndef OSGEARTH_FEATURES_MVT
 #define OSGEARTH_FEATURES_MVT 1
@@ -25,6 +11,7 @@
 #ifdef OSGEARTH_HAVE_MVT
 
 #include <osgEarth/FeatureSource>
+#include <osgEarth/Threading>
 
 namespace osgEarth { namespace MVT 
 {
@@ -35,13 +22,11 @@ namespace osgEarth { namespace MVT
         FeatureList&   features);
 
     // Internal serialization options
-    class OSGEARTH_EXPORT MVTFeatureSourceOptions : public FeatureSource::Options
+    class OSGEARTH_EXPORT MVTFeatureSourceOptions : public TiledFeatureSource::Options
     {
     public:
-        META_LayerOptions(osgEarth, MVTFeatureSourceOptions, FeatureSource::Options);
+        META_LayerOptions(osgEarth, MVTFeatureSourceOptions, TiledFeatureSource::Options);
         OE_OPTION(URI, url);
-        OE_OPTION(int, minLevel);
-        OE_OPTION(int, maxLevel);
         virtual Config getConfig() const;
     private:
         void fromConfig(const Config& conf);
@@ -55,25 +40,17 @@ namespace osgEarth
     /**
      * Feature Layer that accesses features according to the Mapnik Vector Tiles specification.
      */
-    class OSGEARTH_EXPORT MVTFeatureSource : public FeatureSource
+    class OSGEARTH_EXPORT MVTFeatureSource : public TiledFeatureSource
     {   
     public: // serialization
-        typedef MVT::MVTFeatureSourceOptions Options;
+        using Options = MVT::MVTFeatureSourceOptions;
 
     public:
-        META_Layer(osgEarth, MVTFeatureSource, Options, FeatureSource, MVTFeatures);
+        META_Layer(osgEarth, MVTFeatureSource, Options, TiledFeatureSource, MVTFeatures);
 
         //! Location of the resource
         void setURL(const URI& value);
         const URI& getURL() const;
-
-        //! Minimum level of detail to access
-        void setMinLevel(const int& value);
-        const int& getMinLevel() const;
-
-        //! Maximum level of detail to access
-        void setMaxLevel(const int& value);
-        const int& getMaxLevel() const;
 
         typedef void(*FeatureTileCallback)(const TileKey& key, const FeatureList& features, void* context);
         /**
@@ -103,7 +80,19 @@ namespace osgEarth
     private:
         FeatureSchema _schema;
         osg::ref_ptr<osgDB::BaseCompressor> _compressor;
-        void* _database;
+
+        struct PerThreadData {
+            void* database = nullptr;
+            void* selectTileStmt = nullptr;
+            void* selectMetaDataStmt = nullptr;
+
+            ~PerThreadData();
+        };
+
+        PerThreadData& getPerThreadData() const;
+
+        mutable osgEarth::Util::PerThread<PerThreadData> _perThreadData;
+
         unsigned _minLevel;
         unsigned _maxLevel;
 

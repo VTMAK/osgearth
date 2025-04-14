@@ -1,23 +1,10 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
+/* osgEarth
  * Copyright 2025 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ * MIT License
  */
 #include "RoadNetwork"
 #include <osgEarth/Feature>
+#include <osgEarth/GeoData>
 
 using namespace osgEarth;
 using namespace osgEarth::Procedural;
@@ -110,11 +97,6 @@ RoadNetwork::buildRelations()
                 // still good? keep going:
                 if (outgoing_way)
                 {
-                    if (outgoing_way->feature->getFID() == 171970326)
-                    {
-                        OE_INFO << "here we go." << std::endl;
-                    }
-
                     // add this new way to our relation:
                     relation.ways.emplace_back(outgoing_way);
 
@@ -173,7 +155,7 @@ RoadNetwork::buildRelations()
 }
 
 void
-RoadNetwork::mergeRelations(FeatureList& output)
+RoadNetwork::mergeRelations(std::vector<osg::ref_ptr<Feature>>& output)
 {
     if (canMerge)
     {
@@ -265,5 +247,50 @@ RoadNetwork::getFeatures(const GeoExtent& extent, std::unordered_set<FeatureID>&
         {
             output.insert(way.feature->getFID());
         }
+    }
+}
+
+
+
+
+
+namespace
+{
+    Geometry* line_to_polygon(const Geometry* geom, double width)
+    {
+        MultiGeometry* mg = new MultiGeometry();
+        double halfWidth = 0.5 * width;
+
+        ConstGeometryIterator i(geom, false);
+        while (i.hasMore())
+        {
+            auto* line = i.next();
+            if (line->size() < 2)
+                continue;
+
+            Polygon* poly = new Polygon();
+            poly->resize(line->size() * 2);
+
+            for (int i = 0; i < line->size(); ++i)
+            {
+                osg::Vec3d dir;
+                if (i == 0)
+                    dir = (*line)[i + 1] - (*line)[i];
+                else if (i == line->size() - 1)
+                    dir = (*line)[i] - (*line)[i - 1];
+                else
+                    dir = (*line)[i + 1] - (*line)[i - 1];
+                dir.normalize();
+
+                osg::Vec3d right = dir ^ osg::Vec3d(0, 0, 1);
+
+                (*poly)[i] = (*line)[i] + right * halfWidth;
+                (*poly)[line->size() * 2 - i - 1] = (*line)[i] - right * halfWidth;
+            }
+
+            mg->add(poly);
+        }
+
+        return mg;
     }
 }

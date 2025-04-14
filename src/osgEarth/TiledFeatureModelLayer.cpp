@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 #include <osgEarth/TiledFeatureModelLayer>
 #include <osgEarth/Registry>
@@ -122,6 +108,13 @@ TiledFeatureModelLayer::getFeatureSource() const
     return options().features().getLayer();
 }
 
+const FeatureProfile*
+TiledFeatureModelLayer::getFeatureProfile() const
+{
+    FeatureSource* fs = getFeatureSource();
+    return fs ? fs->getFeatureProfile() : nullptr;
+}
+
 void
 TiledFeatureModelLayer::setStyleSheet(StyleSheet* value)
 {
@@ -170,10 +163,8 @@ TiledFeatureModelLayer::getExtent() const
 {
     static GeoExtent s_invalid;
 
-    FeatureSource* fs = getFeatureSource();
-    return fs && fs->getFeatureProfile() ?
-        fs->getFeatureProfile()->getExtent() :
-        s_invalid;
+    auto* fp = getFeatureProfile();
+    return fp ? fp->getExtent() : s_invalid;
 }
 
 void
@@ -259,10 +250,9 @@ TiledFeatureModelLayer::createTileImplementation(const TileKey& key, ProgressCal
     if (progress && progress->isCanceled())
         return nullptr;
 
-    auto featureProfile = getFeatureSource()->getFeatureProfile();
-    OE_SOFT_ASSERT_AND_RETURN(featureProfile, {});
+    OE_SOFT_ASSERT_AND_RETURN(getFeatureProfile(), {});
     
-    FilterContext context(_session.get(), featureProfile, key.getExtent(), index);
+    FilterContext context(_session.get(), getFeatureProfile(), key.getExtent(), index);
     Query query(key);
 
 
@@ -275,7 +265,7 @@ TiledFeatureModelLayer::createTileImplementation(const TileKey& key, ProgressCal
                 FeatureList temp;
                 temp.swap(features);
 
-                auto extent = key.getExtent().transform(featureProfile->getSRS());
+                auto extent = key.getExtent().transform(getFeatureProfile()->getSRS());
                 for (auto& feature : temp)
                 {
                     auto cropped = feature->getGeometry()->crop(extent.bounds());
@@ -324,17 +314,16 @@ TiledFeatureModelLayer::getProfile() const
     auto* fs = getFeatureSource();
     OE_SOFT_ASSERT_AND_RETURN(fs, nullptr);
 
-    auto* fp = fs->getFeatureProfile();
-    OE_SOFT_ASSERT_AND_RETURN(fp, nullptr);
+    OE_SOFT_ASSERT_AND_RETURN(getFeatureProfile(), nullptr);
 
     // first try the tiling profile if there is one.
-    auto profile = fp->getTilingProfile();
+    auto profile = getFeatureProfile()->getTilingProfile();
 
     // otherwise, this is an untiled source (like a local shapefile) so will
     // try to construct a profile from its extent
-    if (!profile && fp->getExtent().isValid())
+    if (!profile && getFeatureProfile()->getExtent().isValid())
     {
-        profile = Profile::create(fp->getExtent());
+        profile = Profile::create(getFeatureProfile()->getExtent());
     }
 
     // failing all that, fall back on a default.
@@ -350,7 +339,8 @@ TiledFeatureModelLayer::getMinLevel() const
     }
     else
     {
-        return getFeatureSource()->getFeatureProfile()->getFirstLevel();
+        OE_SOFT_ASSERT_AND_RETURN(getFeatureProfile(), 0);
+        return getFeatureProfile()->getFirstLevel();
     }
 }
 
@@ -361,15 +351,20 @@ TiledFeatureModelLayer::getMaxLevel() const
     {
         return options().maxLevel().value();
     }
-    else if (getFeatureSource()->getFeatureProfile()->isTiled())
-    {
-        return getFeatureSource()->getFeatureProfile()->getMaxLevel();
-    }
     else
     {
-        // in the case of an un-tiled feature source (like a local shapefile
-        // or geojson file), min level should == the max level so there is 
-        // only one level of detail.
-        return getMinLevel();
+        OE_SOFT_ASSERT_AND_RETURN(getFeatureProfile(), 0);
+
+        if (getFeatureProfile()->isTiled())
+        {
+            return getFeatureProfile()->getMaxLevel();
+        }
+        else
+        {
+            // in the case of an un-tiled feature source (like a local shapefile
+            // or geojson file), min level should == the max level so there is 
+            // only one level of detail.
+            return getMinLevel();
+        }
     }
 }

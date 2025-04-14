@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 #pragma once
 
@@ -109,13 +95,15 @@ namespace osgEarth
 
     public: // Layer
 
-        virtual Status openImplementation() override;
+        Status openImplementation() override;
+
+        Status closeImplementation() override;
 
     protected: // Layer
 
-        virtual void init() override;
+        void init() override;
 
-        virtual void prepareForRendering(TerrainEngine*) override;
+        void prepareForRendering(TerrainEngine*) override;
 
         bool _visibleTiedToOpen = false;
         bool _canSetVisible = true;
@@ -124,6 +112,7 @@ namespace osgEarth
         osg::ref_ptr<osg::Uniform> _opacityU, _depthOffsetU;
         osg::ref_ptr<osg::Uniform> _rangeU;
         osg::ref_ptr<osg::NodeCallback> _noDrawCallback;
+        osg::Node* _noDrawCallbackNode = nullptr;
         bool _minMaxRangeShaderAdded;
         void initializeUniforms();
         void initializeMinMaxRangeShader();

@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 #pragma once
 
@@ -243,10 +229,6 @@ namespace osgEarth
         //! Status of this layer
         const Status& getStatus() const;
 
-        //! @deprecated (remove after 2.10)
-        //! Sequence controller if the layer has one.
-        virtual SequenceControl* getSequenceControl() { return 0L; }
-
         //! Serialize this layer into a Config object (if applicable)
         virtual Config getConfig() const;
 
@@ -363,12 +345,13 @@ namespace osgEarth
         };
 
         //! Callback invoked by the terrain engine on this layer before applying
-        //! @deprecated replace with cull() override
+        OE_DEPRECATED("Override cull() instead")
         void setCullCallback(TraversalCallback* tc);
         const TraversalCallback* getCullCallback() const;
 
         //! Called to traverse this layer
         //! @deprecated Replace with cull() override
+        OE_DEPRECATED("Override cull() instead")
         void apply(osg::Node* node, osg::NodeVisitor* nv) const;
 
         //! Called by the terrain engine during the update traversal
@@ -382,11 +365,11 @@ namespace osgEarth
 
     public: // osg::Object
 
-        virtual void setName(const std::string& name);
+        void setName(const std::string& name) override;
 
-        virtual void resizeGLObjectBuffers(unsigned maxSize);
+        void resizeGLObjectBuffers(unsigned maxSize) override;
 
-        virtual void releaseGLObjects(osg::State* state) const;
+        void releaseGLObjects(osg::State* state) const override;
 
 
     public: // Public internal methods
@@ -422,10 +405,10 @@ namespace osgEarth
 
     public: // deprecated
 
-        //! @deprecated - use getOpenAutomatically
+        OE_DEPRECATED("Use getOpenAutomatically()")
         bool getEnabled() const;
 
-        //! @deprecated - use setOpenAutomatically
+        OE_DEPRECATED("Use setOpenAutomatically()")
         void setEnabled(bool value);
 
     protected:
@@ -469,7 +452,7 @@ namespace osgEarth
         Hints& layerHints();
 
         //! MapNode will call this function when terrain resources are available.
-        //! @deprecated Implement prepareForRendering instead
+        OE_DEPRECATED("Override prepareForRendering() instead")
         virtual void setTerrainResources(TerrainResources*) { }
 
     private:

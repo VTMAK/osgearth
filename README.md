@@ -20,13 +20,11 @@ osgEarth builds on trusted open source technologies like OpenSceneGraph and GDAL
 
 ## Install the SDK
 
-Windows users can install the latest version of osgEarth through `vcpkg`:
+Install the latest version of osgEarth from `vcpkg`:
 ```bat
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg && bootstrap-vcpkg.bat
 vcpkg install osgearth:x64-windows
+vcpkg install osgearth[tools]:x64-windows
 ```
-This will take a while the first time as vcpkg builds osgEarth and its dependencies.
 
 ## Check out some examples
 
@@ -62,6 +60,7 @@ main.cpp
 #include <osgEarth/MapNode>
 #include <osgEarth/TMS>
 #include <osgEarth/EarthManipulator>
+#include <osgEarth/GLUtils>
 #include <osg/ArgumentParser>
 #include <osgViewer/Viewer>
 
@@ -71,6 +70,7 @@ int main(int argc, char** argv)
     
     osg::ArgumentParser args(&argc, argv);
     osgViewer::Viewer viewer(args);
+    viewer.setRealizeOperation(new osgEarth::GL3RealizeOperation());
     
     auto imagery = new osgEarth::TMSImageLayer();
     imagery->setURL("https://readymap.org/readymap/tiles/1.0.0/7/");
@@ -84,6 +84,10 @@ int main(int argc, char** argv)
     return viewer.run();
 }
 ```
+
+## Build it yourself
+
+To build osgEarth yourself, [follow the instructions here](https://docs.osgearth.org/en/latest/build.html).
 
 ## Resources
 

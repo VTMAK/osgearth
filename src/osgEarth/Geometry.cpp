@@ -1,23 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
-* Copyright 2020 Pelican Mapping
-* http://osgearth.org
-*
-* osgEarth is free software; you can redistribute it and/or modify
-* it under the terms of the GNU Lesser General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+* Copyright 2025 Pelican Mapping
+* MIT License
 */
 #include "Geometry"
 #include "GEOS"
@@ -1597,12 +1580,17 @@ GeometryIterator::next()
 void
 GeometryIterator::fetchNext()
 {
-    _next = 0L;
-    if ( _stack.size() == 0 )
-        return;
+    _next = nullptr;
 
-    Geometry* current = _stack.front();
-    _stack.pop();
+    Geometry* current = nullptr;
+    while (!current)
+    {
+        if (_stack.size() == 0)
+            return;
+
+        current = _stack.front();
+        _stack.pop();
+    }
 
     if ( current->getType() == Geometry::TYPE_MULTI && _traverseMulti )
     {
@@ -1668,11 +1656,15 @@ void
 ConstGeometryIterator::fetchNext()
 {
     _next = nullptr;
-    if ( _stack.size() == 0 )
-        return;
+    const Geometry* current = nullptr;
+    while (!current)
+    {
+        if (_stack.size() == 0)
+            return;
 
-    const Geometry* current = _stack.back();
-    _stack.resize(_stack.size() - 1);
+        current = _stack.back();
+        _stack.resize(_stack.size() - 1);
+    }
 
     if (_traverseMulti && current->getType() == Geometry::TYPE_MULTI)
     {

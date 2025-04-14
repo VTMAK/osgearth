@@ -1,29 +1,13 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
+/* osgEarth
  * Copyright 2025 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ * MIT License
  */
 #pragma once
 #include <osgEarthProcedural/Export>
 #include <osgEarth/Common>
 #include <osg/Vec3d>
-#include <osg/Node>
 #include <vector>
 #include <deque>
-#include <memory>
 #include <set>
 #include <functional>
 #include <unordered_map>
@@ -116,7 +100,7 @@ namespace osgEarth {
             };
 
             /**
-            * "Relation" is just a string of "Way" objects that are connected by there endpoints
+            * "Relation" is just a string of "Way" objects that are connected by their endpoints
             * and (probably) represent the same conceptual feature (like a named road or a bridge)
             */
             struct Relation

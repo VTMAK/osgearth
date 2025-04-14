@@ -1,40 +1,15 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
-* Copyright 2020 Pelican Mapping
-* http://osgearth.org
-*
-* osgEarth is free software; you can redistribute it and/or modify
-* it under the terms of the GNU Lesser General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+* Copyright 2025 Pelican Mapping
+* MIT License
 */
 #include <osgEarth/Draggers>
-#include <osgEarth/AnnotationUtils>
 #include <osgEarth/GeoPositionNodeAutoScaler>
-
 #include <osgEarth/MapNode>
-#include <osgEarth/GeometryClamper>
 #include <osgEarth/IntersectionPicker>
 #include <osgEarth/GLUtils>
 
-#include <osg/AutoTransform>
 #include <osgViewer/View>
-
-#include <osg/io_utils>
-
 #include <osgGA/EventVisitor>
-
 #include <osgManipulator/Dragger>
 
 #define LC "[Dragger] "
@@ -91,10 +66,15 @@ void Dragger::setPosition(const GeoPoint& position, bool fireEvents)
 
 void Dragger::firePositionChanged()
 {
+    // old style
+    // @deprecated
     for( PositionChangedCallbackList::iterator i = _callbacks.begin(); i != _callbacks.end(); i++ )
     {
         i->get()->onPositionChanged(this, getPosition());
     }
+
+    // new style
+    onPositionChanged.fire(this, getPosition());
 }
 
 void Dragger::enter()
@@ -363,7 +343,7 @@ _size( 5.0 )
 
     //Build the handle
     osg::Sphere* shape = new osg::Sphere(osg::Vec3(0,0,0), _size);
-
+    
     osg::Geode* geode = new osg::Geode();
     _shapeDrawable = new osg::ShapeDrawable( shape );    
     _shapeDrawable->setDataVariance( osg::Object::DYNAMIC );
@@ -417,9 +397,8 @@ void SphereDragger::setSize(float size)
     if (_size != size)
     {
         _size = size;
-        _shapeDrawable->setShape( new osg::Sphere(osg::Vec3f(0,0,0), _size) );
+        _shapeDrawable->setShape(new osg::Sphere(osg::Vec3f(0, 0, 0), _size) );
         _shapeDrawable->setColor( _color );
-        //getPositionAttitudeTransform()->setScale(osg::Vec3d(_size,_size,_size));
     }
 }
 

@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 
 #include <osgEarth/StringUtils>
@@ -25,21 +11,43 @@
 using namespace osgEarth;
 using namespace osgEarth::Util;
 
+std::pair<double, int>
+osgEarth::Util::parseDoubleAndIndex(const std::string& input)
+{
+    if (input.length() == 0)
+        return std::make_pair(NAN, 0);
+
+    auto* str = input.c_str();
+    char* end = nullptr;
+    errno = 0;
+    double value = std::strtod(str, &end);
+    if (str == end || errno == ERANGE)
+        return std::make_pair(NAN, 0);
+    else
+        return std::make_pair(value, (int)(end - str));
+}
+
+double
+osgEarth::Util::parseDouble(const std::string& input)
+{
+    if (input.length() == 0)
+        return NAN;
+
+    auto* str = input.c_str();
+    char* end = nullptr;
+    errno = 0;
+    double value = std::strtod(str, &end);
+    if (str == end || errno == ERANGE)
+        return NAN;
+    else
+        return value;
+}
+
 std::pair<bool, double>
 osgEarth::Util::isValidNumber(const std::string& input)
 {
-    try {
-        auto copy = trim(input);
-        size_t pos;
-        auto num = std::stod(copy, &pos);
-        return std::make_pair(pos == copy.size(), num);
-    }
-    catch (const std::invalid_argument& e) {
-        return std::make_pair(false, 0.0);
-    }
-    catch (const std::out_of_range& e) {
-        return std::make_pair(false, 0.0);
-    }
+    auto value = parseDouble(input);
+    return std::make_pair(!std::isnan(value), value);
 }
 
 std::vector<std::string>
@@ -501,15 +509,6 @@ osgEarth::Util::joinStrings(const StringVector& input, char delim)
     std::string result;
     result = buf.str();
     return result;
-}
-
-/** Returns a lower-case version of the input string. */
-std::string
-osgEarth::Util::toLower(const std::string& input)
-{
-    std::string output = input;
-    std::transform(output.begin(), output.end(), output.begin(), ::tolower);
-    return output;
 }
 
 std::string

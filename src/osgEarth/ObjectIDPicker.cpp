@@ -1,20 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
- * Copyright 2020 Pelican Mapping
- * http://osgearth.org
- *
- * osgEarth is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
  */
 #include "ObjectIDPicker"
 #include "Shaders"
@@ -113,21 +99,33 @@ ObjectIDPicker::setView(osgViewer::View* view)
 
         if (view)
         {
-            osg::observer_ptr<ObjectIDPicker> me(this);
+            osg::observer_ptr<ObjectIDPicker> weak(this);
 
             EventRouter::get(view).onMove(
-                [me](osg::View* view, float x, float y)
+                [weak](osg::View* view, float x, float y)
                 {
-                    if (me.valid())
-                        me->onMove(view, x, y);
+                    osg::ref_ptr<ObjectIDPicker> safe;
+                    if (weak.lock(safe))
+                    {
+                        if (safe->getNodeMask() > 0 && view == safe->_view.get())
+                        {
+                            safe->pick(view, x, y, safe->ACTION_HOVER);
+                        }
+                    }
                 }
             );
 
             EventRouter::get(view).onClick(
-                [me](osg::View* view, float x, float y)
+                [weak](osg::View* view, float x, float y)
                 {
-                    if (me.valid())
-                        me->onClick(view, x, y);
+                    osg::ref_ptr<ObjectIDPicker> safe;
+                    if (weak.lock(safe))
+                    {
+                        if (safe->getNodeMask() > 0 && view == safe->_view.get())
+                        {
+                            safe->pick(view, x, y, safe->ACTION_CLICK);
+                        }
+                    }
                 },
                 false // don't eat the event
             );
@@ -158,22 +156,7 @@ ObjectIDPicker::setGraph(osg::Node* value)
 }
 
 void
-ObjectIDPicker::onHover(Function func)
-{
-    _hoverFuncs.emplace_back(func);
-}
-
-void
-ObjectIDPicker::onClick(Function func)
-{
-    _clickFuncs.emplace_back(func);
-}
-
-void
-ObjectIDPicker::pick(
-    osg::View* view, 
-    float x, float y,
-    std::vector<Function>& functions)
+ObjectIDPicker::pick(osg::View* view, float x, float y, ActionType action)
 {
     ImageUtils::PixelReader read(_pickImage.get());
 
@@ -202,10 +185,14 @@ ObjectIDPicker::pick(
 
         if (id > 0)
         {
-            for (auto& func : functions)
-            {
-                func(id);
-            }
+            onPick.fire(id, action);
+
+            // backwards compat
+            if (action == ACTION_HOVER)
+                onHover.fire(id);
+            else
+                onClick.fire(id);
+
             hit = true;
         }
     }
@@ -213,10 +200,13 @@ ObjectIDPicker::pick(
     if (!hit)
     {
         // missed, so fire the functions with id=0 (empty)
-        for (auto& func : functions)
-        {
-            func(OSGEARTH_OBJECTID_EMPTY);
-        }
+        onPick.fire(OSGEARTH_OBJECTID_EMPTY, action);
+
+        // backwards compatibility
+        if (action == ACTION_HOVER)
+            onHover.fire(OSGEARTH_OBJECTID_EMPTY);
+        else
+            onClick.fire(OSGEARTH_OBJECTID_EMPTY);
     }
 }
 
@@ -279,24 +269,6 @@ ObjectIDPicker::setupRTT(osgViewer::View* view)
 
     // default value for the objectid override uniform:
     rttSS->addUniform(new osg::Uniform(Registry::objectIndex()->getObjectIDUniformName().c_str(), 0u));
-}
-
-void
-ObjectIDPicker::onMove(osg::View* view, float x, float y)
-{
-    if (getNodeMask() > 0 && view == _view.get())
-    {
-        pick(view, x, y, _hoverFuncs);
-    }
-}
-
-void
-ObjectIDPicker::onClick(osg::View* view, float x, float y)
-{
-    if (getNodeMask() > 0 && view == _view.get())
-    {
-        pick(view, x, y, _clickFuncs);
-    }
 }
 
 void

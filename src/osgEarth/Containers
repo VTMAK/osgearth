@@ -1,23 +1,6 @@
-/* -*-c++-*- */
-/* osgEarth - Geospatial SDK for OpenSceneGraph
-* Copyright 2020 Pelican Mapping
-* http://osgearth.org
-*
-* osgEarth is free software; you can redistribute it and/or modify
-* it under the terms of the GNU Lesser General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-* IN THE SOFTWARE.
-*
-* You should have received a copy of the GNU Lesser General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>
+/* osgEarth
+* Copyright 2025 Pelican Mapping
+* MIT License
 */
 #pragma once
 #include <osgEarth/Common>
@@ -34,11 +17,18 @@
 
 namespace osgEarth { namespace Util
 {
+    template<typename T>
+    struct vector_map_equal {
+        inline bool operator()(const T& a, const T& b) const {
+            return a == b;
+        }
+    };
+
     /**
-     * A std::map-like map that uses a vector.
+     * A std::unordered_map-like map that uses a vector.
      * This benchmarks much faster than std::map or std::unordered_map for small sets.
      */
-    template<typename KEY,typename DATA,typename LESS=std::less<KEY>>
+    template<typename KEY,typename DATA,typename EQUAL=vector_map_equal<KEY>>
     struct vector_map
     {
         struct ENTRY {
@@ -54,7 +44,7 @@ namespace osgEarth { namespace Util
         container_t _container;
 
         inline bool keys_equal(const KEY& a, const KEY& b) const {
-            return LESS()(a, b) == false && LESS()(b, a) == false;
+            return EQUAL()(a, b);
         }
 
         inline DATA& operator[](const KEY& key) {
