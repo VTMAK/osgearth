@@ -140,7 +140,7 @@ namespace osgEarth
                         else
                         {
                             keys.clear();
-                            ImGui::TextWrapped("Shift-drag to select a region");
+                            ImGui::TextWrapped("Click to select export tiles");
                         }
                     }
                 }
