@@ -4,15 +4,11 @@
  */
 #include <osgEarth/MBTiles>
 #include <osgEarth/Registry>
-#include <osgEarth/FileUtils>
-#include <osgEarth/XmlUtils>
 #include <osgEarth/StringUtils>
 #include <osgEarth/ImageToHeightFieldConverter>
 #include <osgDB/FileUtils>
 #include <osgEarth/GDAL>
 #include <sstream>
-#include <iomanip>
-#include <algorithm>
 #include <sqlite3.h>
 
 using namespace osgEarth;
@@ -177,7 +173,7 @@ MBTilesImageLayer::encodeImageImplementation(const TileKey& key, const osg::Imag
     if (getStatus().isError())
         return getStatus();
 
-    return _driver.encode(key, image, progress);
+    return Result<osg::ref_ptr<osg::Image>>(_driver.encode(key, image, progress));
 }
 
 bool MBTilesImageLayer::getMetaData(const std::string& name, std::string& value)

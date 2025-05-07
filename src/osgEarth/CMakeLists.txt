@@ -193,6 +193,7 @@ SET(TARGET_H
     FeatureDisplayLayout
     FeatureElevationLayer
     FeatureImageLayer
+    FeatureImageRTTLayer
     FeatureIndex
     FeatureModelGraph
     FeatureModelLayer
@@ -552,6 +553,7 @@ set(TARGET_SRC
     FeatureDisplayLayout.cpp
     FeatureElevationLayer.cpp
     FeatureImageLayer.cpp
+    FeatureImageRTTLayer.cpp
     FeatureModelGraph.cpp
     FeatureModelLayer.cpp
     FeatureModelSource.cpp

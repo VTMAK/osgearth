@@ -11,12 +11,12 @@
 #include <osgEarth/Registry>
 #include <osgEarth/Notify>
 
-#include <osg/LineStipple>
 #include <osg/GraphicsContext>
 #include <osgUtil/IncrementalCompileOperation>
 #include <osgViewer/GraphicsWindow>
 #include <osg/Texture2D>
 #include <osg/BindImageTexture>
+#include <osg/LineStipple>
 
 #ifdef OSG_GL_FIXED_FUNCTION_AVAILABLE
 #include <osg/LineWidth>
