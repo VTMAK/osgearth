@@ -8,6 +8,7 @@
 #include <osgEarth/DrapeableNode>
 #include <osgEarth/ClampableNode>
 #include <osgEarth/GLUtils>
+#include <osgEarth/FeatureModelGraph>
 
 #include <osg/Notify>
 #include <osg/Depth>

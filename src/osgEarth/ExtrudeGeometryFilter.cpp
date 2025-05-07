@@ -1525,6 +1525,7 @@ ExtrudeGeometryFilter::push( FeatureList& input, FilterContext& context )
 
     unsigned int numDrawables = 0;
 
+#if 0
     osg::Group* oqn  = 0;
     if (osgEarth::OcclusionQueryNodeFactory::_occlusionFactory) {
        oqn = osgEarth::OcclusionQueryNodeFactory::_occlusionFactory->createQueryNode();
@@ -1533,10 +1534,11 @@ ExtrudeGeometryFilter::push( FeatureList& input, FilterContext& context )
     if (!oqn) {
        oqn = group;
     }
+#endif
     
     for( SortedGeodeMap::iterator i = _geodes.begin(); i != _geodes.end(); ++i )
     {
-       oqn->addChild( i->second.get() );
+        group->addChild( i->second.get() );
         numDrawables += i->second->getNumChildren();
     }
     _geodes.clear();

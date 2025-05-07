@@ -3,7 +3,9 @@
  * MIT License
  */
 #include <osgEarth/Metrics>
+#include <osgEarth/MemoryUtils>
 #include <osgViewer/ViewerBase>
+#include <osgViewer/View>
 
 using namespace osgEarth::Util;
 
