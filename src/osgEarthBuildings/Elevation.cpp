@@ -19,9 +19,8 @@
 #include "Elevation"
 #include "BuildContext"
 
-#define LC "[Elevation] "
+#define LC "[Buildings::Elevation] "
 
-using namespace osgEarth;
 using namespace osgEarth;
 using namespace osgEarth::Buildings;
 
@@ -443,6 +442,30 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
     return true;
 }
 
+namespace
+{
+    std::string describeSkinSymbol(const SkinSymbol* skin)
+    {
+        std::stringstream buf;
+        if (!skin)
+        {
+            buf << "null skin symbol";
+        }
+        else
+        {
+            if (skin->name().isSet())
+            {
+                buf << "name=" << skin->name()->expr() << " ";
+            }
+            if (!skin->tags().empty())
+            {
+                buf << "tags=" << SkinSymbol::tagString(skin->tags()) << "";
+            }
+        }
+        return buf.str();
+    }
+}
+
 void
 Elevation::resolveSkin(BuildContext& bc)
 {    
@@ -463,6 +486,12 @@ Elevation::resolveSkin(BuildContext& bc)
                 setNumFloors(1);
 #endif
         }
+
+        else
+        {
+            // got a skin symbol, but could not resolve it.
+            OE_WARN << LC << "Failed to resolve skin symbol: " << describeSkinSymbol(getSkinSymbol()) << std::endl;
+        }        
     }
     else if ( getParent() )
     {
