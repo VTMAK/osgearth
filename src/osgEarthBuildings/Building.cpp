@@ -104,11 +104,17 @@ Building::resolveInstancedModel(BuildContext& bc, ProgressCallback* progress)
             unsigned index = Random(bc.getSeed()).next( candidates.size() );
             setInstancedModelResource( candidates.at(index).get() );
         }
-        else if (progress)
+        else
         {
-            progress->message() += Stringify()
-                << "Failed to instantiate a model for \""
-                << getInstancedModelSymbol()->getConfig().toJSON(true) << "\"\n";
+            if (progress)
+            {
+                progress->message() += Stringify()
+                    << "Failed to instantiate a model for \""
+                    << getInstancedModelSymbol()->getConfig().toJSON(true) << "\"\n";
+            }
+
+            OE_WARN << LC << "Failed to instantiate a model for \""
+                << getInstancedModelSymbol()->getConfig().toJSON(true) << "\"" << std::endl;
         }
     }
 }
