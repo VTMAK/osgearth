@@ -350,7 +350,7 @@ DecalElevationLayer::init()
     setProfile(Profile::create(Profile::GLOBAL_GEODETIC));
 
     // This is an offset layer (the elevation values are offsets)
-    setOffset(true);
+    setInterpretValuesAsOffsets(true);
 
     // Never cache decals
     layerHints().cachePolicy() = CachePolicy::NO_CACHE;
