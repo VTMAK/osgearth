@@ -38,8 +38,8 @@ namespace osgEarth {
                 VirtualProgram* vp,
                 const osgDB::Options* options) const override;
 
-            virtual osg::Geometry* createGeometry() const override;
-        };
+        virtual osg::Geometry* createGeometry() const override;
+    };
 
     }
 } // namespace osgEarth::Splat

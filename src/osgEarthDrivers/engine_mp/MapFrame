@@ -56,6 +56,9 @@ namespace osgEarth { namespace Drivers { namespace MPTerrainEngine
 
         //! Connect this frame to a new map object
         void setMap(const Map* map);
+	
+	//! Get the map object
+        const Map* getMap() const { return _map.get(); }
 
         //! Synchronizes this frame to the last-synced map. Returns true if changes occurred.
         bool sync();

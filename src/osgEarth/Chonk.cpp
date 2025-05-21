@@ -564,7 +564,6 @@ Chonk::add(
     OE_SOFT_ASSERT_AND_RETURN(node != nullptr, false);
     OE_HARD_ASSERT(_lods.size() < 3);
 
-    //unsigned offset = _ebo_store.size();
     return factory.load(node, this, far_pixel_scale, near_pixel_scale);
 }
 
@@ -681,8 +680,11 @@ ChonkFactory::load(osg::Node* node, Chonk* chonk, float far_pixel_scale, float n
     // dirty its bounding box
     if (chonk->_ebo_store.size() > 0)
     {
-        chonk->_lods.push_back({ offset, chonk->_ebo_store.size(),
-            far_pixel_scale, std::min(near_pixel_scale, MAX_NEAR_PIXEL_SCALE) });
+        chonk->_lods.push_back({ 
+            offset, 
+            chonk->_ebo_store.size() - offset,
+            far_pixel_scale,
+            std::min(near_pixel_scale, MAX_NEAR_PIXEL_SCALE) });
     }
     chonk->_box.init();
 

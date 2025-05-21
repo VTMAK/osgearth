@@ -1631,57 +1631,33 @@ GLPipeline::Dispatcher::operator()(osg::GraphicsContext* gc)
         return;
     }
 
-    OpQ keptOps;
+    osg::ref_ptr<osg::Operation> next;
 
-    const double MAX_TIME_MS = 1.5;
-    double elapsedTimeMS = 0.0;    
-
-    osg::Timer_t startTick = osg::Timer::instance()->tick();
-
-    while (!_thisQ.empty())
+    // check for new job:
+    _queue_mutex.lock();
     {
-        osg::ref_ptr<osg::Operation> next;
-
-        // check for new job:
-        _queue_mutex.lock();
+        if (!_thisQ.empty())
         {
-            if (!_thisQ.empty())
-            {
-                next = _thisQ.front();
-                _thisQ.pop();
-            }
-        }
-        _queue_mutex.unlock();
-
-        if (next.valid())
-        {
-            // run it
-            next->operator()(gc);
-
-            // if keep==true, that means the delegate wishes to run
-            // again for another invocation. In this case we defer it to
-            // the next "frame" as deliniated by the frame-sync. The whole
-            // point of a multi-invocation operation is to let the GPU have
-            // time to complete its async calls between invocations!
-            if (next->getKeep())
-            {
-                _thisQ.push(next);
-            }
-        }
-
-        elapsedTimeMS += osg::Timer::instance()->delta_m(startTick, osg::Timer::instance()->tick());
-        if (elapsedTimeMS >= MAX_TIME_MS)
-        {
-            break;
+            next = _thisQ.front();
+            _thisQ.pop();
         }
     }
+    _queue_mutex.unlock();
 
-    // Add the kept operations back to the queue
-    while (!keptOps.empty())
+    if (next.valid())
     {
-        osg::ref_ptr<osg::Operation> i = keptOps.front();
-        keptOps.pop();
-        _thisQ.push(i);
+        // run it
+        next->operator()(gc);
+
+        // if keep==true, that means the delegate wishes to run
+        // again for another invocation. In this case we defer it to
+        // the next "frame" as deliniated by the frame-sync. The whole
+        // point of a multi-invocation operation is to let the GPU have
+        // time to complete its async calls between invocations!
+        if (next->getKeep())
+        {
+            _thisQ.push(next);
+        }
     }
 }
 

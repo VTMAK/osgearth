@@ -76,13 +76,7 @@ namespace
     {
         return
             k == "options" ||
-            //k == "image" ||
-            //k == "elevation" ||
-            //k == "heightfield" ||
-            //k == "model" ||
-            //k == "mask" ||
             k == "external" ||
-            //k == "extensions" ||
             k == "libraries";
     }
 
@@ -127,10 +121,8 @@ namespace
                 .delim(";")
                 .tokenize(libraries.value());
 
-            for (StringVector::iterator itr = libs.begin(); itr != libs.end(); ++itr)
+            for(auto& lib : libs)
             {
-                std::string lib = *itr;
-                trim2(lib);
                 std::string libName = osgDB::Registry::instance()->createLibraryNameForNodeKit(lib);
                 osgDB::Registry::LoadStatus status = osgDB::Registry::instance()->loadLibrary(libName);
                 if (status != osgDB::Registry::NOT_LOADED)
@@ -142,7 +134,7 @@ namespace
                     OE_WARN << LC << "Failed to nodekit library \"" << libName << "\"" << std::endl;
                 }
             }
-        }        
+        }
     }
 
     /**

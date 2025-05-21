@@ -64,18 +64,18 @@ TextureSplattingLayer::Options::fromConfig(const Config& conf)
 }
 
 //........................................................................
-
-BiomeLayer*
-TextureSplattingLayer::getBiomeLayer() const
-{
-    return _biomeLayer.get();
-}
-
-LifeMapLayer*
-TextureSplattingLayer::getLifeMapLayer() const
-{
-    return _lifeMapLayer.get();
-}
+//
+//BiomeLayer*
+//TextureSplattingLayer::getBiomeLayer() const
+//{
+//    return options().biomeLayer().getLayer();
+//}
+//
+//LifeMapLayer*
+//TextureSplattingLayer::getLifeMapLayer() const
+//{
+//    return options().lifeMapLayer().getLayer();
+//}
 
 void
 TextureSplattingLayer::init()
@@ -90,15 +90,9 @@ TextureSplattingLayer::addedToMap(const Map* map)
 {
     super::addedToMap(map);
 
-    if (getBiomeLayer() == nullptr)
-    {
-        _biomeLayer = map->getLayer<BiomeLayer>();
-    }
 
-    if (getLifeMapLayer() == nullptr)
-    {
-        _lifeMapLayer = map->getLayer<LifeMapLayer>();
-    }
+    _biomeLayer_weak = map->getLayer<BiomeLayer>();
+    _lifeMapLayer_weak = map->getLayer<LifeMapLayer>();
 
     _mapProfile = map->getProfile();
 
@@ -108,9 +102,12 @@ TextureSplattingLayer::addedToMap(const Map* map)
 void
 TextureSplattingLayer::removedFromMap(const Map* map)
 {
-    super::removedFromMap(map);
-    _lifeMapLayer = nullptr;
-    _biomeLayer = nullptr;
+    VisibleLayer::removedFromMap(map);
+
+    _biomeLayer_weak = nullptr;
+    _lifeMapLayer_weak = nullptr;
+    //options().biomeLayer().removedFromMap(map);
+    //options().lifeMapLayer().removedFromMap(map);
 }
 
 void
@@ -132,7 +129,8 @@ TextureSplattingLayer::prepareForRendering(TerrainEngine* engine)
         return;
     }
 
-    if (getLifeMapLayer() == nullptr)
+    osg::ref_ptr<LifeMapLayer> lifeMapLayer;
+    if (!_lifeMapLayer_weak.lock(lifeMapLayer))
     {
         // without a lifemap layer we can't do any splatting
         setStatus(Status::ResourceUnavailable, "No LifeMap data to splat");
@@ -150,9 +148,11 @@ TextureSplattingLayer::prepareForRendering(TerrainEngine* engine)
     }
 
     // Since we're actually rendering, load the materials for splatting
-    if (getBiomeLayer())
+
+    osg::ref_ptr<BiomeLayer> biomeLayer;
+    if (_biomeLayer_weak.lock(biomeLayer))
     {
-        auto biome_cat = getBiomeLayer()->getBiomeCatalog();
+        auto biome_cat = biomeLayer->getBiomeCatalog();
 
         if (biome_cat && !biome_cat->getAssets().empty())
         {
@@ -262,7 +262,8 @@ TextureSplattingLayer::update(osg::NodeVisitor& nv)
 void
 TextureSplattingLayer::buildStateSets()
 {
-    if (_materials != nullptr && getLifeMapLayer())
+    osg::ref_ptr<LifeMapLayer> lifeMapLayer;
+    if (_materials != nullptr && _lifeMapLayer_weak.lock(lifeMapLayer))
     {
         osg::StateSet* ss = getOrCreateStateSet();
 
@@ -281,11 +282,11 @@ TextureSplattingLayer::buildStateSets()
         // the "oe_use_shared_layer" directive will be able to find the shared layer.
         terrain_shaders.replace(
             "OE_LIFEMAP_TEX",
-            getLifeMapLayer()->getSharedTextureUniformName());
+            lifeMapLayer->getSharedTextureUniformName());
 
         terrain_shaders.replace(
             "OE_LIFEMAP_MAT",
-            getLifeMapLayer()->getSharedTextureMatrixUniformName());
+            lifeMapLayer->getSharedTextureMatrixUniformName());
 
         terrain_shaders.load(
             vp,
@@ -297,9 +298,10 @@ TextureSplattingLayer::buildStateSets()
         Shaders shaders;
         shaders.load(vp, shaders.PBR);
 
-        if (getBiomeLayer())
+        osg::ref_ptr<BiomeLayer> biomeLayer;
+        if (_biomeLayer_weak.lock(biomeLayer))
         {
-            const auto& assets = getBiomeLayer()->getBiomeCatalog()->getAssets();
+            const auto& assets = biomeLayer->getBiomeCatalog()->getAssets();
             ss->setDefine("OE_TEX_DIM_X", std::to_string(assets.getLifeMapMatrixWidth()));
             //ss->setDefine("OE_TEX_DIM_Y", std::to_string(assets.getLifeMapMatrixHeight()));
         }

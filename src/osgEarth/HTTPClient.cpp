@@ -16,10 +16,6 @@
 #include <osgDB/FileNameUtils>
 #include <curl/curl.h>
 
-#ifdef OSGEARTH_HAVE_SUPERLUMINALAPI
-#include <Superluminal/PerformanceAPI.h>
-#endif
-
 // Whether to use WinInet instead of cURL - CMAKE option
 #ifdef OSGEARTH_USE_WININET_FOR_HTTP
 #include <WinInet.h>
@@ -1543,11 +1539,6 @@ HTTPClient::doGet(const HTTPRequest&    request,
 {
     OE_PROFILING_ZONE;
     OE_PROFILING_ZONE_TEXT(Stringify() << "url " << request.getURL());
-
-#ifdef OSGEARTH_HAVE_SUPERLUMINALAPI
-    PERFORMANCEAPI_INSTRUMENT_FUNCTION();
-    PERFORMANCEAPI_INSTRUMENT_DATA("url", request.getURL().c_str());
-#endif
 
     initialize();
 

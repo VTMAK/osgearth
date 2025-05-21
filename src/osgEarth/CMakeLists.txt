@@ -208,6 +208,7 @@ SET(TARGET_H
     Fill
     Filter
     FilterContext
+    FilterUsage
     FilteredFeatureSource
     FlatteningLayer
     Formatter
@@ -899,12 +900,6 @@ if(meshoptimizer_FOUND)
     message(STATUS "Found meshoptimizer")
     set(OSGEARTH_HAVE_MESH_OPTIMIZER ON)
     target_link_libraries(${LIB_NAME} PRIVATE meshoptimizer::meshoptimizer)
-endif()
-
-if(SuperluminalAPI_FOUND)
-    message(STATUS "Found SuperLuminalAPI.")
-    set(OSGEARTH_HAVE_SUPERLUMINALAPI ON)
-    target_link_libraries(${LIB_NAME} PRIVATE SuperluminalAPI)    
 endif()
 
 # pthreads?

@@ -133,15 +133,13 @@ Session::getMapProfile() const
 const SpatialReference*
 Session::getMapSRS() const
 {
-    osg::ref_ptr<const Map> map = getMap();
-    return map.valid() && map->getProfile()? map->getProfile()->getSRS() : NULL;
+    return _mapProfile.valid() ? _mapProfile->getSRS() : nullptr;
 }
 
 bool
 Session::isMapGeocentric() const
 {
-    osg::ref_ptr<const Map> map = getMap();
-    return map.valid() && map->getProfile()? map->getProfile()->getSRS()->isGeographic() : true;
+    return _mapProfile.valid() ? _mapProfile->getSRS()->isGeographic() : true;
 }
 
 StateSetCache*

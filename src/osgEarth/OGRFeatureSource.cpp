@@ -246,11 +246,6 @@ OGR::OGRFeatureCursor::readChunk()
 {
     if ( !_resultSetHandle )
         return;
-
-    OgrUtils::OGRFeatureFactory factory;
-    factory.srs = _profile->getSRS();
-    factory.interp = _profile->geoInterp();
-    factory.rewindPolygons = _rewindPolygons;
     
     while( _queue.size() < _chunkSize && !_resultSetEndReached )
     {
@@ -260,7 +255,17 @@ OGR::OGRFeatureCursor::readChunk()
             OGRFeatureH handle = OGR_L_GetNextFeature( static_cast<OGRLayerH>(_resultSetHandle) );
             if ( handle )
             {
-                osg::ref_ptr<Feature> feature = factory.createFeature(handle);
+                /*
+                // Crop the geometry by the spatial filter.  Could be useful for tiling.
+                if (_spatialFilter)
+                {
+                    OGRGeometryH geomRef = OGR_F_GetGeometryRef(handle);
+                    OGRGeometryH intersection = OGR_G_Intersection(geomRef, static_cast<OGRGeometryH>(_spatialFilter));
+                    OGR_F_SetGeometry(handle, intersection);
+                }
+                */
+                osg::ref_ptr<Feature> feature = OgrUtils::createFeature(
+                    handle, _profile->getSRS(), _rewindPolygons);
 
                 if (feature.valid())
                 {
@@ -914,12 +919,11 @@ OGRFeatureSource::getFeature(FeatureID fid)
         OGRFeatureH handle = OGR_L_GetFeature(static_cast<OGRLayerH>(_layerHandle), fid);
         if (handle)
         {
-            OgrUtils::OGRFeatureFactory factory;
-            factory.srs = getFeatureProfile()->getSRS();
-            factory.interp = getFeatureProfile()->geoInterp();
-            factory.rewindPolygons = _options->rewindPolygons().value();
-
-            result = factory.createFeature(handle);
+            result = OgrUtils::createFeature(
+                handle,
+                getFeatureProfile()->getSRS(),
+                getFeatureProfile()->geoInterp(),
+                *_options->rewindPolygons());
 
             OGR_F_Destroy(handle);
         }

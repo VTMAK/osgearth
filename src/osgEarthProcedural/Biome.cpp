@@ -306,7 +306,8 @@ Biome::Biome(const Config& conf, AssetCatalog* assetCatalog) :
     for (const auto& child : assets)
     {
         ModelAssetRef::Ptr m = std::make_shared<ModelAssetRef>();
-        m->asset() = assetCatalog->getModel(child.value("name"));
+        auto assetName = child.value("name");
+        m->asset() = assetCatalog->getModel(assetName);
         if (m->asset())
         {
             m->weight() = 1.0f;
@@ -316,6 +317,11 @@ Biome::Biome(const Config& conf, AssetCatalog* assetCatalog) :
             child.get("coverage", m->coverage());
 
             _assetsToUse.emplace_back(m);
+        }
+        else
+        {
+            OE_WARN << LC << "Biome \"" << id() << "\" references a model asset \"" << assetName << "\"" 
+                " that does not exist in the asset catalog" << std::endl;
         }
     }
 }
@@ -401,6 +407,10 @@ BiomeCatalog::BiomeCatalog(const Config& conf) :
             if (parent)
             {
                 biome._parentBiome = parent;
+            }
+            else
+            {
+                OE_WARN << LC << "Biome \"" << biome.id() << "\" references a non-existent parent biome \"" << biome.parentId().get() << "\"" << std::endl;
             }
         }
     }
@@ -654,7 +664,7 @@ BiomeCatalog::getBiomes() const
     std::vector<const Biome*> result;
     for (auto& iter : _biomes_by_index)
         result.push_back(&iter.second);
-    return std::move(result);
+    return result;
 }
 
 const AssetCatalog&

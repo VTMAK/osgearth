@@ -11,6 +11,9 @@
 #include <osg/Vec3>
 #include <osg/Vec4>
 
+// MAK/AlphaPixel NOTE: this file was cherry-picked from upstream in order to compile with OSG 3.6.4.   This
+// file can be overwritten when upstream is finally brought in.
+
 namespace osgEarth { namespace Util
 {
     /**
@@ -1942,4 +1945,3 @@ namespace osgEarth { namespace Util
 
 
 #endif // OSGEARTH_LINEFUNCTOR
-

@@ -22,10 +22,6 @@
 #include <osgDB/DatabasePager>
 #include <osgUtil/Optimizer>
 
-#ifdef OSGEARTH_HAVE_SUPERLUMINALAPI
-#include <Superluminal/PerformanceAPI.h>
-#endif
-
 using namespace osgEarth;
 using namespace osgEarth::Util;
 using namespace osgEarth::Contrib;
@@ -90,12 +86,6 @@ namespace
 
         virtual void operator()(osg::Node* node, osg::NodeVisitor* nv)
         {
-#ifdef OSGEARTH_HAVE_SUPERLUMINALAPI
-            // Track which layer is being culled
-            PERFORMANCEAPI_INSTRUMENT_FUNCTION();
-            PERFORMANCEAPI_INSTRUMENT_DATA("layer", _layer->getName().c_str());
-#endif
-
             if (_layer->getNode())
             {
                 _layer->apply(_layer->getNode(), nv);
@@ -405,7 +395,6 @@ MapNode::open()
     }
 
     osg::StateSet* stateset = getOrCreateStateSet();
-    stateset->setName("MapNode");
 
     stateset->addUniform(_sseU.get());
 
@@ -420,12 +409,15 @@ MapNode::open()
         stateset->setDefine("OE_IS_GEOCENTRIC");
     }
 
+    // VRV_PATCH, don't use OSG's GL material system
     // install a default material for everything in the map
-    osg::Material* defaultMaterial = new MaterialGL3();
+    osg::Material* defaultMaterial = new osg::Material();
     defaultMaterial->setDiffuse(defaultMaterial->FRONT, osg::Vec4(1,1,1,1));
     defaultMaterial->setAmbient(defaultMaterial->FRONT, osg::Vec4(1,1,1,1));
     stateset->setAttributeAndModes(defaultMaterial, 1);
-    MaterialCallback().operator()(defaultMaterial, 0L);
+
+    // Note: without this, osgEarth's Sky won't work -gw
+    //MaterialCallback().operator()(defaultMaterial, 0L);
 
     // activate PBR support.
     VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);

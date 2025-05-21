@@ -258,7 +258,13 @@ namespace osgEarth { namespace Util
                 newGroup->addChild( oldGroup->getChild(i) );
             }
 
-            osg::Node::ParentList parents = oldGroup->getParents();
+            osg::Node::ParentList parents;
+            {
+               //VRV_PATCH#
+               osg::NodeScopedLock lock(oldGroup->getParentListMutex());
+               parents = oldGroup->getParents();
+            }
+
             for(osg::Node::ParentList::iterator i = parents.begin(); i != parents.end(); ++i )
             {
                 (*i)->replaceChild( oldGroup, newGroup );
@@ -408,15 +414,19 @@ namespace osgEarth { namespace Util
 
 
      /**
-      * Enables auto unloading on any PagedNode2 in the scene graph
+      * Set auto unloading on any LoadableNode in the scene graph
       * This is useful if you've used the LoadDataVisitor to
       * preload an area and you no longer care about it.
       */
-    struct OSGEARTH_EXPORT EnableAutoUnloadVisitor : public osg::NodeVisitor
+    class OSGEARTH_EXPORT EnableAutoUnloadVisitor : public osg::NodeVisitor
     {
-        EnableAutoUnloadVisitor();
+    public:
+        EnableAutoUnloadVisitor(bool value = true);
 
         void apply(osg::Node& node);
+
+    private:
+        bool _value = true;
     };
 
     /**
@@ -462,7 +472,7 @@ namespace osgEarth { namespace Util
         MatrixStack _matrixStack;
         bool _fullyLoaded = true;
 
-        std::set < osg::ref_ptr < PagingManager> > _pagingManagers;
+        std::set<osg::ref_ptr<PagingManager>> _pagingManagers;
 
         std::vector< osg::BoundingSphered > _areasToLoad;
 

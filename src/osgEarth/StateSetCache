@@ -114,6 +114,8 @@ namespace osgEarth
 
         void releaseGLObjects(osg::State* state) const;
 
+        void resizeGLObjectBuffers(unsigned size);
+
     protected: 
 
         virtual ~StateSetCache();

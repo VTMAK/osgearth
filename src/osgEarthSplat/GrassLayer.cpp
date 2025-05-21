@@ -53,6 +53,7 @@ GrassLayer::loadShaders(VirtualProgram* vp, const osgDB::Options* options) const
 {
     GroundCoverShaders s;
     s.load(vp, s.Grass, options);
+    vp->addGLSLExtension("GL_ARB_gpu_shader_int64");
 }
 
 osg::Geometry*

@@ -667,7 +667,7 @@ Feature::calculateExtent() const
 }
 
 std::string
-Feature::getGeoJSON(bool includeNulls) const
+Feature::getGeoJSON() const
 {
     std::string geometry = GeometryUtils::geometryToGeoJSON( getGeometry(), getSRS() );
 
@@ -684,51 +684,53 @@ Feature::getGeoJSON(bool includeNulls) const
 
     //Write out all the properties
     Json::Value props(Json::objectValue);
-
-    for (AttributeTable::const_iterator itr = getAttrs().begin(); itr != getAttrs().end(); ++itr)
+    if (getAttrs().size() > 0)
     {
-        if (itr->second.type == ATTRTYPE_INT)
+        for (AttributeTable::const_iterator itr = getAttrs().begin(); itr != getAttrs().end(); ++itr)
         {
-            if (itr->second.value.set)
+            if (itr->second.type == ATTRTYPE_INT)
             {
-                props[itr->first] = (double)itr->second.getInt();
+                if (itr->second.value.set)
+                {
+                    props[itr->first] = (double)itr->second.getInt();
+                }
+                else
+                {
+                    props[itr->first] = Json::nullValue;
+                }
             }
-            else if (includeNulls)
+            else if (itr->second.type == ATTRTYPE_DOUBLE)
             {
-                props[itr->first] = Json::nullValue;
+                if (itr->second.value.set)
+                {
+                    props[itr->first] = itr->second.getDouble();
+                }
+                else
+                {
+                    props[itr->first] = Json::nullValue;
+                }
             }
-        }
-        else if (itr->second.type == ATTRTYPE_DOUBLE)
-        {
-            if (itr->second.value.set)
+            else if (itr->second.type == ATTRTYPE_BOOL)
             {
-                props[itr->first] = itr->second.getDouble();
+                if (itr->second.value.set)
+                {
+                    props[itr->first] = itr->second.getBool();
+                }
+                else
+                {
+                    props[itr->first] = Json::nullValue;
+                }
             }
-            else if (includeNulls)
+            else
             {
-                props[itr->first] = Json::nullValue;
-            }
-        }
-        else if (itr->second.type == ATTRTYPE_BOOL)
-        {
-            if (itr->second.value.set)
-            {
-                props[itr->first] = itr->second.getBool();
-            }
-            else if (includeNulls)
-            {
-                props[itr->first] = Json::nullValue;
-            }
-        }
-        else
-        {
-            if (itr->second.value.set)
-            {
-                props[itr->first] = itr->second.getString();
-            }
-            else if (includeNulls)
-            {
-                props[itr->first] = Json::nullValue;
+                if (itr->second.value.set)
+                {
+                    props[itr->first] = itr->second.getString();
+                }
+                else
+                {
+                    props[itr->first] = Json::nullValue;
+                }
             }
         }
     }
@@ -737,7 +739,7 @@ Feature::getGeoJSON(bool includeNulls) const
     return Json::FastWriter().write( root );
 }
 
-std::string Feature::featuresToGeoJSON(const FeatureList& features, bool includeNulls)
+std::string Feature::featuresToGeoJSON(const FeatureList& features)
 {
     std::stringstream buf;
 
@@ -749,7 +751,7 @@ std::string Feature::featuresToGeoJSON(const FeatureList& features, bool include
 
     for (FeatureList::const_iterator i = features.begin(); i != features.end(); i++)
     {
-        buf << i->get()->getGeoJSON(includeNulls);
+        buf << i->get()->getGeoJSON();
         if (i != last)
         {
             buf << ",";
