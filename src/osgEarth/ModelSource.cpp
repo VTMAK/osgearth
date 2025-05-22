@@ -110,24 +110,26 @@ ModelSourceFactory::~ModelSourceFactory()
 ModelSource*
 ModelSourceFactory::create( const ModelSourceOptions& options )
 {
-    osg::ref_ptr<ModelSource> source;
+    osg::ref_ptr<ModelSource> result;
 
     if ( !options.getDriver().empty() )
     {
-        std::string driverExt = std::string(".osgearth_model_") + options.getDriver();
-
-        osg::ref_ptr<osgDB::Options> rwopts = Registry::instance()->cloneOrCreateOptions();
-        rwopts->setPluginData( MODEL_SOURCE_OPTIONS_TAG, (void*)&options );
-
-        osg::ref_ptr<osg::Object> object = osgDB::readRefObjectFile( driverExt, rwopts.get() );
-        source = dynamic_cast<ModelSource*>( object.release() );
+        std::string driverExt = std::string("osgearth_model_") + options.getDriver();
+        auto rw = osgDB::Registry::instance()->getReaderWriterForExtension(driverExt);
+        if (rw)
+        {
+            osg::ref_ptr<osgDB::Options> rwopt = Registry::instance()->cloneOrCreateOptions();
+            rwopt->setPluginData(MODEL_SOURCE_OPTIONS_TAG, (void*)&options);
+            osg::ref_ptr<osg::Object> object = rw->readObject("." + driverExt, rwopt.get()).getObject();
+            result = dynamic_cast<ModelSource*>(object.release());
+        }
     }
     else
     {
         OE_WARN << LC << "FAIL, illegal null driver specification" << std::endl;
     }
 
-    return source.release();
+    return result.release();
 }
 
 //------------------------------------------------------------------------

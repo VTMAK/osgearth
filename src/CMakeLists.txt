@@ -28,6 +28,10 @@ if(OSGEARTH_BUILD_CESIUM_NODEKIT)
     list(APPEND OSGEARTH_COMPONENTS osgEarthCesium)
 endif()
 
+#mak-specific
+add_subdirectory(osgEarthAerodromes)
+add_subdirectory(osgEarthBuildings)
+
 if(OSGEARTH_BUILD_TRITON_NODEKIT)
     add_subdirectory(osgEarthTriton)
     list(APPEND OSGEARTH_COMPONENTS osgEarthTriton)

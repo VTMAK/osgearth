@@ -364,7 +364,7 @@ RexTerrainEngineNode::onSetMap()
                 line,
                 tokens))
             {
-                if (tokens.size() == 2)
+                auto ApplyTokens = [&source, &line, &rex](const std::string& samplerName, const std::string& matrixName, const std::string& samplerType)
                 {
                     std::ostringstream buf;
 
@@ -382,29 +382,38 @@ RexTerrainEngineNode::onSetMap()
                         const RenderBindings& bindings = rex->_renderBindings;
                         for (int i = SamplerBinding::SHARED; i < (int)bindings.size() && index < 0; ++i)
                         {
-                            if (bindings[i].samplerName() == tokens[0])
+                            if (bindings[i].samplerName() == samplerName)
                             {
                                 index = i - SamplerBinding::SHARED;
                             }
                         }
                         if (index < 0)
                         {
-                            OE_WARN << LC << "Cannot find a shared sampler binding for " << tokens[0] << std::endl;
+                            OE_WARN << LC << "Cannot find a shared sampler binding for " << samplerName << std::endl;
                             Strings::replaceIn(source, line, "// error, no matching sampler binding");
-                            continue;
+                            return;
                         }
 
-                        buf << "#define " << tokens[0] << "_HANDLE oe_terrain_tex[oe_tile[oe_tileID].sharedIndex[" << index << "]]\n"
-                            << "#define " << tokens[0] << " sampler2D(" << tokens[0] << "_HANDLE)\n"
-                            << "#define " << tokens[1] << " oe_tile[oe_tileID].sharedMat[" << index << "]\n";
+                        buf << "#define " << samplerName << "_HANDLE oe_terrain_tex[oe_tile[oe_tileID].sharedIndex[" << index << "]]\n"
+                            << "#define " << samplerName << " " << samplerType <<"(" << samplerName << "_HANDLE)\n"
+                            << "#define " << matrixName << " oe_tile[oe_tileID].sharedMat[" << index << "]\n";
                     }
                     else
                     {
-                        buf << "uniform sampler2D " << tokens[0] << ";\n"
-                            << "uniform mat4 " << tokens[1] << ";\n";
+                        buf << "uniform " << samplerType << " " << samplerName << ";\n"
+                            << "uniform mat4 " << matrixName << ";\n";
                     }
 
                     Strings::replaceIn(source, line, buf.str());
+                };
+
+                if (tokens.size() == 2)
+                {
+                   ApplyTokens(tokens[0], tokens[1], "sampler2D");
+                }
+                else if (tokens.size() == 3)
+                {
+                   ApplyTokens(tokens[0], tokens[1], tokens[2]);
                 }
                 else
                 {

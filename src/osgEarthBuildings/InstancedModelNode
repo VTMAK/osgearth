@@ -1,0 +1,48 @@
+#pragma once
+#include "Common"
+
+#include <osgEarth/ModelSource>
+#include <osgEarth/ObjectIndex>
+
+#include <string>
+#include <vector>
+#include <osg/Matrixd>
+
+#include <map>
+
+namespace osgEarth
+{
+    namespace Buildings
+    {
+        /**
+         * Container object for VRV indirect processor.
+         */
+        class OSGEARTHBUILDINGS_EXPORT InstancedModelNode : public osg::Node
+        {
+        public:
+
+            InstancedModelNode();
+            InstancedModelNode(const InstancedModelNode& rhs, const osg::CopyOp& copyop);
+            InstancedModelNode& operator=(const InstancedModelNode& rhs);
+
+
+            META_Node(osgEarth::Buildings, InstancedModelNode);
+
+
+            typedef std::vector<osg::Matrixd> MatrixdVector;
+            typedef std::vector<osgEarth::ObjectID> ObjectIdVector;
+
+            struct Instances
+            {
+                MatrixdVector matrices;
+                ObjectIdVector objectIds;
+                float minRange;
+                float maxRange;
+            };
+
+            typedef std::map< std::string, Instances > MapModelToInstances;
+
+            MapModelToInstances _mapModelToInstances;
+        };
+    }
+}

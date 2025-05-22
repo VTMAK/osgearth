@@ -3,15 +3,19 @@
  * MIT License
  */
 #include <osgEarth/Metrics>
+#include <osgEarth/MemoryUtils>
 #include <osgViewer/ViewerBase>
+#include <osgViewer/View>
 
 using namespace osgEarth::Util;
 
 #define LC "[Metrics] "
 
-static bool s_metricsEnabled = true;
+static bool s_metricsEnabled =
+    ::getenv("OSGEARTH_ENABLE_METRICS_ON_STARTUP") != nullptr;
 static bool s_gpuMetricsEnabled = true;
 static bool s_gpuMetricsInstalled = false;
+static int s_metricsCallstackDepth = 0;
 
 #ifdef OSGEARTH_HAVE_TRACY
 
@@ -82,6 +86,17 @@ void Metrics::frame()
 {
     OE_PROFILING_FRAME_MARK;
 }
+
+int Metrics::callstackDepth()
+{
+    return s_metricsCallstackDepth;
+}
+
+void Metrics::setCallstackDepth(int depth)
+{
+    s_metricsCallstackDepth = depth;
+}
+
 
 int Metrics::run(osgViewer::ViewerBase& viewer)
 {

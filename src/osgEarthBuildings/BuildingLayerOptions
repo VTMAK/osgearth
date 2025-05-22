@@ -1,0 +1,168 @@
+/* -*-c++-*- */
+/* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
+ * Copyright 2008-2016 Pelican Mapping
+ * http://osgearth.org
+ *
+ * osgEarth is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ */
+#pragma once
+
+#include "Common"
+#include "CompilerSettings"
+#include "FilterUsage"
+#include <osgEarth/TiledModelLayer>
+#include <osgEarth/FeatureSource>
+#include <osgEarth/FeatureModelSource>
+#include <osgEarth/StyleSheet>
+#include <osgEarth/LayerReference>
+
+namespace osgEarth { namespace Buildings 
+{
+    using namespace osgEarth;
+
+    class BuildingLayerOptions : public TiledModelLayer::Options
+    {
+    public:
+        /** Location of the building template catalog */
+        optional<URI>& buildingCatalog() { return _buildingCatalogURI; }
+        const optional<URI>& buildingCatalog() const { return _buildingCatalogURI; }
+
+        /** Whether building style LODs add geometry to lower LODs (additive=true)
+            instead of replacing them (additive=false). */
+        optional<bool>& additiveLODs() { return _additiveLODs; }
+        const optional<bool>& additiveLODs() const { return _additiveLODs; }
+
+        /** LOD bins and other rendering settings */
+        optional<CompilerSettings>& compilerSettings() { return _settings; }
+        const optional<CompilerSettings>& compilerSettings() const { return _settings; }
+
+        /** Whether to tag features for indexing (default is false) */
+        optional<bool>& createIndex() { return _createIndex; }
+        const optional<bool>& createIndex() const { return _createIndex; }
+
+        /** Paging priority offset (relative to terrain) */
+        optional<float>& priorityOffset() { return _priorityOffset; }
+        const optional<float>& priorityOffset() const { return _priorityOffset; }
+
+        /** Paging priority scale (relative to terrain) */
+        optional<float>& priorityScale() { return _priorityScale; }
+        const optional<float>& priorityScale() const { return _priorityScale; }
+
+        /** Whether cancelation of tiles is enabled (default = true) */
+        optional<bool>& enableCancelation() { return _enableCancelation; }
+        const optional<bool>& enableCancelation() const { return _enableCancelation; }
+
+        //! Whether to install cluster culling on nodes (default = false)
+        optional<bool>& clusterCulling() { return _clusterCulling; }
+        const optional<bool>& clusterCulling() const { return _clusterCulling; }
+
+        optional<FilterUsage>& filterUsage() { return _filterUsage; }
+        const optional<FilterUsage>& filterUsage() const { return _filterUsage; }
+
+        optional<bool>& verboseWarnings() { return _verboseWarnings; }
+        const optional<bool>& verboseWarnings() const { return _verboseWarnings; }
+
+        //! Use the NVGL implementation if available
+        OE_OPTION(bool, useNVGL);
+
+        OE_OPTION_LAYER(StyleSheet, styleSheet);
+        OE_OPTION_LAYER(FeatureSource, featureSource);
+        OE_OPTION_VECTOR(ConfigOptions, filters);
+
+    public:
+        BuildingLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : TiledModelLayer::Options( opt )
+        {
+            _lod.init( 14u );
+            _additiveLODs.init(false);
+            _createIndex.init(false);
+            _priorityOffset.init(0.0f);
+            _priorityScale.init(1.0f);
+            _enableCancelation.init(true);
+            _verboseWarnings.init(false);
+            _clusterCulling.init(false);
+            useNVGL().setDefault(false);
+
+            fromConfig( _conf );
+        }
+
+    public:
+        Config getConfig() const
+        {
+            Config conf = TiledModelLayer::Options::getConfig();
+            conf.set("building_catalog", _buildingCatalogURI);
+            conf.set("additive_lods",    _additiveLODs);
+            conf.set("settings",         _settings);
+            conf.set("create_index",     _createIndex);
+            conf.set("priority_offset",  _priorityOffset);
+            conf.set("priority_scale",   _priorityScale);
+            conf.set("enable_cancelation", _enableCancelation);
+            conf.set("verbose_warnings", _verboseWarnings);
+            conf.set("cluster_culling", _clusterCulling);
+            styleSheet().set(conf, "styles");
+            featureSource().set(conf, "features");
+            conf.set("nvgl", useNVGL());
+
+            if (filters().empty() == false)
+            {
+                Config temp;
+                for (unsigned i = 0; i < filters().size(); ++i)
+                    temp.add(filters()[i].getConfig());
+                conf.set("filters", temp);
+            }
+
+            return conf;
+        }
+
+    protected:
+        void mergeConfig(const Config& conf)
+        {
+            VisibleLayer::Options::mergeConfig( conf );
+            fromConfig( conf );
+        }
+
+    private:
+        void fromConfig(const Config& conf)
+        {
+            conf.get("building_catalog", _buildingCatalogURI);
+            conf.get("additive_lods",    _additiveLODs);
+            conf.get("settings",         _settings);
+            conf.get("create_index",     _createIndex);
+            conf.get("priority_offset",  _priorityOffset);
+            conf.get("priority_scale",   _priorityScale);
+            conf.get("enable_cancelation", _enableCancelation);
+            conf.get("verbose_warnings", _verboseWarnings);
+            conf.get("cluster_culling", _clusterCulling);
+            styleSheet().get(conf, "styles");
+            featureSource().get(conf, "features");
+            conf.get("nvgl", useNVGL());
+
+            const Config& filtersConf = conf.child("filters");
+            for(auto& i : filtersConf.children())
+                filters().push_back(ConfigOptions(i));
+        }
+
+        optional<URI> _buildingCatalogURI;
+        optional<unsigned> _lod;
+        optional<bool> _additiveLODs;
+        optional<CompilerSettings> _settings;
+        optional<bool> _createIndex;
+        optional<float> _priorityOffset;
+        optional<float> _priorityScale;
+        optional<bool> _enableCancelation;
+        optional<FilterUsage> _filterUsage;
+        optional<bool> _verboseWarnings;
+        optional<bool> _clusterCulling;
+    };
+} }
+

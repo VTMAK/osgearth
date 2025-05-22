@@ -16,6 +16,12 @@
 using namespace osgEarth;
 using namespace osgEarth::Util;
 
+// VRV PATCH
+namespace osgEarth {
+    OcclusionQueryNodeFactory* OcclusionQueryNodeFactory::_occlusionFactory = NULL;
+}
+// VRV PATCH
+
 namespace
 {
     struct ComputeMaxNormalLength

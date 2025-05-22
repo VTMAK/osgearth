@@ -38,7 +38,7 @@ uniform float oe_GroundCover_wind; // wind blowing the foliage
 //uniform float oe_GroundCover_maxDistance;     // distance at which flora disappears
 uniform vec3 oe_VisibleLayer_ranges;
 
-uniform vec3 oe_Camera;  // (vp width, vp height, lodscale)
+uniform vec3 oe_Camera; // (vp width, vp height, lodscale)
 
 uniform float osg_FrameTime; // Frame time (seconds) used for wind animation
 uniform mat4 osg_ViewMatrix;

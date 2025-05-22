@@ -244,7 +244,13 @@ namespace osgEarth
         std::string _name;
         bool _active = true;
         bool _duplicateSharedSubgraphs = false;
-        bool _removeUnsupportedFFPAttributes = true;
+
+        //VRV_PATCH
+        // default this to false to avoid breaking the indirect subsystem, which
+        // depends on the existence of the FFP attributes like TexEnv et al.
+        bool _removeUnsupportedFFPAttributes = false;
+        //bool _removeUnsupportedFFPAttributes = true;
+        //END VRV_PATCH
 
         typedef std::vector<osg::ref_ptr<AcceptCallback> > AcceptCallbackVector;
         AcceptCallbackVector _acceptCallbacks;

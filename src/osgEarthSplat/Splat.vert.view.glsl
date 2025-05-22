@@ -19,7 +19,6 @@ flat out float oe_splat_coverageTexSize;
 
 uniform vec3 oe_Camera; // (vp width, vp height, LOD scale)
 
-
 void oe_splat_vertex_view(inout vec4 VertexVIEW)
 {
     // range from camera to vertex

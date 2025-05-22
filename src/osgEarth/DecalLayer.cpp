@@ -94,6 +94,8 @@ namespace
             blend == GL_ONE_MINUS_DST_ALPHA ? (1.0f - dst.a()) :
             blend == GL_ONE ? 1.0f :
             blend == GL_ZERO ? 0.0f :
+            blend == GL_SRC_COLOR ? src.r() :
+            blend == GL_ONE_MINUS_SRC_COLOR ? (1.0f - src.r()) :
             1.0f;
     }
 }
@@ -348,7 +350,7 @@ DecalElevationLayer::init()
     setProfile(Profile::create(Profile::GLOBAL_GEODETIC));
 
     // This is an offset layer (the elevation values are offsets)
-    setOffset(true);
+    setInterpretValuesAsOffsets(true);
 
     // Never cache decals
     layerHints().cachePolicy() = CachePolicy::NO_CACHE;

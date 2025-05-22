@@ -40,9 +40,9 @@ namespace osgEarth { namespace Procedural
     public:
         META_Layer(osgEarthProcedural, TextureSplattingLayer, Options, VisibleLayer, ProceduralImage);
 
-        BiomeLayer* getBiomeLayer() const;
+        //BiomeLayer* getBiomeLayer() const;
 
-        LifeMapLayer* getLifeMapLayer() const;
+        //LifeMapLayer* getLifeMapLayer() const;
 
         //! Whether to use a shader that obfuscates the repeating textures 
         //! found in texture splatting. Incurs a small GPU performance penalty.
@@ -107,8 +107,8 @@ namespace osgEarth { namespace Procedural
         Future<Materials::Ptr> _materialsJob;
         Materials::Ptr _materials;
         TextureImageUnitReservation _noiseUnit;
-        osg::ref_ptr<BiomeLayer> _biomeLayer;
-        osg::ref_ptr<LifeMapLayer> _lifeMapLayer;
+        osg::observer_ptr<BiomeLayer> _biomeLayer_weak;
+        osg::observer_ptr<LifeMapLayer> _lifeMapLayer_weak;
 
         void buildStateSets();
 

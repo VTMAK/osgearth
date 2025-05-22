@@ -208,6 +208,16 @@ namespace osgEarth
         };
 
 
+        // VRV PATCH
+        class OSGEARTH_EXPORT OcclusionQueryNodeFactory
+        {
+        public:
+            virtual osg::Group * createQueryNode(){return NULL;}
+            static OcclusionQueryNodeFactory * _occlusionFactory;
+
+        };
+        // VRV PATCH
+
         /**
          * Cull callback for cameras that sets the oe_Camera uniform.
          */

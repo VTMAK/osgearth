@@ -10,6 +10,7 @@
 #include <osgEarth/URI>
 #include <osgEarth/Metrics>
 #include <osg/Texture2DArray>
+#include <osg/ConcurrencyViewerMacros>
 
 using namespace osgEarth;
 using namespace osgEarth::Splat;

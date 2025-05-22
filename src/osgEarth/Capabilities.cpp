@@ -44,17 +44,17 @@ namespace
             // osgEarth::initialize() at the start of your application to avoid these issues altogether.
             if (osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() > 0 && osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() < 32)
             {
-                OE_WARN << "WARNING:  Call osgEarth::initialize() before realizing any graphics windows.  There are currently " << osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() << " graphics contexts." << std::endl;
+                OE_DEBUG << "WARNING:  Call osgEarth::initialize() before realizing any graphics windows.  There are currently " << osg::DisplaySettings::instance()->getMaxNumberOfGraphicsContexts() << " graphics contexts." << std::endl;
             }
 
-    	    osg::GraphicsContext::ScreenIdentifier si;
-	        si.readDISPLAY();
-	        si.setUndefinedScreenDetailsToDefaultScreen();
+            osg::GraphicsContext::ScreenIdentifier si;
+            si.readDISPLAY();
+            si.setUndefinedScreenDetailsToDefaultScreen();
 
             osg::ref_ptr<osg::GraphicsContext::Traits> traits = new osg::GraphicsContext::Traits(osg::DisplaySettings::instance());
-    	    traits->hostName = si.hostName;
-	        traits->displayNum = si.displayNum;
-	        traits->screenNum = si.screenNum;
+            traits->hostName = si.hostName;
+            traits->displayNum = si.displayNum;
+            traits->screenNum = si.screenNum;
             traits->x = 0;
             traits->y = 0;
             traits->width = 1;
@@ -71,12 +71,12 @@ namespace
             // Intel graphics adapters dont' support pbuffers, and some of their drivers crash when
             // you try to create them. So by default we will only use the unmapped/pbuffer method
             // upon special request.
-            if ( getenv( "OSGEARTH_USE_PBUFFER_TEST") )
+            if (getenv("OSGEARTH_USE_PBUFFER_TEST"))
             {
                 traits->pbuffer = true;
                 OE_INFO << LC << "Activating pbuffer test for graphics capabilities" << std::endl;
                 _gc = osg::GraphicsContext::createGraphicsContext(traits.get());
-                if ( !_gc.valid() )
+                if (!_gc.valid())
                     OE_WARN << LC << "Failed to create pbuffer" << std::endl;
             }
 
@@ -92,7 +92,7 @@ namespace
                 _gc->realize();
                 _gc->makeCurrent();
 
-                if ( traits->pbuffer == false )
+                if (traits->pbuffer == false)
                 {
                     OE_DEBUG << LC << "Realized graphics window for OpenGL operations." << std::endl;
                 }
@@ -158,7 +158,7 @@ Capabilities::Capabilities() :
 
     // check the environment in order to disable ATI workarounds
     bool enableATIworkarounds = true;
-    if ( ::getenv( "OSGEARTH_DISABLE_ATI_WORKAROUNDS" ) != 0L )
+    if (::getenv("OSGEARTH_DISABLE_ATI_WORKAROUNDS") != 0L)
         enableATIworkarounds = false;
 
     // logical CPUs (cores)
@@ -207,7 +207,7 @@ Capabilities::Capabilities() :
 
     if (gc != nullptr)
     {
-        const osg::GL2Extensions* GL2 = osg::GL2Extensions::Get( id, true );
+        const osg::GL2Extensions* GL2 = osg::GL2Extensions::Get(id, true);
 
         OE_INFO << LC << "osgEarth Version:  " << osgEarthGetVersion() << std::endl;
 
@@ -236,14 +236,14 @@ Capabilities::Capabilities() :
         _vendor = std::string(reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
         OE_INFO << LC << "GL_VENDOR:         " << _vendor << std::endl;
 
-        _renderer = std::string( reinterpret_cast<const char*>(glGetString(GL_RENDERER)) );
+        _renderer = std::string(reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
         OE_INFO << LC << "GL_RENDERER:       " << _renderer << std::endl;
 
-        _version = std::string( reinterpret_cast<const char*>(glGetString(GL_VERSION)) );
+        _version = std::string(reinterpret_cast<const char*>(glGetString(GL_VERSION)));
         OE_INFO << LC << "GL_VERSION:        " << _version << std::endl;
 
         // Detect core profile by investigating GL_CONTEXT_PROFILE_MASK
-        if ( GL2->glVersion < 3.2f )
+        if (GL2->glVersion < 3.2f)
         {
             _isCoreProfile = false;
         }
@@ -263,22 +263,22 @@ Capabilities::Capabilities() :
             osg::isGLExtensionSupported(id, "GL_NV_shader_buffer_load") &&
             osg::isGLExtensionSupported(id, "GL_NV_bindless_multi_draw_indirect");
 
-        glGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS_ARB, &_maxGPUTextureUnits );
+        glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS_ARB, &_maxGPUTextureUnits);
         OE_DEBUG << LC << "Max GPU texture units = " << _maxGPUTextureUnits << std::endl;
 
         GLint mvoc;
         glGetIntegerv(GL_MAX_VERTEX_VARYING_COMPONENTS_EXT, &mvoc);
         OE_DEBUG << LC << "Max varyings = " << mvoc << std::endl;
 
-        glGetIntegerv( GL_MAX_TEXTURE_SIZE, &_maxTextureSize );
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &_maxTextureSize);
 #if !defined(OSG_GLES1_AVAILABLE) && !defined(OSG_GLES2_AVAILABLE) && !defined(OSG_GLES3_AVAILABLE)
         // Use the texture-proxy method to determine the maximum texture size
-        for( int s = _maxTextureSize; s > 2; s >>= 1 )
+        for (int s = _maxTextureSize; s > 2; s >>= 1)
         {
-            glTexImage2D( GL_PROXY_TEXTURE_2D, 0, GL_RGBA8, s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0L );
+            glTexImage2D(GL_PROXY_TEXTURE_2D, 0, GL_RGBA8, s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0L);
             GLint width = 0;
-            glGetTexLevelParameteriv( GL_PROXY_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width );
-            if ( width == s )
+            glGetTexLevelParameteriv(GL_PROXY_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+            if (width == s)
             {
                 _maxTextureSize = s;
                 break;
@@ -287,22 +287,22 @@ Capabilities::Capabilities() :
 #endif
         OE_DEBUG << LC << "Max texture size = " << _maxTextureSize << std::endl;
 
-        if ( _supportsGLSL )
+        if (_supportsGLSL)
         {
             OE_DEBUG << LC << "GLSL Version = " << getGLSLVersionInt() << std::endl;
         }
 
-        _supportsDepthPackedStencilBuffer = osg::isGLExtensionSupported( id, "GL_EXT_packed_depth_stencil" ) ||
-                                            osg::isGLExtensionSupported( id, "GL_OES_packed_depth_stencil" );
+        _supportsDepthPackedStencilBuffer = osg::isGLExtensionSupported(id, "GL_EXT_packed_depth_stencil") ||
+            osg::isGLExtensionSupported(id, "GL_OES_packed_depth_stencil");
 
         _supportsDrawInstanced =
             _supportsGLSL &&
-            osg::isGLExtensionOrVersionSupported( id, "GL_EXT_draw_instanced", 3.1f );
+            osg::isGLExtensionOrVersionSupported(id, "GL_EXT_draw_instanced", 3.1f);
         OE_DEBUG << LC << "draw instanced = " << SAYBOOL(_supportsDrawInstanced) << std::endl;
 
 #if !defined(OSG_GLES3_AVAILABLE)
         _supportsNonPowerOfTwoTextures =
-            osg::isGLExtensionSupported( id, "GL_ARB_texture_non_power_of_two" );
+            osg::isGLExtensionSupported(id, "GL_ARB_texture_non_power_of_two");
 #else
         _supportsNonPowerOfTwoTextures = true;
 #endif
@@ -330,20 +330,20 @@ Capabilities::Capabilities() :
         // tetxure compression
         std::stringstream buf;
         buf << "Compression = ";
-        _supportsARBTC = osg::isGLExtensionSupported( id, "GL_ARB_texture_compression" );
+        _supportsARBTC = osg::isGLExtensionSupported(id, "GL_ARB_texture_compression");
         if (_supportsARBTC) buf << "ARB ";
 
-        _supportsS3TC = osg::isGLExtensionSupported( id, "GL_EXT_texture_compression_s3tc" );
-        if ( _supportsS3TC ) buf << "S3 ";
+        _supportsS3TC = osg::isGLExtensionSupported(id, "GL_EXT_texture_compression_s3tc");
+        if (_supportsS3TC) buf << "S3 ";
 
-        _supportsPVRTC = osg::isGLExtensionSupported( id, "GL_IMG_texture_compression_pvrtc" );
-        if ( _supportsPVRTC ) buf << "PVR ";
+        _supportsPVRTC = osg::isGLExtensionSupported(id, "GL_IMG_texture_compression_pvrtc");
+        if (_supportsPVRTC) buf << "PVR ";
 
-        _supportsETC = osg::isGLExtensionSupported( id, "GL_OES_compressed_ETC1_RGB8_texture" );
-        if ( _supportsETC ) buf << "ETC1 ";
+        _supportsETC = osg::isGLExtensionSupported(id, "GL_OES_compressed_ETC1_RGB8_texture");
+        if (_supportsETC) buf << "ETC1 ";
 
-        _supportsRGTC = osg::isGLExtensionSupported( id, "GL_EXT_texture_compression_rgtc" );
-        if ( _supportsRGTC ) buf << "RG";
+        _supportsRGTC = osg::isGLExtensionSupported(id, "GL_EXT_texture_compression_rgtc");
+        if (_supportsRGTC) buf << "RG";
 
         OE_DEBUG << LC << buf.str() << std::endl;
 
@@ -360,7 +360,7 @@ Capabilities::Capabilities() :
 bool
 Capabilities::supportsTextureCompression(const osg::Texture::InternalFormatMode& mode) const
 {
-    switch( mode )
+    switch (mode)
     {
     case osg::Texture::USE_ARB_COMPRESSION:
         return _supportsARBTC;

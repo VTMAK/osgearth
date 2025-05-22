@@ -6,6 +6,7 @@
 
 #include <osgEarth/Common>
 #include <osgEarth/Filter>
+#include <osgEarth/FilterUsage>
 #include <osgEarth/Expression>
 #include <osgEarth/Style>
 #include <osg/Geode>
@@ -52,6 +53,8 @@ namespace osgEarth { namespace Util
          */
         osg::Node* push( FeatureList& input, FilterContext& context );
 
+        void setFilterUsage(FilterUsage usage) { _filterUsage = usage; }
+        FilterUsage getFilterUsage(void) const{ return _filterUsage; }
     public: // properties
 
         /**
@@ -155,6 +158,7 @@ namespace osgEarth { namespace Util
         osg::ref_ptr<HeightCallback>   _heightCallback;
         optional<NumericExpression>    _heightExpr;
         bool                           _makeStencilVolume = false;
+        FilterUsage                    _filterUsage;
 
         Style                          _style;
         bool                           _styleDirty = true;
@@ -212,3 +216,60 @@ namespace osgEarth { namespace Util
         osg::Drawable* buildOutlineGeometry(const Structure& structure);
     };
 } }
+
+namespace osgEarth
+{
+    /**
+    * Container Node for storing information about extruded geometry
+    * without rendering it. An app can invoke the ExtrudeGeometryFilter
+    * with FilterUsage=... to collect this information.
+    */
+    class ExtrudeGeometryFilterNode : public osg::Node
+    {
+    public:
+        //struct ModelSymbol
+        //{
+        //    URI instanceURI;
+        //    osg::Matrixd xform;
+        //};
+
+        //! Default construct
+        ExtrudeGeometryFilterNode() = default;
+
+        //! Construct with members
+        ExtrudeGeometryFilterNode(osg::Group* extrusionGroup, const osg::Matrixd& xform) :
+            _extrusionGroup(extrusionGroup), _xform(xform) { }
+
+        //! Copy construct
+        ExtrudeGeometryFilterNode(const ExtrudeGeometryFilterNode& rhs, const osg::CopyOp& copyop) :
+            osg::Node(rhs, copyop),
+            _extrusionGroup(rhs._extrusionGroup),
+            _xform(rhs._xform) { }
+
+        META_Node(osgEarth, ExtrudeGeometryFilterNode);
+
+        const osg::Matrixd& xform() const { return _xform; }
+        void set_xform(const osg::Matrixd& xform) { _xform = xform; } // for serializer
+        const osg::Matrixd& get_xform() const { return _xform; } // for serializer
+
+        const osg::Group* extrusionGroup() const { return _extrusionGroup.get(); }
+        void set_extrusionGroup(osg::Group* group) { _extrusionGroup = group; }
+        const osg::Group* get_extrusionGroup() const { return _extrusionGroup.get(); } // for serializer
+
+        void clearExtrusionGroup() {
+            _extrusionGroup = 0;
+        }
+
+    public: // osg::Node
+
+        osg::BoundingSphere computeBound() const override {
+            return _extrusionGroup.valid() ? _extrusionGroup->computeBound() : osg::BoundingSphere();
+        }
+
+    private:
+
+        osg::ref_ptr<osg::Group> _extrusionGroup;
+        osg::Matrixd _xform;
+    };
+}
+

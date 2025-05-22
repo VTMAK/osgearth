@@ -544,7 +544,7 @@ BiomeManager::materializeNewAssets(const osgDB::Options* readOptions)
                         }
                         else
                         {
-                            OE_WARN << LC << "Failed to load model " << uri.full() << std::endl;
+                            OE_WARN << LC << "Failed to load asset model " << uri.full() << std::endl;
                         }
                     }
                 }

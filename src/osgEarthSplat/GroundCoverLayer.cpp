@@ -557,6 +557,7 @@ GroundCoverLayer::buildStateSets()
     // Install the land cover shaders on the state set
     VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
     vp->setName(typeid(*this).name());
+    vp->addGLSLExtension("GL_ARB_gpu_shader_int64");
 
     // Load shaders particular to this class
     loadShaders(vp, getReadOptions());
@@ -631,7 +632,8 @@ GroundCoverLayer::releaseGLObjects(osg::State* state) const
         _renderer->releaseGLObjects(state);
     }
 
-    PatchLayer::releaseGLObjects(state);
+    //PatchLayer::releaseGLObjects(state);
+
 
     if (isOpen() &&
         _atlas.valid() &&
@@ -1292,19 +1294,6 @@ GroundCoverLayer::createLUTShader() const
     std::stringstream assetBuf;
     assetBuf << std::fixed << std::setprecision(1);
 
-    int numBiomeZones = options().biomeZones().size();
-    int numBiomeLayouts = numBiomeZones; // one per zone.
-    int numLandCoverGroups = 0;
-    int numAssets = 0;
-    for(int i=0; i<numBiomeZones; ++i)
-    {
-        const BiomeZone& bz = options().biomeZones()[i];
-        numLandCoverGroups += bz.getLandCoverGroups().size();
-        // todo.
-    }
-
-    // encode all the biome data.
-
     int numAssetInstancesAdded = 0;
     int numLandCoverGroupsAdded = 0;
     int currentLandCoverGroupIndex = -1;
@@ -1338,10 +1327,12 @@ GroundCoverLayer::createLUTShader() const
                 << "    oe_gc_LandCoverGroup("
                 << startingAssetIndex << ", "
                 << numAssetsInLandCoverGroup << ", " << fill << ")";
+                //<< " // " << currentLandCoverGroup->options().landCoverClasses().get();
 
             ++numLandCoverGroupsAdded;
 
-            startingAssetIndex = a;
+            startingAssetIndex = numAssetInstancesAdded;
+            //startingAssetIndex = a;
             numAssetsInLandCoverGroup = 0;
             currentLandCoverGroupIndex = data->_landCoverGroupIndex;
             currentLandCoverGroup = data->_landCoverGroup;
@@ -1374,6 +1365,7 @@ GroundCoverLayer::createLUTShader() const
                 << ", " << height
                 << ", " << sizeVariation
                 << ")";
+                //<< " // " << data->_asset->options().sideBillboardURI()->base();
 
             ++data->_numInstances;
 
@@ -1396,6 +1388,7 @@ GroundCoverLayer::createLUTShader() const
             << startingAssetIndex << ", "
             << numAssetsInLandCoverGroup
             << ", " << fill << ")";
+            //<< " // " << currentLandCoverGroup->options().landCoverClasses().get();
 
         ++numLandCoverGroupsAdded;
     }
@@ -1410,7 +1403,7 @@ GroundCoverLayer::createLUTShader() const
         "}; \n"
         "const oe_gc_LandCoverGroup oe_gc_landCoverGroups[" << numLandCoverGroupsAdded << "] = oe_gc_LandCoverGroup[" << numLandCoverGroupsAdded << "]( \n"
         << landCoverGroupBuf.str()
-        << "); \n";
+        << "\n); \n";
 
     std::stringstream assetWrapperBuf;
     assetWrapperBuf <<
@@ -1423,7 +1416,7 @@ GroundCoverLayer::createLUTShader() const
         "}; \n"
         "const oe_gc_Asset oe_gc_assets[" << numAssetInstancesAdded << "] = oe_gc_Asset[" << numAssetInstancesAdded << "]( \n"
         << assetBuf.str()
-        << "); \n";
+        << "\n); \n";
 
     // next, create the master LUT.
     std::stringstream lutbuf;

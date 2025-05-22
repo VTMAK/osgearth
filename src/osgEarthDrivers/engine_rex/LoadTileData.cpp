@@ -27,7 +27,7 @@ LoadTileDataOperation::LoadTileDataOperation(
     _merged(false)
 {
     _engine = context->getEngine();
-    _name = tilenode->getKey().str();
+    _name = "Terrain " + tilenode->getKey().str();
 }
 
 LoadTileDataOperation::LoadTileDataOperation(

@@ -14,7 +14,7 @@
 
 using namespace osgEarth;
 
-#define LC "[" << className() << "] " << getName() << "\" "
+#define LC "[" << className() << "] \"" << getName() << "\" "
 
 //.................................................................
 

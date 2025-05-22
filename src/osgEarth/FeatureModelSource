@@ -161,7 +161,36 @@ namespace osgEarth
         GeometryCompilerOptions _options;
     };
 
-#if 0
+
+
+#if 1 // VRV - for backwards compatibility ONLY
+    class OSGEARTH_EXPORT FeatureModelSourceOptions : public ModelSourceOptions,
+        public FeatureModelOptions
+    {
+    public: //properties
+
+        OE_OPTION_LAYER(FeatureSource, featureSource);
+
+    public:
+        FeatureModelSourceOptions( const ConfigOptions& rhs =ConfigOptions() );
+
+        virtual ~FeatureModelSourceOptions() { }
+
+        virtual Config getConfig() const;
+
+    protected:
+        virtual void mergeConfig( const Config& conf ) {
+            ModelSourceOptions::mergeConfig( conf );
+            fromConfig( conf );
+        }
+
+    private:
+        void fromConfig( const Config& conf );
+    };
+#endif
+
+
+#if 1 // VRV - for backwards compatibility ONLY
     /**
      * A ModelSource that renders Feature data from a FeatureSource.
      * @deprecated
@@ -203,7 +232,7 @@ namespace osgEarth
         void setFeatureSource( FeatureSource* source );
 
         /** The underlying feature source. */
-        FeatureSource* getFeatureSource() { return _features.get(); }
+        FeatureSource* getFeatureSource() { return _options.featureSource().getLayer(); }
 
         /** The options with which this source was created */
         virtual const FeatureModelSourceOptions& getFeatureModelOptions() const { return _options; }
@@ -222,9 +251,8 @@ namespace osgEarth
         /** DTOR is protected to prevent this object from being allocated on the stack */
         virtual ~FeatureModelSource() { }
 
-        osg::ref_ptr<FeatureSource>        _features;
         osg::observer_ptr<const Map>       _map;
-        const FeatureModelSourceOptions    _options;
+        FeatureModelSourceOptions          _options;
         osg::ref_ptr<FeatureNodeFactory>   _factory;
         osg::ref_ptr<osgDB::Options>       _readOptions;
 
