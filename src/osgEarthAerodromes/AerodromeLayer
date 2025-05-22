@@ -1,0 +1,164 @@
+/* -*-c++-*- */
+/* osgEarth - Dynamic map generation toolkit for OpenSceneGraph
+ * Copyright 2008-2014 Pelican Mapping
+ * http://osgearth.org
+ *
+ * osgEarth is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ */
+
+#ifndef OSGEARTH_AERODROME_LAYER
+#define OSGEARTH_AERODROME_LAYER 1
+
+#include "Common"
+#include "AerodromeCatalog"
+#include <osgEarth/Map>
+#include <osgEarth/URI>
+#include <osgEarth/VisibleLayer>
+
+namespace osgEarth { namespace Aerodrome
+{
+    using namespace osgEarth;
+
+    /**
+     * Options structure used to configure an AerodromLayer
+     */
+    class AerodromeLayerOptions : public VisibleLayer::Options
+    {
+    public:
+        AerodromeLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt )
+        {
+            // init properties here
+            range().setDefault(Distance(15000, Units::METERS));
+            buildTerminals().setDefault(true);
+            clampToTerrain().setDefault(false);
+            fromConfig( _conf );
+        }
+
+        //! XML file containing aerodrome definitions
+        OE_OPTION(URI, catalog);
+
+        //! Range at which aerodromes whould appear
+        OE_OPTION(Distance, range);
+
+        //! Whether to build terminal buildings (default is true)
+        OE_OPTION(bool, buildTerminals);
+
+        //! ICAO codes to exclude
+        OE_OPTION_VECTOR(std::string, icaoExclusions);
+
+        //! Whether to clamp aerodrome elements to the terrain. Defaults to FALSE.
+        //! If false, catalog elements will place using a single global elevation 
+        //! for the associated aerodrome.
+        OE_OPTION(bool, clampToTerrain);
+
+        //! Render bin number
+        OE_OPTION(int, renderOrder);
+
+        //! Render bin name
+        OE_OPTION(std::string, renderBin);
+
+        //! Whether to serialize (one at a time) aerodrome loads
+        OE_OPTION(bool, serialLoading, false);
+
+    public:
+        Config getConfig() const
+        {
+            Config conf = VisibleLayer::Options::getConfig();
+            conf.set("catalog", catalog());
+            conf.set("range", range());
+            conf.set("build_terminals", buildTerminals());
+            conf.set("render_order", renderOrder());
+            conf.set("render_bin", renderBin());
+            if (!icaoExclusions().empty())
+                conf.set("exclude_icaos", joinStrings(icaoExclusions(), ','));
+            conf.set("clamp_to_terrain", clampToTerrain());
+            conf.set("serial_loading", serialLoading());
+            return conf;
+        }
+
+    protected:
+        void mergeConfig(const Config& conf)
+        {
+            VisibleLayer::Options::mergeConfig( conf );
+            fromConfig( conf );
+        }
+
+    private:
+        void fromConfig(const Config& conf)
+        {
+            conf.get("catalog", catalog());
+            conf.get("range", range());
+            conf.get("build_terminals", buildTerminals());
+            conf.get("render_order", renderOrder());
+            conf.get("render_bin", renderBin());
+            conf.get("clamp_to_terrain", clampToTerrain());
+            conf.get("serial_loading", serialLoading());
+
+            _icaoExclusions = StringTokenizer()
+                .delim(",").delim(" ")
+                .keepEmpties(false)
+                .trimTokens(true)
+                .tokenize(conf.value("exclude_icaos"));
+        }
+    };
+
+
+    /**
+     * Layer displaying one or more Aerodromes.
+     */
+    class OSGEARTHAERODROME_EXPORT AerodromeLayer : public VisibleLayer
+    {
+    public:
+        META_Layer(osgEarthAerodrome, AerodromeLayer, AerodromeLayerOptions, VisibleLayer, Aerodromes);
+
+    public: // Layer
+
+        //! The root node of this layer's scene graph
+        virtual osg::Node* getNode() const;
+
+        Stats reportStats() const override;
+
+    protected: // Layer
+
+        //! Opens any data stores associated with the layer
+        virtual Status openImplementation() override;
+
+        //! Closes the layer and releases resources
+        virtual Status closeImplementation() override;
+
+        //! Called after this layer is added to the map
+        virtual void addedToMap(const Map* map) override;
+
+        //! Called after this layer is removed from the map
+        virtual void removedFromMap(const Map* map) override;
+
+        // post-ctor initialization
+        virtual void init() override;
+    protected:
+
+        /** DTOR is protected to prevent this object from being allocated on the stack */
+        virtual ~AerodromeLayer() { }
+
+        osg::ref_ptr<AerodromeCatalog> _catalog;
+        osg::ref_ptr<osg::Group> _root;
+        osg::observer_ptr<const Map> _map;
+
+        void createSceneGraph();
+        void destroySceneGraph();
+    };
+
+} } // namespace osgEarth::Aerodrome
+
+#endif // OSGEARTH_AERODROME_LAYER
+
