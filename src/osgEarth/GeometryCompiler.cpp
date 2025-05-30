@@ -82,7 +82,7 @@ _useOSGTessellator     (s_defaults.useOSGTessellator().value()),
 _buildKDTrees          ( s_defaults.buildKDTrees().value() ),
 _filterUsage           (s_defaults.filterUsage().value())
 {
-    //nop
+    fromConfig(conf.getConfig());
 }
 
 void
