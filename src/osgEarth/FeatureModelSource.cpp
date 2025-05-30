@@ -382,6 +382,7 @@ FeatureModelSource::createNodeImplementation(const Map* map,  ProgressCallback* 
 
     // Graph that will render feature models. May included paged data.
     FeatureModelGraph* graph = new FeatureModelGraph(_options);
+    graph->setOwnerName(this->getName());
     graph->setSession(session);
     graph->setNodeFactory(factory);
     graph->setSceneGraphCallbacks(getSceneGraphCallbacks());
