@@ -19,7 +19,6 @@
 #include "AerodromeLayer"
 #include "AerodromeFactory"
 #include "AerodromeCatalog"
-#include <osgEarth/Registry>
 #include <osgEarth/NodeUtils>
 
 using namespace osgEarth;

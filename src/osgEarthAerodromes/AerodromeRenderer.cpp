@@ -40,18 +40,14 @@
 #include <osg/Depth>
 #include <osg/Texture2D>
 #include <osg/PolygonOffset>
-#include <osgDB/WriteFile>
 #include <osgUtil/Optimizer>
 #include <osgUtil/Tessellator>
-#include <osgEarth/ECEF>
-#include <osgEarth/ElevationQuery>
-#include <osgEarth/Registry>
+#include <osgEarth/ElevationPool>
 #include <osgEarth/Tessellator>
 #include <osgEarth/BuildGeometryFilter>
 #include <osgEarth/Feature>
 #include <osgEarth/FeatureSource>
 #include <osgEarth/GeometryCompiler>
-#include <osgEarth/TransformFilter>
 #include <osgEarth/FilterContext>
 #include <osgEarth/MeshConsolidator>
 #include <osgEarth/StyleSheet>
@@ -1134,9 +1130,10 @@ AerodromeRenderer::createLocalizations(const osgEarth::Bounds& bounds, BoundaryN
    {
       // use the center of the bounds as an anchor for localization
       GeoPoint anchor(boundary->getFeature()->getSRS(), bounds.center().x(), bounds.center().y());
-      anchor = anchor.transform(refMap->getSRS());
+      anchor.transformInPlace(refMap->getSRS());
 
       _elevation = 0.0;
+
       if (!_clampToTerrain)
       {
           // get a common elevation for the aerodrome
@@ -1146,9 +1143,16 @@ AerodromeRenderer::createLocalizations(const osgEarth::Bounds& bounds, BoundaryN
           }
           else
           {
-              ElevationQuery eq(refMap.get());
-              eq.getElevation(anchor, _elevation);
-              OE_WARN << LC << "No elevation data in boundary; using an elevation query" << std::endl;
+              auto* pool = refMap->getElevationPool();
+              auto sample = pool->getSample(anchor, nullptr);
+              if (sample.hasData())
+              {
+                  _elevation = sample.elevation().as(Units::METERS);
+              }
+              else
+              {
+                  OE_WARN << LC << "No elevation data for aerodrome anchor; using 0.0" << std::endl;
+              }
           }
       }
 
