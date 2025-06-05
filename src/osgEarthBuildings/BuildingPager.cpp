@@ -428,24 +428,20 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
             factory->setCatalog(_catalog.get());
             factory->setOutputSRS(map->getSRS());
 
-            // Envelope is a localized environment for optimized clamping performance:
-            ElevationPool::Envelope envelope;
-
-            auto units = tileKey.getProfile()->getSRS()->getUnits();
-            Distance clampingResolution(0.0, units);
+            // Default clamping resolution for buildings is 5m.
+            // You can override this by providing an AltitudeSymbol.
+            Distance clampingResolution(5.0, Units::METERS);
 
             const AltitudeSymbol* alt = style ? style->getSymbol<AltitudeSymbol>() : nullptr;
             if (alt && alt->clampingResolution().isSet())
             {
                 // use the resolution in the symbology if available
-                clampingResolution.set(alt->clampingResolution().get(), units);
+                clampingResolution = alt->clampingResolution().value();
             }
-            //else
-            //{
-            //    // otherwise use the tilekey's resolution
-            //    std::pair<double, double> resPair = tileKey.getResolution(osgEarth::ELEVATION_TILE_SIZE);
-            //    clampingResolution.set(resPair.second, tileKey.getProfile()->getSRS()->getUnits());
-            //}
+
+            // Envelope is a localized environment for optimized clamping performance
+            // at a specific resolution.
+            ElevationPool::Envelope envelope;
 
             map->getElevationPool()->prepareEnvelope(
                 envelope,
