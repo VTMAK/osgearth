@@ -826,10 +826,17 @@ namespace
         line->stroke()->width()->setDefaultUnits(Units::METERS);
         line->imageURI() = bridge->deckSkin();
 
-        line->doubleSided() = true;
-
-        auto* render = style.getOrCreate<RenderSymbol>();
-        render->backfaceCulling() = true;
+        auto* render = style.get<RenderSymbol>();
+        if (render == nullptr || render->backfaceCulling() == true)
+        {
+            // backface culling on? generate double-sided polygons.
+            line->doubleSided() = true;
+        }
+        else
+        {
+            // backface culling off? only generate one-sided polygons
+            line->doubleSided() = false;
+        }
 
         // clone the features
         FeatureList features;
@@ -907,6 +914,20 @@ namespace
         osg::ref_ptr<const SpatialReference> localSRS = context.extent()->getSRS()->createTangentPlaneSRS(
             context.extent()->getCentroid().vec3d());
 
+        bool double_sided_polys = true;
+        auto* render = style.get<RenderSymbol>();
+
+        if (render == nullptr || render->backfaceCulling() == true)
+        {
+            // backface culling on? generate double-sided polygons.
+            double_sided_polys = true;
+        }
+        else
+        {
+            // backface culling off? only generate one-sided polygons
+            double_sided_polys = false;
+        }
+
         // convert our lines to offset lines.
         // TODO: handle multis
         FeatureList features;
@@ -917,7 +938,7 @@ namespace
 
             auto deckWidth = bridge->deckWidth()->eval(feature, context);
 
-            auto* geom = line_to_offset_curves(f->getGeometry(), deckWidth.as(Units::METERS), true);
+            auto* geom = line_to_offset_curves(f->getGeometry(), deckWidth.as(Units::METERS), double_sided_polys);
             if (geom)
             {
                 f->setGeometry(geom);
@@ -932,9 +953,6 @@ namespace
         extrude->height() = railingHeight.as(Units::METERS);
         extrude->flatten() = false;
         extrude->wallSkinName() = bridge->railingSkin()->base();
-
-        auto* render = style.getOrCreate<RenderSymbol>();
-        render->backfaceCulling() = false;
 
         return GeometryCompiler().compile(features, style, context);
     }
