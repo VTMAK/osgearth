@@ -219,6 +219,8 @@ namespace
             _buffer = dynamic_cast<NotifyStreamBuffer *>(_notifyStream.rdbuf());
             if (_buffer && !_buffer->getNotifyHandler())
             {
+                _buffer->setCurrentSeverity(_notifyLevel);
+
 #ifdef OSGEARTH_HAVE_SPDLOG
                 _buffer->setNotifyHandler(new SpdLogNotifyHandler);
 #else
@@ -234,7 +236,7 @@ namespace
             {
                 _notifyStream << "[osgEarth]";
 
-                switch (_notifyLevel)
+                switch (_buffer->getCurrentSeverity())
                 {
                 case(osg::ALWAYS):
                 case(osg::FATAL):
