@@ -6,6 +6,9 @@
 #include "Locators"
 #include "weemesh.h"
 
+#undef LC
+#define LC "[TileMesher] "
+
 using namespace osgEarth;
 
 TileMesh::TileMesh(const TileMesh& m)
@@ -496,7 +499,7 @@ TileMesher::createMeshWithConstraints(
                 {
                     // just stop it
                     //OE_WARN << "WARNING, breaking out of the meshing process. Too many tris bro!" << std::endl;
-                    break;
+                    OE_WARN << LC << "Meshing limit exceeded; consider simplifying your constraint geometry" << std::endl;
                 }
 
                 Geometry* part = geom_iter.next();
