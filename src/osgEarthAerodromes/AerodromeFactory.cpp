@@ -604,7 +604,9 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
                     p->setName(icao);
                     p->setSceneGraphCallbacks(getSceneGraphCallbacks());
                     p->setCenter(centerWorld);
-                    p->setRadius(circle.getRadius());
+                    
+                    // Radius needs to encompass any possible location of the aerodrome within the tile's Z range:
+                    p->setRadius(circle.getRadius() + 0.5 * (float)(hi - lo));
 
                     osg::ref_ptr<const osgDB::Options> load_options(options);
                     osg::observer_ptr<AerodromeFactory> factory_obs(this);
