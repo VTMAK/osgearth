@@ -135,21 +135,26 @@ Roof::resolveClutterModel(const Polygon* footprint, BuildContext& bc)
 {
     if ( getModelSymbol() && bc.getResourceLibrary() )
     {
-        // calculate a 4-point boundary suitable for placing rooftop models.
-        _hasModelBox = findRectangle( footprint, _modelBox );
-
-        // encode the model box dimensions in the symbology so we can find
-        // suitable models that fit.
-        getModelSymbol()->maxSizeX() = (_modelBox[1]-_modelBox[0]).length();
-        getModelSymbol()->maxSizeY() = (_modelBox[2]-_modelBox[1]).length();
-        
-        // resolve the resource.
-        ModelResourceVector candidates;
-        bc.getResourceLibrary()->getModels( getModelSymbol(), candidates, bc.getDBOptions() );
-        if ( !candidates.empty() )
+        // Don't attempt to clutter polygons with holes, the findRectangle() method
+        // will not account for them and you will end up with floating clutter.
+        if (footprint->getHoles().empty())
         {
-            unsigned index = Random(bc.getSeed()).next( candidates.size() );
-            setModelResource( candidates.at(index).get() );
+            // calculate a 4-point boundary suitable for placing rooftop models.
+            _hasModelBox = findRectangle(footprint, _modelBox);
+
+            // encode the model box dimensions in the symbology so we can find
+            // suitable models that fit.
+            getModelSymbol()->maxSizeX() = (_modelBox[1] - _modelBox[0]).length();
+            getModelSymbol()->maxSizeY() = (_modelBox[2] - _modelBox[1]).length();
+
+            // resolve the resource.
+            ModelResourceVector candidates;
+            bc.getResourceLibrary()->getModels(getModelSymbol(), candidates, bc.getDBOptions());
+            if (!candidates.empty())
+            {
+                unsigned index = Random(bc.getSeed()).next(candidates.size());
+                setModelResource(candidates.at(index).get());
+            }
         }
     }
 }
