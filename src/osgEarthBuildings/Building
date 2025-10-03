@@ -21,7 +21,6 @@
 
 #include "Common"
 #include "Elevation"
-#include "Zoning"
 #include <vector>
 #include <osgEarth/Geometry>
 #include <osgEarth/Tags>
@@ -73,12 +72,6 @@ namespace osgEarth { namespace Buildings
          */
         ElevationVector& getElevations()             { return _elevations; }
         const ElevationVector& getElevations() const { return _elevations; }
-
-        /**
-         * Zoning for this building 
-         */
-        void setZoning(const Zoning::Type& zoning) { _zoning = zoning; }
-        const Zoning::Type& getZoning() const      { return _zoning; }
 
         /**
          * Minimum height for which to use this building. 
@@ -157,8 +150,7 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<Polygon>   _footprint;
         optional<URI>           _externalModelURI;
         ElevationVector         _elevations;
-        osg::ref_ptr<Roof>      _roof;
-        Zoning::Type            _zoning;
+        osg::ref_ptr<Roof>      _roof;        
         osg::Matrix             _local2world;
         float                   _minHeight;
         float                   _maxHeight;

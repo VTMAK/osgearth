@@ -63,6 +63,9 @@ namespace osgEarth { namespace Buildings
 
         //! Profile of underlying data source
         const Profile* getProfile() const override;
+
+        //! The building catalog
+        BuildingCatalog* getBuildingCatalog();
         
 
     protected: // Layer

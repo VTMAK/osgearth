@@ -15,6 +15,7 @@ set(IMGUI_SOURCES imgui.cpp imgui_demo.cpp imgui_draw.cpp imgui_tables.cpp imgui
 
 set(STOCK_PANELS
     AnnotationsGUI
+    BuildingsGUI
     CameraGUI
     ContentBrowserGUI
     #DateTimeGUI

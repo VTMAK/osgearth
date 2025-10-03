@@ -91,6 +91,11 @@ BuildingLayer::getNode() const
     return _root.get();
 }
 
+BuildingCatalog* BuildingLayer::getBuildingCatalog()
+{
+    return _catalog.get();
+}
+
 Status
 BuildingLayer::openImplementation()
 {

@@ -11,3 +11,5 @@ endif()
 if(OSGEARTH_BUILD_CESIUM_NODEKIT)
     target_link_libraries(osgearth_imgui PRIVATE osgEarthCesium)
 endif()
+
+target_link_libraries(osgearth_imgui PRIVATE osgEarthBuildings)

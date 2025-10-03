@@ -52,8 +52,6 @@ namespace osgEarth { namespace Buildings
 
         virtual Config getConfig() const;
 
-        virtual bool isDetail() const { return true; }
-
     protected:
         virtual ~Parapet() { }
 

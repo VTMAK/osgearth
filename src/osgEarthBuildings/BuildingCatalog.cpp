@@ -217,6 +217,8 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
 bool
 BuildingCatalog::load(const URI& uri, const osgDB::Options* dbo, ProgressCallback* progress)
 {
+    _uri = uri;
+
     osg::ref_ptr<XmlDocument> xml = XmlDocument::load(uri, dbo);
     if ( !xml.valid() )
     {
@@ -242,6 +244,8 @@ BuildingCatalog::parseBuildings(const Config& conf, ProgressCallback* progress)
             continue;
 
         Building* building = new Building();
+
+        building->setName(b->value("name"));
 
         if ( b->hasValue("tags") )
         {
@@ -334,8 +338,8 @@ BuildingCatalog::parseElevations(const Config&     conf,
 
         // resolve the height properties:
         optional<float> hp;
-        if ( e->get( "height_percentage", hp) )
-            elevation->setHeightPercentage( hp.get()*0.01f );
+        if (e->get("height_percentage", hp))
+            elevation->heightPercentage() = hp.get() * 0.01f;
 
         if ( e->hasValue( "height" ) )
             elevation->setAbsoluteHeight( e->value("height", 15.0f) );

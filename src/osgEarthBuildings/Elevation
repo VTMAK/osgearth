@@ -84,9 +84,7 @@ namespace osgEarth { namespace Buildings
          * Height of this elevation as a percantage of total height.
          */
         optional<float>& heightPercentage()             { return _heightPercentage; }
-        const optional<float>& heightPercentage() const { return _heightPercentage; }
-        void setHeightPercentage(float value)           { _heightPercentage = value; }
-        float getHeightPercentage() const               { return _heightPercentage.get(); }
+        const optional<float>& heightPercentage() const { return _heightPercentage; }       
 
         /**
          * The absolute bottom of this elevation (accounting for parent).
@@ -208,8 +206,6 @@ namespace osgEarth { namespace Buildings
 
         /** Gets the uppermost Z value in the wall geometry */
         float getUppermostZ() const;
-
-        virtual bool isDetail() const { return false; }
 
     public:
         

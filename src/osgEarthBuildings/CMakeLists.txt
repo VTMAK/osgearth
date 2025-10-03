@@ -30,7 +30,6 @@ set(HEADERS
     GableRoofCompiler
     Parapet
     Roof
-    Zoning
 	ExternalModelNode
 	InstancedModelNode
 	ElevationsLodNode

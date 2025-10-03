@@ -76,6 +76,17 @@ namespace osgEarth { namespace Buildings
             BuildingVector&   output,
             ProgressCallback* progress) const;
 
+        
+        /**
+        * Gets the URI that this catalog was loaded from
+        */
+        const URI& getURI() const { return _uri; }
+
+        /**
+         * Gets the building templates defined in this catalog.
+         */ 
+        const BuildingVector& getBuildings() const { return _buildingsTemplates; }
+
     protected:
 
         Building* cloneBuildingTemplate(Feature*, const TagVector& tags, float height, float area) const;
@@ -93,6 +104,9 @@ namespace osgEarth { namespace Buildings
     protected:
 
         BuildingVector _buildingsTemplates; // replace later
+
+    private:
+        URI _uri;
     };
 
 } }

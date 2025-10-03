@@ -28,7 +28,6 @@ using namespace osgEarth::Buildings;
 
 Building::Building() :
 Taggable<osg::Object>(),
-_zoning    ( Zoning::ZONING_UNKNOWN ),
 _minHeight ( 0.0f ),
 _maxHeight ( FLT_MAX ),
 _minArea   ( 0.0f ),
@@ -41,7 +40,6 @@ _uid(0)
 
 Building::Building(const Building& rhs, const osg::CopyOp& copy) :
 Taggable<osg::Object>( rhs, copy ),
-_zoning    ( rhs._zoning ),
 _minHeight ( rhs._minHeight ),
 _maxHeight ( rhs._maxHeight ),
 _minArea   ( rhs._minArea ),

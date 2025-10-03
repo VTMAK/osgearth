@@ -1,0 +1,183 @@
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
+ */
+#pragma once
+
+#include <osgEarthImGui/ImGuiPanel>
+#include <osgEarthBuildings/BuildingLayer>
+#include <osgEarthBuildings/Parapet>
+
+using namespace osgEarth::Buildings;
+
+namespace osgEarth
+{
+    class BuildingsGUI : public ImGuiPanel
+    {
+    private:        
+        osg::observer_ptr<MapNode> _mapNode;
+        osg::observer_ptr< BuildingLayer > _buildingLayer;
+
+
+        void ElevationTreeNode(Elevation* elevation)
+        {
+            if (!elevation) return;
+
+            ImGui::PushID(elevation);
+            Parapet* parapet = dynamic_cast<Parapet*>(elevation);
+            std::string label = parapet ? "Parapet" : "Elevation";
+
+            if (ImGui::TreeNode(label.c_str()))
+            {
+                if (parapet)
+                {
+                    ImGui::Text("Parapet Width: %f", parapet->getWidth());
+                }
+
+                
+                osgEarth::Color color = elevation->getColor();
+                ImGui::ColorEdit4("Color", (float*)&color, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoPicker);
+
+
+                ImGui::Text("Height: %f", elevation->getHeight());
+                ImGui::Text("Height Percentage: %f", elevation->heightPercentage().get());
+
+                SkinSymbol* skin = elevation->getSkinSymbol();
+                if (skin)
+                {
+                    if (ImGui::TreeNode("Skin"))
+                    {
+                        std::string name = skin->name()->eval();
+                        ImGui::Text("Name: %s", name.c_str());
+                        ImGui::Text("Tags: %s", skin->tagString());
+                        ImGui::TreePop();
+                    }
+                }
+
+                Roof* roof = elevation->getRoof();
+                if (roof)
+                {
+                    if (ImGui::TreeNode("Roof"))
+                    {
+                        std::string type = "Unknown";
+                        switch (roof->getType())
+                        {
+                        case Roof::TYPE_FLAT: type = "Flat"; break;
+                        case Roof::TYPE_GABLE: type = "Gable"; break;
+                        case Roof::TYPE_INSTANCED: type = "Instanced"; break;
+                        }
+                        ImGui::Text("Type: %s", type.c_str());
+                        osgEarth::Color roofColor = roof->getColor();
+                        ImGui::ColorEdit4("Color", (float*)&roofColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoPicker);
+                        SkinSymbol* roofSkin = roof->getSkinSymbol();
+                        if (roofSkin)
+                        {
+                            if (ImGui::TreeNode("Skin"))
+                            {
+                                std::string name = roofSkin->name()->eval();
+                                ImGui::Text("Name: %s", name.c_str());
+                                ImGui::Text("Tags: %s", roofSkin->tagString());
+                                ImGui::TreePop();
+                            }
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+                
+                /*
+                if (ImGui::TreeNode("Skins"))
+                {
+                    const Skins& skins = elevation->getSkins();
+                    for (Skins::const_iterator itr = skins.begin(); itr != skins.end(); ++itr)
+                    {
+                        const Skin* skin = *itr;
+                        if (ImGui::TreeNode(skin->className()))
+                        {
+                            ImGui::Text("Name: %s", skin->getName().c_str());
+                            ImGui::Text("URI: %s", skin->getURI().full().c_str());
+                            ImGui::TreePop();
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+                */
+                const Elevation::Vector& children = elevation->getElevations();
+                for (Elevation::Vector::const_iterator itr = children.begin(); itr != children.end(); ++itr)
+                {
+                    ElevationTreeNode(*itr);
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+    public:
+        BuildingsGUI() : ImGuiPanel("Buildings") { }
+
+        void load(const Config& conf) override
+        {
+        }
+
+        void save(Config& conf) override
+        {
+        }
+
+        void draw(osg::RenderInfo& ri) override
+        {
+            if (!isVisible()) return;
+            if (!findNodeOrHide(_mapNode, ri)) return;
+
+            if (!_buildingLayer)
+            {
+                _buildingLayer = _mapNode->getMap()->getLayer<BuildingLayer>();
+            }
+
+            ImGui::Begin(name(), visible());
+            {                
+                if (!_buildingLayer.valid())
+                {
+                    ImGui::Text("No BuildingLayer found in Map.");
+                }
+                else
+                {
+                    ImGui::Text("Building layer with name: %s", _buildingLayer->getName().c_str());
+                    ImGui::Text("Catalog name : %s", _buildingLayer->getBuildingCatalog()->getURI().full().c_str());
+
+                    unsigned int count = 0;
+                    for (BuildingVector::const_iterator itr = _buildingLayer->getBuildingCatalog()->getBuildings().begin();
+                        itr != _buildingLayer->getBuildingCatalog()->getBuildings().end(); ++itr)
+                    {
+                        const Building* building = *itr;
+                        if (ImGui::TreeNode(building->getName().c_str()))
+                        {
+                            ImGui::Text("Instanced : %s", building->getInstanced() ? "true" : "false");
+                            ImGui::Text("Elevations %d", building->getElevations().size());
+                            ImGui::Text("UID: %llu", building->getUID());
+                            ImGui::Text("Min Height %f", building->getMinHeight());
+                            ImGui::Text("Max Height %f", building->getMaxHeight());
+                            ImGui::Text("Min Area %f", building->getMinArea());
+                            if (building->externalModelURI().isSet())
+                            {
+                                ImGui::Text("External Model URI: %s", building->externalModelURI()->full().c_str());
+                            }
+
+                            ImGui::Text("Tag String %s", building->tagString().c_str());
+
+                            if (ImGui::TreeNode("Elevations"))
+                            {
+                                const Elevation::Vector& elevations = building->getElevations();
+                                for (Elevation::Vector::const_iterator itr = elevations.begin(); itr != elevations.end(); ++itr)
+                                {
+                                    ElevationTreeNode(*itr);
+                                }
+                                ImGui::TreePop();
+                            }
+
+                            ImGui::TreePop();
+                        }
+                    }
+                }
+            }
+        }
+    };
+}

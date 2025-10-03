@@ -23,6 +23,7 @@
 #include <osgEarthImGui/AnnotationsGUI>
 #include <osgEarthImGui/PickerGUI>
 #include <osgEarthImGui/OpenEarthFileGUI>
+#include <osgEarthImGui/BuildingsGUI>
 
 #ifdef OSGEARTH_HAVE_GEOCODER
 #include <osgEarthImGui/SearchGUI>
@@ -107,6 +108,7 @@ main(int argc, char** argv)
         ui->add("Tools", new TextureInspectorGUI());
         ui->add("Tools", new ViewpointsGUI());
         ui->add("Tools", new LiveCamerasGUI());
+        ui->add("Tools", new BuildingsGUI());
 
 #ifdef OSGEARTH_HAVE_CESIUM_NODEKIT
         ui->add("Cesium", new osgEarth::Cesium::CesiumIonGUI());
