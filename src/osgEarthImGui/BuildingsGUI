@@ -83,24 +83,7 @@ namespace osgEarth
                         ImGui::TreePop();
                     }
                 }
-                
-                /*
-                if (ImGui::TreeNode("Skins"))
-                {
-                    const Skins& skins = elevation->getSkins();
-                    for (Skins::const_iterator itr = skins.begin(); itr != skins.end(); ++itr)
-                    {
-                        const Skin* skin = *itr;
-                        if (ImGui::TreeNode(skin->className()))
-                        {
-                            ImGui::Text("Name: %s", skin->getName().c_str());
-                            ImGui::Text("URI: %s", skin->getURI().full().c_str());
-                            ImGui::TreePop();
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-                */
+
                 const Elevation::Vector& children = elevation->getElevations();
                 for (Elevation::Vector::const_iterator itr = children.begin(); itr != children.end(); ++itr)
                 {
