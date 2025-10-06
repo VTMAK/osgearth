@@ -207,6 +207,12 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
             unsigned index = Random((unsigned)area).next(candidates.size());
             Building* copy = osg::clone( _buildingsTemplates.at( candidates[index] ).get() );
             copy->setUID( uid );
+
+            // Set some debugging aids here
+            feature->set("building_debug:area", area);
+            feature->set("building_debug:height", height);
+            feature->set("building_debug:tags", Taggable<std::string>::tagString(tags));
+            feature->set("building_debug:name", copy->getName());
             return copy;
         }
     }

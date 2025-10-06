@@ -14,95 +14,62 @@ namespace osgEarth
 {
     class BuildingsGUI : public ImGuiPanel
     {
-    private:        
+    private:
         osg::observer_ptr<MapNode> _mapNode;
         osg::observer_ptr< BuildingLayer > _buildingLayer;
-
-
-        void ElevationTreeNode(Elevation* elevation)
-        {
-            if (!elevation) return;
-
-            ImGui::PushID(elevation);
-            Parapet* parapet = dynamic_cast<Parapet*>(elevation);
-            std::string label = parapet ? "Parapet" : "Elevation";
-
-            if (ImGui::TreeNode(label.c_str()))
-            {
-                if (parapet)
-                {
-                    ImGui::Text("Parapet Width: %f", parapet->getWidth());
-                }
-
-                
-                osgEarth::Color color = elevation->getColor();
-                ImGui::ColorEdit4("Color", (float*)&color, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoPicker);
-
-
-                ImGui::Text("Height: %f", elevation->getHeight());
-                ImGui::Text("Height Percentage: %f", elevation->heightPercentage().get());
-
-                SkinSymbol* skin = elevation->getSkinSymbol();
-                if (skin)
-                {
-                    if (ImGui::TreeNode("Skin"))
-                    {
-                        std::string name = skin->name()->eval();
-                        ImGui::Text("Name: %s", name.c_str());
-                        ImGui::Text("Tags: %s", skin->tagString());
-                        ImGui::TreePop();
-                    }
-                }
-
-                Roof* roof = elevation->getRoof();
-                if (roof)
-                {
-                    if (ImGui::TreeNode("Roof"))
-                    {
-                        std::string type = "Unknown";
-                        switch (roof->getType())
-                        {
-                        case Roof::TYPE_FLAT: type = "Flat"; break;
-                        case Roof::TYPE_GABLE: type = "Gable"; break;
-                        case Roof::TYPE_INSTANCED: type = "Instanced"; break;
-                        }
-                        ImGui::Text("Type: %s", type.c_str());
-                        osgEarth::Color roofColor = roof->getColor();
-                        ImGui::ColorEdit4("Color", (float*)&roofColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoPicker);
-                        SkinSymbol* roofSkin = roof->getSkinSymbol();
-                        if (roofSkin)
-                        {
-                            if (ImGui::TreeNode("Skin"))
-                            {
-                                std::string name = roofSkin->name()->eval();
-                                ImGui::Text("Name: %s", name.c_str());
-                                ImGui::Text("Tags: %s", roofSkin->tagString());
-                                ImGui::TreePop();
-                            }
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-
-                const Elevation::Vector& children = elevation->getElevations();
-                for (Elevation::Vector::const_iterator itr = children.begin(); itr != children.end(); ++itr)
-                {
-                    ElevationTreeNode(*itr);
-                }
-                ImGui::TreePop();
-            }
-            ImGui::PopID();
-        }
+        char _nameFilter[256];
+        char _tagFilter[256];
+        float _minHeightFilter;
+        float _maxHeightFilter;
+        float _minAreaFilter;
+        float _maxAreaFilter;
+        bool _enableHeightFilter;
+        bool _enableAreaFilter;
 
     public:
-        BuildingsGUI() : ImGuiPanel("Buildings") { }
+        BuildingsGUI() :
+            ImGuiPanel("Buildings"),
+            _minHeightFilter(0.0f),
+            _maxHeightFilter(FLT_MAX),
+            _minAreaFilter(0.0f),
+            _maxAreaFilter(FLT_MAX),
+            _enableHeightFilter(false),
+            _enableAreaFilter(false)
+        {
+            memset(_nameFilter, 0, sizeof(_nameFilter));
+            memset(_tagFilter, 0, sizeof(_tagFilter));
+        }
 
         void load(const Config& conf) override
         {
+            conf.get("MinHeight", _minHeightFilter);
+            conf.get("MaxHeight", _maxHeightFilter);
+            conf.get("MinArea", _minAreaFilter);
+            conf.get("MaxArea", _maxAreaFilter);
+            conf.get("EnableHeightFilter", _enableHeightFilter);
+            conf.get("EnableAreaFilter", _enableAreaFilter);
+            std::string name;
+            if (conf.get("Name", name))
+            {
+                strncpy(_nameFilter, name.c_str(), sizeof(_nameFilter) - 1);
+            }
+            std::string tags;
+            if (conf.get("Tags", tags))
+            {
+                strncpy(_tagFilter, tags.c_str(), sizeof(_tagFilter) - 1);
+            }
         }
 
         void save(Config& conf) override
         {
+            conf.set("MinHeight", _minHeightFilter);
+            conf.set("MaxHeight", _maxHeightFilter);
+            conf.set("MinArea", _minAreaFilter);
+            conf.set("MaxArea", _maxAreaFilter);
+            conf.set("EnableHeightFilter", _enableHeightFilter);
+            conf.set("EnableAreaFilter", _enableAreaFilter);
+            conf.set("Name", std::string(_nameFilter));
+            conf.set("Tags", std::string(_tagFilter));
         }
 
         void draw(osg::RenderInfo& ri) override
@@ -115,51 +82,134 @@ namespace osgEarth
                 _buildingLayer = _mapNode->getMap()->getLayer<BuildingLayer>();
             }
 
-            ImGui::Begin(name(), visible());
-            {                
+            if (ImGui::Begin(name(), visible(), ImGuiWindowFlags_NoScrollbar))
+            {
                 if (!_buildingLayer.valid())
                 {
                     ImGui::Text("No BuildingLayer found in Map.");
                 }
                 else
                 {
-                    ImGui::Text("Building layer with name: %s", _buildingLayer->getName().c_str());
-                    ImGui::Text("Catalog name : %s", _buildingLayer->getBuildingCatalog()->getURI().full().c_str());
+                    ImGui::Text("Building layer: %s", _buildingLayer->getName().c_str());
+                    ImGui::Text("Catalog: %s", _buildingLayer->getBuildingCatalog()->getURI().full().c_str());
 
-                    unsigned int count = 0;
-                    for (BuildingVector::const_iterator itr = _buildingLayer->getBuildingCatalog()->getBuildings().begin();
-                        itr != _buildingLayer->getBuildingCatalog()->getBuildings().end(); ++itr)
+                    // Filter controls
+                    ImGui::Text("Name:");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(200);
+                    ImGui::InputText("##name", _nameFilter, 256);
+
+                    ImGui::SameLine();
+                    ImGui::Text("Tags (comma separated):");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(300);
+                    ImGui::InputText("##tags", _tagFilter, 256);
+
+                    ImGui::Checkbox("Height Filter", &_enableHeightFilter);
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(!_enableHeightFilter);
+                    ImGui::SetNextItemWidth(100);
+                    ImGui::InputFloat("##minHeight", &_minHeightFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::SameLine();
+                    ImGui::Text("-");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(100);
+                    ImGui::InputFloat("##maxHeight", &_maxHeightFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::EndDisabled();
+                    
+                    ImGui::Checkbox("Area Filter", &_enableAreaFilter);
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(!_enableAreaFilter);
+                    ImGui::SetNextItemWidth(100);
+                    ImGui::InputFloat("##minArea", &_minAreaFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::SameLine();
+                    ImGui::Text("-");
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(100);
+                    ImGui::InputFloat("##maxArea", &_maxAreaFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::EndDisabled();
+
+                    // Parse tags filter
+                    TagVector filterTags;
+                    if (strlen(_tagFilter) > 0)
                     {
-                        const Building* building = *itr;
-                        if (ImGui::TreeNode(building->getName().c_str()))
-                        {
-                            ImGui::Text("Instanced : %s", building->getInstanced() ? "true" : "false");
-                            ImGui::Text("Elevations %d", building->getElevations().size());
-                            ImGui::Text("UID: %llu", building->getUID());
-                            ImGui::Text("Min Height %f", building->getMinHeight());
-                            ImGui::Text("Max Height %f", building->getMaxHeight());
-                            ImGui::Text("Min Area %f", building->getMinArea());
-                            if (building->externalModelURI().isSet())
-                            {
-                                ImGui::Text("External Model URI: %s", building->externalModelURI()->full().c_str());
-                            }
-
-                            ImGui::Text("Tag String %s", building->tagString().c_str());
-
-                            if (ImGui::TreeNode("Elevations"))
-                            {
-                                const Elevation::Vector& elevations = building->getElevations();
-                                for (Elevation::Vector::const_iterator itr = elevations.begin(); itr != elevations.end(); ++itr)
-                                {
-                                    ElevationTreeNode(*itr);
-                                }
-                                ImGui::TreePop();
-                            }
-
-                            ImGui::TreePop();
-                        }
+                        std::string tagsStr(_tagFilter);
+                        filterTags = StringTokenizer()
+                            .delim(",")
+                            .standardQuotes()
+                            .tokenize(tagsStr);                        
                     }
+
+                    ImVec2 availableContent = ImGui::GetContentRegionAvail();
+                    ImVec2 textSize = ImGui::CalcTextSize("A");
+                    ImVec2 tableSize(0, availableContent.y - textSize.y);
+
+                    unsigned int filteredCount = 0;
+
+                    if (ImGui::BeginTable("BuildingTable", 7, ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Borders, tableSize))
+                    {
+                        ImGui::TableSetupScrollFreeze(0, 1);
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 200.0f);
+                        ImGui::TableSetupColumn("Instanced", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Min Height", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                        ImGui::TableSetupColumn("Max Height", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                        ImGui::TableSetupColumn("Min Area", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                        ImGui::TableSetupColumn("Max Area", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                        ImGui::TableSetupColumn("Tags", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableHeadersRow();
+
+                        for (BuildingVector::const_iterator itr = _buildingLayer->getBuildingCatalog()->getBuildings().begin();
+                            itr != _buildingLayer->getBuildingCatalog()->getBuildings().end(); ++itr)
+                        {
+                            const Building* building = *itr;
+
+                            // Apply filters
+                            if (strlen(_nameFilter) > 0)
+                            {
+                                std::string buildingName = building->getName();
+                                if (buildingName.find(_nameFilter) == std::string::npos)
+                                    continue;
+                            }
+
+                            if (!filterTags.empty() && !building->containsTags(filterTags))
+                                continue;
+
+                            if (_enableHeightFilter && (building->getMinHeight() < _minHeightFilter || building->getMaxHeight() > _maxHeightFilter))
+                                continue;
+
+                            if (_enableAreaFilter && (building->getMinArea() < _minAreaFilter || building->getMaxArea() > _maxAreaFilter))
+                                continue;
+
+                            filteredCount++;
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", building->getName().c_str());
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", building->getInstanced() ? "true" : "false");
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.2f", building->getMinHeight());
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.2f", building->getMaxHeight());
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.2f", building->getMinArea());
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.2f", building->getMaxArea());
+
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", building->tagString().c_str());
+                        }
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::Text("%d / %d buildings", filteredCount, (int)_buildingLayer->getBuildingCatalog()->getBuildings().size());
                 }
+
+                ImGui::End();
             }
         }
     };
