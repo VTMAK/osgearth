@@ -16,7 +16,8 @@ namespace osgEarth
     {
     private:
         osg::observer_ptr<MapNode> _mapNode;
-        osg::observer_ptr< BuildingLayer > _buildingLayer;
+        std::vector<osg::observer_ptr<BuildingLayer>> _buildingLayers;
+        int _selectedLayerIndex;
         char _nameFilter[256];
         char _tagFilter[256];
         float _minHeightFilter;
@@ -29,6 +30,7 @@ namespace osgEarth
     public:
         BuildingsGUI() :
             ImGuiPanel("Buildings"),
+            _selectedLayerIndex(0),
             _minHeightFilter(0.0f),
             _maxHeightFilter(FLT_MAX),
             _minAreaFilter(0.0f),
@@ -42,6 +44,7 @@ namespace osgEarth
 
         void load(const Config& conf) override
         {
+            conf.get("SelectedLayerIndex", _selectedLayerIndex);
             conf.get("MinHeight", _minHeightFilter);
             conf.get("MaxHeight", _maxHeightFilter);
             conf.get("MinArea", _minAreaFilter);
@@ -62,6 +65,7 @@ namespace osgEarth
 
         void save(Config& conf) override
         {
+            conf.set("SelectedLayerIndex", _selectedLayerIndex);
             conf.set("MinHeight", _minHeightFilter);
             conf.set("MaxHeight", _maxHeightFilter);
             conf.set("MinArea", _minAreaFilter);
@@ -77,21 +81,61 @@ namespace osgEarth
             if (!isVisible()) return;
             if (!findNodeOrHide(_mapNode, ri)) return;
 
-            if (!_buildingLayer)
+            // Fetch all BuildingLayers from the map
+            _buildingLayers.clear();
+            LayerVector layers;
+            _mapNode->getMap()->getLayers(layers);
+            for (LayerVector::const_iterator itr = layers.begin(); itr != layers.end(); ++itr)
             {
-                _buildingLayer = _mapNode->getMap()->getLayer<BuildingLayer>();
+                BuildingLayer* layer = dynamic_cast<BuildingLayer*>(itr->get());
+                if (layer)
+                {
+                    _buildingLayers.push_back(layer);
+                }
+            }
+
+            // Clamp selected index to valid range
+            if (_selectedLayerIndex >= (int)_buildingLayers.size())
+            {
+                _selectedLayerIndex = 0;
             }
 
             if (ImGui::Begin(name(), visible(), ImGuiWindowFlags_NoScrollbar))
             {
-                if (!_buildingLayer.valid())
+                if (_buildingLayers.empty())
                 {
                     ImGui::Text("No BuildingLayer found in Map.");
                 }
                 else
                 {
-                    ImGui::Text("Building layer: %s", _buildingLayer->getName().c_str());
-                    ImGui::Text("Catalog: %s", _buildingLayer->getBuildingCatalog()->getURI().full().c_str());
+                    // Get the current layer
+                    BuildingLayer* currentLayer = _buildingLayers[_selectedLayerIndex].get();
+
+                    // Add dropdown to select BuildingLayer
+                    if (_buildingLayers.size() > 1)
+                    {
+                        ImGui::Text("Select Building Layer:");
+                        ImGui::SameLine();
+                        if (ImGui::BeginCombo("##layerselect", currentLayer->getName().c_str()))
+                        {
+                            for (int i = 0; i < (int)_buildingLayers.size(); ++i)
+                            {
+                                bool isSelected = (i == _selectedLayerIndex);
+                                if (ImGui::Selectable(_buildingLayers[i]->getName().c_str(), isSelected))
+                                {
+                                    _selectedLayerIndex = i;
+                                }
+                                if (isSelected)
+                                {
+                                    ImGui::SetItemDefaultFocus();
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                    }
+
+                    ImGui::Text("Building layer: %s", currentLayer->getName().c_str());
+                    ImGui::Text("Catalog: %s", currentLayer->getBuildingCatalog()->getURI().full().c_str());
 
                     // Filter controls
                     ImGui::Text("Name:");
@@ -100,7 +144,7 @@ namespace osgEarth
                     ImGui::InputText("##name", _nameFilter, 256);
 
                     ImGui::SameLine();
-                    ImGui::Text("Tags (comma separated):");
+                    ImGui::Text("Tags:");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(300);
                     ImGui::InputText("##tags", _tagFilter, 256);
@@ -134,10 +178,12 @@ namespace osgEarth
                     if (strlen(_tagFilter) > 0)
                     {
                         std::string tagsStr(_tagFilter);
+
                         filterTags = StringTokenizer()
-                            .delim(",")
+                            .delim(" ")
                             .standardQuotes()
-                            .tokenize(tagsStr);                        
+                            .keepEmpties(false)
+                            .tokenize(tagsStr);
                     }
 
                     ImVec2 availableContent = ImGui::GetContentRegionAvail();
@@ -158,8 +204,8 @@ namespace osgEarth
                         ImGui::TableSetupColumn("Tags", ImGuiTableColumnFlags_WidthStretch);
                         ImGui::TableHeadersRow();
 
-                        for (BuildingVector::const_iterator itr = _buildingLayer->getBuildingCatalog()->getBuildings().begin();
-                            itr != _buildingLayer->getBuildingCatalog()->getBuildings().end(); ++itr)
+                        for (BuildingVector::const_iterator itr = currentLayer->getBuildingCatalog()->getBuildings().begin();
+                            itr != currentLayer->getBuildingCatalog()->getBuildings().end(); ++itr)
                         {
                             const Building* building = *itr;
 
@@ -206,7 +252,7 @@ namespace osgEarth
                         ImGui::EndTable();
                     }
 
-                    ImGui::Text("%d / %d buildings", filteredCount, (int)_buildingLayer->getBuildingCatalog()->getBuildings().size());
+                    ImGui::Text("%d / %d buildings", filteredCount, (int)currentLayer->getBuildingCatalog()->getBuildings().size());
                 }
 
                 ImGui::End();
