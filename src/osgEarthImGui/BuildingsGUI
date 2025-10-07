@@ -174,10 +174,10 @@ namespace osgEarth
                             if (!filterTags.empty() && !building->containsTags(filterTags))
                                 continue;
 
-                            if (_enableHeightFilter && (building->getMinHeight() < _minHeightFilter || building->getMaxHeight() > _maxHeightFilter))
+                            if (_enableHeightFilter && (building->getMinHeight() <= _minHeightFilter || building->getMaxHeight() >= _maxHeightFilter))
                                 continue;
 
-                            if (_enableAreaFilter && (building->getMinArea() < _minAreaFilter || building->getMaxArea() > _maxAreaFilter))
+                            if (_enableAreaFilter && (building->getMinArea() <= _minAreaFilter || building->getMaxArea() >= _maxAreaFilter))
                                 continue;
 
                             filteredCount++;
