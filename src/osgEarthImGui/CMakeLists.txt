@@ -28,6 +28,7 @@ set(STOCK_PANELS
     NodeGraphGUI
     PickerGUI
     RenderingGUI
+    ResourceLibraryGUI
     SceneGraphGUI
     SearchGUI
     ShaderGUI
