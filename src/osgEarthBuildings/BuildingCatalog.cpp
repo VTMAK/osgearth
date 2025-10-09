@@ -178,6 +178,9 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
                                        float              height,
                                        float              area) const
 {
+
+    Building* building = nullptr;
+
     if ( !_buildingsTemplates.empty() )
     {
         std::vector<unsigned> candidates;
@@ -203,19 +206,39 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
 
         if ( !candidates.empty() )
         {
-            UID uid = feature->getFID() + 1u;
             unsigned index = Random((unsigned)area).next(candidates.size());
-            Building* copy = osg::clone( _buildingsTemplates.at( candidates[index] ).get() );
-            copy->setUID( uid );
-
-            // Set some debugging aids here
-            feature->set("building_debug:area", area);
-            feature->set("building_debug:height", height);
-            feature->set("building_debug:tags", Taggable<std::string>::tagString(tags));
-            feature->set("building_debug:name", copy->getName());
-            return copy;
+            building = osg::clone( _buildingsTemplates.at( candidates[index] ).get() );
         }
     }
+
+    // We couldn't find a building based on the criteria. Look for a "Default" building in the catalog.
+    if (!building)
+    {
+        for (unsigned i = 0; i < _buildingsTemplates.size(); ++i)
+        {
+            if (_buildingsTemplates[i]->getName() == "Default")
+            {
+                building = osg::clone(_buildingsTemplates.at(i).get());
+                break;
+            }
+        }
+    }
+
+    if (building)
+    {
+        UID uid = feature->getFID() + 1u;
+        building->setUID(uid);
+
+        // Set some debugging aids here
+        feature->set("building_debug:area", area);
+        feature->set("building_debug:height", height);
+        feature->set("building_debug:tags", Taggable<std::string>::tagString(tags));
+        feature->set("building_debug:name", building->getName());
+        return building;
+    }
+
+    OE_INFO << "Failed to create building for " << feature->getGeoJSON() << ".  Create a building called \"Default\" in the catalog to use as a fallback. " << std::endl;
+
 
     return 0L;
 }
