@@ -20,10 +20,8 @@ namespace osgEarth
         int _selectedLayerIndex;
         char _nameFilter[256];
         char _tagFilter[256];
-        float _minHeightFilter;
-        float _maxHeightFilter;
-        float _minAreaFilter;
-        float _maxAreaFilter;
+        float _heightFilter;
+        float _areaFilter;
         bool _enableHeightFilter;
         bool _enableAreaFilter;
 
@@ -31,10 +29,8 @@ namespace osgEarth
         BuildingsGUI() :
             ImGuiPanel("Buildings"),
             _selectedLayerIndex(0),
-            _minHeightFilter(0.0f),
-            _maxHeightFilter(FLT_MAX),
-            _minAreaFilter(0.0f),
-            _maxAreaFilter(FLT_MAX),
+            _heightFilter(0.0f),
+            _areaFilter(0.0f),
             _enableHeightFilter(false),
             _enableAreaFilter(false)
         {
@@ -45,10 +41,8 @@ namespace osgEarth
         void load(const Config& conf) override
         {
             conf.get("SelectedLayerIndex", _selectedLayerIndex);
-            conf.get("MinHeight", _minHeightFilter);
-            conf.get("MaxHeight", _maxHeightFilter);
-            conf.get("MinArea", _minAreaFilter);
-            conf.get("MaxArea", _maxAreaFilter);
+            conf.get("Height", _heightFilter);
+            conf.get("Area", _areaFilter);
             conf.get("EnableHeightFilter", _enableHeightFilter);
             conf.get("EnableAreaFilter", _enableAreaFilter);
             std::string name;
@@ -66,10 +60,8 @@ namespace osgEarth
         void save(Config& conf) override
         {
             conf.set("SelectedLayerIndex", _selectedLayerIndex);
-            conf.set("MinHeight", _minHeightFilter);
-            conf.set("MaxHeight", _maxHeightFilter);
-            conf.set("MinArea", _minAreaFilter);
-            conf.set("MaxArea", _maxAreaFilter);
+            conf.get("Height", _heightFilter);
+            conf.get("Area", _areaFilter);
             conf.set("EnableHeightFilter", _enableHeightFilter);
             conf.set("EnableAreaFilter", _enableAreaFilter);
             conf.set("Name", std::string(_nameFilter));
@@ -153,24 +145,14 @@ namespace osgEarth
                     ImGui::SameLine();
                     ImGui::BeginDisabled(!_enableHeightFilter);
                     ImGui::SetNextItemWidth(100);
-                    ImGui::InputFloat("##minHeight", &_minHeightFilter, 0.0f, 0.0f, "%.2f");
-                    ImGui::SameLine();
-                    ImGui::Text("-");
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(100);
-                    ImGui::InputFloat("##maxHeight", &_maxHeightFilter, 0.0f, 0.0f, "%.2f");
-                    ImGui::EndDisabled();
+                    ImGui::InputFloat("##height", &_heightFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::EndDisabled();       
                     
                     ImGui::Checkbox("Area Filter", &_enableAreaFilter);
                     ImGui::SameLine();
                     ImGui::BeginDisabled(!_enableAreaFilter);
                     ImGui::SetNextItemWidth(100);
-                    ImGui::InputFloat("##minArea", &_minAreaFilter, 0.0f, 0.0f, "%.2f");
-                    ImGui::SameLine();
-                    ImGui::Text("-");
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(100);
-                    ImGui::InputFloat("##maxArea", &_maxAreaFilter, 0.0f, 0.0f, "%.2f");
+                    ImGui::InputFloat("##area", &_areaFilter, 0.0f, 0.0f, "%.2f");
                     ImGui::EndDisabled();
 
                     // Parse tags filter
@@ -220,10 +202,10 @@ namespace osgEarth
                             if (!filterTags.empty() && !building->containsTags(filterTags))
                                 continue;
 
-                            if (_enableHeightFilter && (building->getMinHeight() <= _minHeightFilter || building->getMaxHeight() >= _maxHeightFilter))
+                            if (_enableHeightFilter && (_heightFilter < building->getMinHeight() || _heightFilter > building->getMaxHeight()))
                                 continue;
 
-                            if (_enableAreaFilter && (building->getMinArea() <= _minAreaFilter || building->getMaxArea() >= _maxAreaFilter))
+                            if (_enableAreaFilter && (_areaFilter < building->getMinArea() || _areaFilter > building->getMaxArea()))
                                 continue;
 
                             filteredCount++;
