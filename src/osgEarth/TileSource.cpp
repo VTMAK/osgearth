@@ -81,7 +81,7 @@ TileBlacklist::read(const std::string &filename)
         std::ifstream in( filename.c_str() );
         return read( in );
     }
-    return NULL;
+    return nullptr;
 }
 
 void
@@ -113,7 +113,6 @@ TileBlacklist::write(std::ostream &output) const
 
 TileSourceOptions::TileSourceOptions( const ConfigOptions& options ) :
 DriverConfigOptions   ( options ),
-_L2CacheSize          ( 16 ),
 _bilinearReprojection ( true ),
 _coverage             ( false )
 {
@@ -126,7 +125,6 @@ TileSourceOptions::getConfig() const
 {
     Config conf = DriverConfigOptions::getConfig();
     conf.set( "blacklist_filename", _blacklistFilename);
-    conf.set( "l2_cache_size", _L2CacheSize );
     conf.set( "bilinear_reprojection", _bilinearReprojection );
     conf.set( "coverage", _coverage );
     conf.set( "osg_option_string", _osgOptionString );
@@ -147,8 +145,6 @@ void
 TileSourceOptions::fromConfig( const Config& conf )
 {
     conf.get( "blacklist_filename", _blacklistFilename);
-    conf.get( "l2_cache_size", _L2CacheSize );
-    conf.get( "bilinear_reprojection", _bilinearReprojection );
     conf.get( "coverage", _coverage );
     conf.get( "osg_option_string", _osgOptionString );
     conf.get( "profile", _profileOptions );
@@ -206,15 +202,6 @@ TileSource::~TileSource()
     }
 }
 
-void
-TileSource::setDefaultL2CacheSize(int size)
-{
-    if (_options.L2CacheSize().isSet() == false)
-    {
-        _options.L2CacheSize().init(size);
-    }
-}
-
 const Status&
 TileSource::open(const Mode&           openMode,
                  const osgDB::Options* readOptions)
@@ -222,29 +209,6 @@ TileSource::open(const Mode&           openMode,
     if (!_openCalled)
     {
         _mode = openMode;
-
-        // Initialize the l2 cache size to the options.
-        int l2CacheSize = _options.L2CacheSize().get();
-
-        // See if it was overridden with an env var.
-        char const* l2env = ::getenv( "OSGEARTH_L2_CACHE_SIZE" );
-        if ( l2env )
-        {
-            l2CacheSize = as<int>( std::string(l2env), 0 );
-        }
-
-        // Env cache-only mode also disables the L2 cache.
-        char const* noCacheEnv = ::getenv( "OSGEARTH_MEMORY_PROFILE" );
-        if ( noCacheEnv )
-        {
-            l2CacheSize = 0;
-        }
-
-        // Initialize the l2 cache if it's size is > 0
-        if ( l2CacheSize > 0 )
-        {
-            _memCache = new MemCache( l2CacheSize );
-        }
 
         // Initialize the underlying data store
         Status status = initialize(readOptions);
@@ -291,15 +255,7 @@ TileSource::createImage(const TileKey&        key,
                         ProgressCallback*     progress )
 {
     if (getStatus().isError())
-        return 0L;
-
-    // Try to get it from the memcache fist
-    if (_memCache.valid())
-    {
-        ReadResult r = _memCache->getOrCreateDefaultBin()->readImage(key.str(), 0L);
-        if ( r.succeeded() )
-            return r.releaseImage();
-    }
+        return nullptr;
 
     osg::ref_ptr<osg::Image> newImage = createImage(key, progress);
 
@@ -308,18 +264,12 @@ TileSource::createImage(const TileKey&        key,
     // implementation does not.
     if (progress && progress->isCanceled())
     {
-        return 0L;
+        return nullptr;
     }
 
     // Run the pre-caching operation if there is one:
     if ( prepOp )
         (*prepOp)( newImage );
-
-    // Cache to the L2 cache:
-    if ( newImage.valid() && _memCache.valid() )
-    {
-        _memCache->getOrCreateDefaultBin()->write(key.str(), newImage.get(), 0L);
-    }
 
     return newImage.release();
 }
@@ -330,17 +280,7 @@ TileSource::createHeightField(const TileKey&        key,
                               ProgressCallback*     progress )
 {
     if (getStatus().isError())
-        return 0L;
-
-    // Try to get it from the memcache first:
-    if (_memCache.valid())
-    {
-        ReadResult r = _memCache->getOrCreateDefaultBin()->readObject(key.str(), 0L);
-        if ( r.succeeded() )
-        {
-            return r.release<osg::HeightField>();
-        }
-    }
+        return nullptr;
 
     osg::ref_ptr<osg::HeightField> newHF = createHeightField( key, progress );
 
@@ -349,16 +289,11 @@ TileSource::createHeightField(const TileKey&        key,
     // implementation does not.
     if (progress && progress->isCanceled())
     {
-        return 0L;
+        return nullptr;
     }
 
     if ( prepOp )
         (*prepOp)( newHF );
-
-    if ( newHF.valid() && _memCache.valid() )
-    {
-        _memCache->getOrCreateDefaultBin()->write(key.str(), newHF.get(), 0L);
-    }
 
     return newHF.release();
 }
@@ -367,7 +302,7 @@ osg::Image*
 TileSource::createImage(const TileKey&    key,
                         ProgressCallback* progress)
 {
-    return 0L;
+    return nullptr;
 }
 
 osg::HeightField*
@@ -375,7 +310,7 @@ TileSource::createHeightField(const TileKey&        key,
                               ProgressCallback*     progress)
 {
     if (getStatus().isError())
-        return 0L;
+        return nullptr;
 
     osg::ref_ptr<osg::Image> image = createImage(key, progress);
     osg::HeightField* hf = 0;
@@ -393,7 +328,7 @@ TileSource::storeHeightField(const TileKey&     key,
                              ProgressCallback* progress)
 {
     if (getStatus().isError() || hf == 0L )
-        return 0L;
+        return nullptr;
 
     ImageToHeightFieldConverter conv;
     osg::ref_ptr<osg::Image> image = conv.convert(hf, 32);
@@ -450,7 +385,7 @@ TileSourceFactory::create(const TileSourceOptions& options)
     if ( driver.empty() )
     {
         OE_WARN << LC << "ILLEGAL- no driver set for tile source" << std::endl;
-        return 0L;
+        return nullptr;
     }
 
     osg::ref_ptr<osgDB::Options> dbopt = Registry::instance()->cloneOrCreateOptions();
