@@ -9,18 +9,14 @@
 // Need to undef Status in case it has been defined in Xlib.h. This can happen on Linux
 #undef Status
 
-#include <limits.h>
-
-#include <osg/Version>
-
 #include <osgEarth/Common>
 #include <osgEarth/CachePolicy>
 #include <osgEarth/TileKey>
 #include <osgEarth/Profile>
 #include <osgEarth/Threading>
-#include <osgEarth/MemCache>
 #include <osgEarth/Status>
 #include <osgEarth/Containers>
+#include <osgEarth/IOTypes>
 
 #include <osg/Referenced>
 #include <osg/Object>
@@ -53,19 +49,6 @@ namespace osgEarth { namespace Contrib
         optional<ProfileOptions>& profile() { return _profileOptions; }
         const optional<ProfileOptions>& profile() const { return _profileOptions; }
 
-        /** Size of the in-memory cache (in entries; default=16) */
-        optional<int>& L2CacheSize() { return _L2CacheSize; }
-        const optional<int>& L2CacheSize() const { return _L2CacheSize; }
-
-        /** Whether to use bilinear sampling when reprojecting data from this source
-         *  (default = true) */
-        optional<bool>& bilinearReprojection() { return _bilinearReprojection; }
-        const optional<bool>& bilinearReprojection() const { return _bilinearReprojection; }
-
-        /** Whether to rasterize into coverage data, which contains discrete non-interpolable values. */
-        optional<bool>& coverage() { return _coverage; }
-        const optional<bool>& coverage() const { return _coverage; }
-
         /** osgDB::Options option string to pass through to osgDB reader/writers. */
         optional<std::string>& osgOptionString() { return _osgOptionString; }
         const optional<std::string>& osgOptionString() const { return _osgOptionString; }
@@ -77,10 +60,10 @@ namespace osgEarth { namespace Contrib
         virtual ~TileSourceOptions() { }
 
     public:
-        virtual Config getConfig() const;
+        Config getConfig() const override;
 
     protected:
-        virtual void mergeConfig( const Config& conf );
+        void mergeConfig(const Config& conf) override;
 
     private:
         void fromConfig( const Config& conf );
@@ -315,12 +298,6 @@ namespace osgEarth { namespace Contrib
          */
         const TileSourceOptions& getOptions() const { return _options; }
 
-        /**
-         * Set the L2 cache size default (if the size was not set in
-         * the options or environment). Must call this before open().
-         */
-        void setDefaultL2CacheSize(int size);
-
     public:
 
         /* methods required by osg::Object */
@@ -392,8 +369,6 @@ namespace osgEarth { namespace Contrib
         osg::ref_ptr< TileBlacklist > _blacklist;
         std::string _blacklistFilename;
 
-        osg::ref_ptr<MemCache> _memCache;
-
         DataExtentList  _dataExtents;
         Status          _status;
         Mode            _mode;
@@ -415,8 +390,6 @@ namespace osgEarth { namespace Contrib
         const TileSourceOptions& getTileSourceOptions(const osgDB::Options* options) const;
 
         const std::string getInterfaceName(const osgDB::Options* options) const;
-
-        TileSource::Mode getOpenMode(const osgDB::Options* options) const;
     };
 
     //--------------------------------------------------------------------
