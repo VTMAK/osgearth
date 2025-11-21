@@ -103,11 +103,6 @@ namespace osgEarth
                 return _lod;
             }
 
-            //! Calculated tile LOD based on resolution
-            int getLOD() const {
-                return _lod;
-            }
-
         private:
             MapData _mapDataSnapshot;
             Internal::RevElevationKey _key;
@@ -248,7 +243,6 @@ namespace osgEarth
         int getLOD(double x, double y, WorkingSet*);
 
         osg::ref_ptr<ElevationTile> getOrCreateRaster(
-            MapData& snapshot,
             MapData& snapshot,
             const Internal::RevElevationKey& key,
             bool acceptLowerRes,

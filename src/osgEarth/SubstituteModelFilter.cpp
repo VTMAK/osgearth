@@ -85,7 +85,7 @@ SubstituteModelFilter::SubstituteModelFilter(const Style& style) :
     _useDrawInstanced(true),
     _merge(true),
     _normalScalingRequired(false),
-    _instanceCache(false),     // cache per object so MT not required
+    _instanceCache(128u),
     _filterUsage(FILTER_USAGE_NORMAL)
 {
     //NOP

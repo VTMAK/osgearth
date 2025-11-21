@@ -134,8 +134,6 @@
 #include <osgEarth/GLUtils>
 #include <osgEarth/GeoCommon>
 #include <osgEarth/GeoData>
-#include <osgEarth/GeoEllipsoid>
-#include <osgEarth/GeoImageOverlay>
 #include <osgEarth/GeoMath>
 #include <osgEarth/GeoPositionNode>
 #include <osgEarth/GeoPositionNodeAutoScaler>
@@ -152,7 +150,6 @@
 #include <osgEarth/GeometryRasterizer>
 #include <osgEarth/GeometryUtils>
 #include <osgEarth/GraticuleLabelingEngine>
-#include <osgEarth/GroupLayer>
 #include <osgEarth/HTM>
 #include <osgEarth/HTTPClient>
 #include <osgEarth/HeightFieldUtils>

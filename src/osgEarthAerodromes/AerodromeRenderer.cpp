@@ -1116,7 +1116,7 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Styl
 
         GeometryCompiler compiler( go );
         osg::ref_ptr< Feature > clone = new Feature(*feature); // , osg::CopyOp::DEEP_COPY_ALL);
-        return compiler.compile( clone.get(), (clone->style().isSet() ? *clone->style() : style), context );
+        return compiler.compile( clone.get(), (clone->style() ? *clone->style() : style), context );
     }
 
     return 0L;
