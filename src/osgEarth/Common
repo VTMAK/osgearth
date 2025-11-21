@@ -7,6 +7,7 @@
 #include <osgEarth/Export>
 #include <osgEarth/Notify>
 #include <osgEarth/BuildConfig>
+#include <osgEarth/PolyfillCPP14>
 #include <osg/ref_ptr>
 #include <osg/Referenced>
 #include <memory>

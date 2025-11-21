@@ -25,10 +25,17 @@ set(OSGEARTH_VERSION ${OSGEARTH_MAJOR_VERSION}.${OSGEARTH_MINOR_VERSION}.${OSGEA
 # Increment this each time the ABI changes
 set(OSGEARTH_SOVERSION 178)
 
-# Require C++14, don't fall back, and don't use compiler-specific extensions:
+# Language requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Forces a build that complies with the C++14 API and uses polyfills to do so.
+# Temporary solution until we can use native C++17 across the board.
+option(OSGEARTH_BUILD_WITH_CPP14_POLYFILLS "Force osgEarth to build with C++14 polyfills" OFF)
+if(OSGEARTH_BUILD_WITH_CPP14_POLYFILLS)
+    set(CMAKE_CXX_STANDARD 14)
+endif()
 
 # Detect out-of-source build. We'll need this for protobuf generated files.
 if (NOT "${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
