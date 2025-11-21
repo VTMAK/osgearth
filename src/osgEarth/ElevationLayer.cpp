@@ -26,7 +26,6 @@ ElevationLayer::Options::getConfig() const
 {
     Config conf = TileLayer::Options::getConfig();
     conf.set("vdatum", verticalDatum());
-    conf.set("reinterpret_as_vdatum", reinterpretAsVerticalDatum());
     conf.set("interpret_values_as_offsets", interpretValuesAsOffsets());
 
     conf.set("offset", interpretValuesAsOffsets()); // back compat
@@ -37,7 +36,6 @@ void
 ElevationLayer::Options::fromConfig( const Config& conf )
 {
     conf.get("vdatum", verticalDatum());
-    conf.get("reinterpret_as_vdatum", reinterpretAsVerticalDatum());
     conf.get("interpret_values_as_offsets", interpretValuesAsOffsets());
 
     conf.get("vsrs", verticalDatum()); // back compat
@@ -144,18 +142,6 @@ ElevationLayer::getInterpretValuesAsOffsets() const
 }
 
 void
-ElevationLayer::setReinterpretAsVerticalDatum(const std::string& value)
-{
-    setOptionThatRequiresReopen(options().reinterpretAsVerticalDatum(), value);
-}
-
-const std::string&
-ElevationLayer::getReinterpretAsVerticalDatum() const
-{
-    return options().reinterpretAsVerticalDatum().value();
-}
-
-void
 ElevationLayer::normalizeNoDataValues(osg::HeightField* hf) const
 {
     if ( hf )
@@ -178,13 +164,7 @@ ElevationLayer::applyProfileOverrides(osg::ref_ptr<const Profile>& inOutProfile)
     if (inOutProfile.valid())
     {
         // Check for a vertical datum spec.
-
-        // First check the reinterpreter:
-        std::string vdatum = options().reinterpretAsVerticalDatum().getOrUse({});
-
-        // Failing that check the metadata property:
-        if (vdatum.empty())
-            vdatum = options().verticalDatum().getOrUse({});
+        std::string vdatum = options().verticalDatum().getOrUse({});
 
         if (!vdatum.empty())
         {
@@ -358,7 +338,7 @@ ElevationLayer::createHeightField(const TileKey& key)
 
 GeoHeightField
 ElevationLayer::createHeightField(const TileKey& key, ProgressCallback* progress)
-{    
+{
     OE_PROFILING_ZONE;
     OE_PROFILING_ZONE_TEXT(getName());
     OE_PROFILING_ZONE_TEXT(key.str());
@@ -385,6 +365,8 @@ ElevationLayer::createHeightField(const TileKey& key, ProgressCallback* progress
 GeoHeightField
 ElevationLayer::createHeightFieldInKeyProfile(const TileKey& key, ProgressCallback* progress)
 {
+    OE_SOFT_ASSERT_AND_RETURN(getCacheSettings(), {});
+
     GeoHeightField result;
     osg::ref_ptr<osg::HeightField> hf;
 
@@ -732,13 +714,6 @@ ElevationLayerVector::populateHeightField(
             {
                 useLayer = false;
             }
-
-            // GW - this was wrong because it would exclude layers with a maxDataLevel set
-            // below the requested LOD ... when in fact we need around for fallback.
-            //if ( !layer->isKeyInLegalRange(key) )
-            //{
-            //    useLayer = false;
-            //}
 
             // Find the "best available" mapped key from the tile source:
             else

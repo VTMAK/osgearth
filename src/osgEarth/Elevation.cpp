@@ -7,21 +7,39 @@
 #include <osgEarth/Registry>
 #include <osgEarth/Map>
 #include <osgEarth/Progress>
-#include <osgEarth/Metrics>
+#include <osgEarth/Math>
+#include <unordered_map>
+#include <array>
+
+// for OSGEARTH_USE_16BIT_ELEVATION_TEXTURES
+#include <osgEarth/BuildConfig>
 
 using namespace osgEarth;
 
-//#define USE_RUGGEDNESS
+// NOTE: if you change this, don't forget to change the decoding in the SDK shaders as well!
+#ifdef OSGEARTH_USE_16BIT_ELEVATION_TEXTURES
+    //#define ELEV_PIXEL_FORMAT GL_RG
+    //#define ELEV_INTERNAL_FORMAT GL_RG8
+    //#define ELEV_DATA_TYPE GL_UNSIGNED_BYTE
+    #define ELEV_PIXEL_FORMAT GL_RED
+    #define ELEV_INTERNAL_FORMAT GL_R16
+    #define ELEV_DATA_TYPE GL_UNSIGNED_SHORT
+#else
+    #define ELEV_PIXEL_FORMAT GL_RED
+    #define ELEV_INTERNAL_FORMAT GL_R32F
+    #define ELEV_DATA_TYPE GL_FLOAT
+#endif
 
 osg::Texture*
-osgEarth::createEmptyElevationTexture()
+osgEarth::createEmptyElevationTile()
 {
     osg::Image* image = new osg::Image();
-    image->allocateImage(1, 1, 1, GL_RED, GL_FLOAT);
-    image->setInternalTextureFormat(GL_R32F);
-    *((GLfloat*)image->data()) = 0.0f;
+    image->allocateImage(1, 1, 1, ELEV_PIXEL_FORMAT, ELEV_DATA_TYPE);
+    image->setInternalTextureFormat(ELEV_INTERNAL_FORMAT);
+    ImageUtils::PixelWriter write(image);
+    write(osg::Vec4f(0.0f, 0.0f, 0.0f, 0.0f), 0, 0); // zero out
     osg::Texture2D* tex = new osg::Texture2D(image);
-    tex->setInternalFormat(GL_R32F);
+    tex->setInternalFormat(ELEV_INTERNAL_FORMAT);
     tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
     tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
     tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
@@ -36,11 +54,9 @@ osgEarth::createEmptyNormalMapTexture()
     image->allocateImage(1, 1, 1, GL_RG, GL_UNSIGNED_BYTE);
     image->setInternalTextureFormat(GL_RG8);
     ImageUtils::PixelWriter write(image);
-    osg::Vec4 packed;
-    NormalMapGenerator::pack(osg::Vec3(0,0,1), packed);
-    write(packed, 0, 0);
+    write(osg::Vec4(0.5f, 0.5f, 0.0f, 0.0f), 0, 0); // BC5 octahedral encoded Z-up
     osg::Texture2D* tex = new osg::Texture2D(image);
-    tex->setInternalFormat(GL_RG8);
+    tex->setInternalFormat(image->getInternalTextureFormat());
     tex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
     tex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
     tex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
@@ -48,60 +64,116 @@ osgEarth::createEmptyNormalMapTexture()
     return tex;
 }
 
-ElevationTexture::ElevationTexture(
-    const TileKey& key,
-    const GeoHeightField& in_hf,
-    const std::vector<float>& resolutions) :
-
+ElevationTile::ElevationTile(const TileKey& key, const GeoHeightField& in_hf, std::vector<float>&& resolutions) :
     _tilekey(key),
     _extent(in_hf.getExtent()),
     _resolutions(std::move(resolutions))
 {
-    setName(key.str() + ":elevation");
-
     if (in_hf.valid())
     {
         _heightField = in_hf.getHeightField();
 
+        _maxima = { in_hf.getMinHeight(), in_hf.getMaxHeight() };
+
         osg::Vec4 value;
 
+        // Encode elevation as a 2-channel texture, RG, where R = high byte and G = low byte of a 16-bit integer.
+        // The 16-bit integer is a normalized value between 0 and 65535, where 0 corresponds to the minimum height
+        // and 65535 corresponds to the maximum height as encoded in the tile metadata.
         osg::Image* heights = new osg::Image();
-        heights->allocateImage(_heightField->getNumColumns(), _heightField->getNumRows(), 1, GL_RED, GL_FLOAT);
-        heights->setInternalTextureFormat(GL_R32F);
+        heights->allocateImage(_heightField->getNumColumns(), _heightField->getNumRows(), 1, ELEV_PIXEL_FORMAT, ELEV_DATA_TYPE);
+        heights->setInternalTextureFormat(ELEV_INTERNAL_FORMAT);
 
-        // Copy the float height data into the image
-        memcpy(heights->data(), _heightField->getHeightList().data(), sizeof(float) * _heightField->getNumRows() * _heightField->getNumColumns());
+        _allHeightsAtNativeResolution = true;
+        float nativeRes = _heightField->getYInterval(); // assume square pixels
 
-        setImage(heights);
+        if (heights->getPixelFormat() == GL_RED && heights->getDataType() == GL_UNSIGNED_SHORT)
+        {
+            // GL_RED/SHORT = 16-bit encoded relative height values (0..1 from min to max)
+            auto* data = reinterpret_cast<GLshort*>(heights->data());
+            unsigned rp = 0;
+            for (auto h : _heightField->getHeightList())
+            {
+                float t = (h - _maxima.first) / (_maxima.second - _maxima.first);
+                *data++ = (GLushort)(65535.0f * t);
 
-        setDataVariance(osg::Object::STATIC);
-        setInternalFormat(GL_R32F);
-        setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-        setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
-        setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
-        setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-        setResizeNonPowerOfTwoHint(false);
-        setMaxAnisotropy(1.0f);
+                // in the meantime determine whether this tile is native resolution.
+                if (_allHeightsAtNativeResolution && !_resolutions.empty() && !osgEarth::equivalent(_resolutions[rp++], nativeRes))
+                {
+                    _allHeightsAtNativeResolution = false;
+                }
+            }
+
+            _encoding = Encoding::R16;
+        }
+        else if (heights->getPixelFormat() == GL_RG)
+        {
+            // GL_RG = 16-bit encoded relative height values (0..1 from min to max)
+            auto* data = heights->data();
+            unsigned rp = 0;
+            for (auto h : _heightField->getHeightList())
+            {
+                float t = (h - _maxima.first) / (_maxima.second - _maxima.first);
+                int ti = (int)(65535.0f * t);
+                *data++ = (std::int8_t)((ti >> 8) & 0xFF); // high byte
+                *data++ = (std::int8_t)(ti & 0xFF); // low byte
+
+                // in the meantime determine whether this tile is native resolution.
+                if (_allHeightsAtNativeResolution && !_resolutions.empty() && !osgEarth::equivalent(_resolutions[rp++], nativeRes))
+                {
+                    _allHeightsAtNativeResolution = false;
+                }
+            }
+
+            _encoding = Encoding::RG8;
+        }
+        else // GL_R32F
+        {
+            memcpy(heights->data(), _heightField->getHeightList().data(), sizeof(float) * _heightField->getNumRows() * _heightField->getNumColumns());
+
+            // native res detection
+            for (unsigned rp = 0; rp < _resolutions.size(); ++rp)
+            {
+                if (!osgEarth::equivalent(_resolutions[rp], nativeRes))
+                {
+                    _allHeightsAtNativeResolution = false;
+                    break;
+                }
+            }
+
+            _encoding = Encoding::R32F;
+        }
+
+        // Can't compress the elevation because it will no longer match up 
+        // at the tile seams due to the lossy compression of BC5 or BC7.
+        //ImageUtils::compressImageInPlace(heights);
+
+        _elevationTex = new osg::Texture2D(heights);
+        _elevationTex->setName(key.str() + ":elevation");
+
+        _elevationTex->setDataVariance(osg::Object::STATIC);
+        _elevationTex->setInternalFormat(heights->getInternalTextureFormat());
+        _elevationTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
+        _elevationTex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
+        _elevationTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+        _elevationTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+        _elevationTex->setResizeNonPowerOfTwoHint(false);
+        _elevationTex->setMaxAnisotropy(1.0f);
 
         // Pooled, so never expire them.
-        setUnRefImageDataAfterApply(false);
+        _elevationTex->setUnRefImageDataAfterApply(false);
 
-        _read.setTexture(this);
+        _read.setTexture(_elevationTex.get());
         _read.setSampleAsTexture(false);
 
         _resolution = Distance(
-            getExtent().height() / ((double)(getImage(0)->t()-1)),
+            getExtent().height() / ((double)(heights->t() - 1)),
             getExtent().getSRS()->getUnits());
     }
 }
 
-ElevationTexture::~ElevationTexture()
-{
-    //nop
-}
-
 ElevationSample
-ElevationTexture::getElevation(double x, double y) const
+ElevationTile::getElevation(double x, double y) const
 {
     double u = (x - getExtent().xMin()) / getExtent().width();
     double v = (y - getExtent().yMin()) / getExtent().height();
@@ -109,17 +181,8 @@ ElevationTexture::getElevation(double x, double y) const
     return getElevationUV(u, v);
 }
 
-ElevationSample
-ElevationTexture::getElevationUV(double u, double v) const
-{
-    osg::Vec4 value;
-    u = osg::clampBetween(u, 0.0, 1.0), v = osg::clampBetween(v, 0.0, 1.0);
-    _read(value, u, v);
-    return ElevationSample(Distance(value.r(),Units::METERS), _resolution);
-}
-
 osg::Vec3
-ElevationTexture::getNormal(double x, double y) const
+ElevationTile::getNormal(double x, double y) const
 {
     osg::Vec3 normal(0,0,1);
 
@@ -127,77 +190,22 @@ ElevationTexture::getNormal(double x, double y) const
     {
         double u = (x - getExtent().xMin()) / getExtent().width();
         double v = (y - getExtent().yMin()) / getExtent().height();
-        osg::Vec4 value;
-        _readNormal(value, u, v);
-        NormalMapGenerator::unpack(value, normal);
+        osg::Vec4 value = _readNormal(u, v);
+        normal.set(value.r(), value.g(), value.b());
     }
     return normal;
 }
 
 void
-ElevationTexture::getPackedNormal(double x, double y, osg::Vec4& packed)
-{    
-    if (_readNormal.valid())
-    {
-        double u = (x - getExtent().xMin()) / getExtent().width();
-        double v = (y - getExtent().yMin()) / getExtent().height();
-        _readNormal(packed, u, v);
-    }
-    else
-    {
-        packed.set(0.0f, 0.0f, 0.0f, 0.0f);
-    }
-}
-
-float
-ElevationTexture::getRuggedness(double x, double y) const
-{
-    float result = 0.0f;
-    if (_readRuggedness.valid())
-    {
-        double u = (x - getExtent().xMin()) / getExtent().width();
-        double v = (y - getExtent().yMin()) / getExtent().height();
-        osg::Vec4 value;
-        _readRuggedness(value, u, v);
-        result = value.r();
-    }
-    return result;
-}
-
-osg::Texture2D*
-ElevationTexture::getNormalMapTexture() const
-{
-    return _normalTex.get();
-}
-
-void
-ElevationTexture::generateNormalMap(
-    const Map* map,
-    void* workingSet,
-    ProgressCallback* progress)
+ElevationTile::generateNormalMap(const Map* map, unsigned tileSize, void* workingSet, ProgressCallback* progress)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
     if (!_normalTex.valid())
-    {        
-#ifdef USE_RUGGEDNESS
-        if (!_ruggedness.valid())
-        {
-            _ruggedness = new osg::Image();
-            _ruggedness->allocateImage(_read.s(), _read.t(), 1, GL_RED, GL_UNSIGNED_BYTE);
-            _readRuggedness.setImage(_ruggedness.get());
-            _readRuggedness.setBilinear(true);
-        }
-#endif
-
+    {
         NormalMapGenerator gen;
 
-        _normalTex = gen.createNormalMap(
-            getTileKey(),
-            map,
-            workingSet,
-            _ruggedness.get(),
-            progress);
+        _normalTex = gen.createNormalMap(getTileKey(), map, tileSize, allHeightsAtNativeResolution(), workingSet, progress);
 
         if (_normalTex.valid())
         {
@@ -217,174 +225,394 @@ ElevationTexture::generateNormalMap(
 #undef LC
 #define LC "[NormalMapGenerator] "
 
-#if 1
 osg::Texture2D*
-NormalMapGenerator::createNormalMap(
-    const TileKey& key,
-    const Map* map,
-    void* ws,
-    osg::Image* ruggedness,
-    ProgressCallback* progress)
+NormalMapGenerator::createNormalMap(const TileKey& key, const Map* map, unsigned tileSize,
+    bool nativeResolutionFastPath, void* ws, ProgressCallback* progress)
 {
     if (!map)
         return NULL;
 
-    OE_PROFILING_ZONE;
+    const bool compress = true;
+
+    // the sampling goes a LOT faster if the normal map size is the same as the elevation tile size,
+    // since there are fewer unique samples to take.
+    // It is actually (must) faster to sample 1/4 the points and then resize the image to 256x256 later
+    // during the compression stage.
+
+    if (tileSize == 0)
+        tileSize = compress ? 256 : ELEVATION_TILE_SIZE;
 
     ElevationPool::WorkingSet* workingSet = static_cast<ElevationPool::WorkingSet*>(ws);
 
     osg::ref_ptr<osg::Image> image = new osg::Image();
-    image->allocateImage(ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE, 1, GL_RG, GL_UNSIGNED_BYTE);
+    image->allocateImage(tileSize, tileSize, 1, GL_RG, GL_UNSIGNED_BYTE);
     image->setInternalTextureFormat(GL_RG8);
-
-    ElevationPool* pool = map->getElevationPool();
-
     ImageUtils::PixelWriter write(image.get());
 
-    ImageUtils::PixelWriter writeRuggedness(ruggedness);
-
-    osg::Vec3 normal;
-    osg::Vec2 packedNormal;
-    osg::Vec4 pixel;
-
-    GeoPoint
-        north(key.getProfile()->getSRS()),
-        south(key.getProfile()->getSRS()),
-        east(key.getProfile()->getSRS()),
-        west(key.getProfile()->getSRS());
-
-    osg::Vec3 a[4];
+    ElevationPool* pool = map->getElevationPool();
 
     const GeoExtent& ex = key.getExtent();
 
     // fetch the base tile in order to get resolutions data.
-    osg::ref_ptr<ElevationTexture> heights;
-    pool->getTile(key, true, heights, workingSet, progress);
+    osg::ref_ptr<ElevationTile> heights;
+    pool->getTile(key, false, heights, workingSet, progress); // no fallback!
 
     if (!heights.valid())
-        return NULL;
-
-    // build the sample set.
-    std::vector<osg::Vec4d> points(write.s() * write.t() * 4);
-    int p = 0;
-    for (int t = 0; t < write.t(); ++t)
-    {
-        double v = (double)t / (double)(write.t() - 1);
-        double y = ex.yMin() + v * ex.height();
-        east.y() = y;
-        west.y() = y;
-
-        for (int s = 0; s < write.s(); ++s)
-        {
-            double u = (double)s / (double)(write.s() - 1);
-            double x = ex.xMin() + u * ex.width();
-            north.x() = x;
-            south.x() = x;
-
-            double r = heights->getResolution(s, t);
-
-            east.x() = x + r;
-            west.x() = x - r;
-            north.y() = y + r;
-            south.y() = y - r;
-
-            points[p++].set(west.x(), west.y(), 0.0, r);
-            points[p++].set(east.x(), east.y(), 0.0, r);
-            points[p++].set(south.x(), south.y(), 0.0, r);
-            points[p++].set(north.x(), north.y(), 0.0, r);
-        }
-    }
-
-    int sampleOK = map->getElevationPool()->sampleMapCoords(
-        points.begin(), points.end(),
-        workingSet,
-        progress);
-
-    if (progress && progress->isCanceled())
-    {
-        // canceled. Bail.
-        return NULL;
-    }
-
-    if (sampleOK < 0)
-    {
-        OE_WARN << LC << "Internal error - contact support" << std::endl;
-        return NULL;
-    }
+        return nullptr;
 
     auto* srs = key.getProfile()->getSRS();
-    Distance res(0.0, srs->getUnits());
-    double dx, dy;
-    osg::Vec4 riPixel;
+    Distance res(heights->getHeightField()->getXInterval(), srs->getUnits());
+    double dy = srs->transformDistance(res, Units::METERS);
 
-    for (int t = 0; t < write.t(); ++t)
+    // if we are assuming that all data in the tile is native resolution, we can use the tile
+    // directly to sample points and create normals (except along the edges). This is way
+    // faster than sending all the points to the elevation pool for sampling.
+    if (nativeResolutionFastPath)
     {
-        double v = (double)t / (double)(write.t() - 1);
-        double y_or_lat = ex.yMin() + v * ex.height();
+        double x0 = ex.xMin();
+        double y0 = ex.yMin();
+        double x1 = ex.xMax();
+        double y1 = ex.yMax();
+        osg::Vec3 normal;
+        std::array<osg::Vec3, 4> a;
+        double z_west = 0.0, z_east = 0.0, z_north = 0.0, z_south = 0.0;
+        double du = 1.0 / (double)(tileSize - 1);
+        double dv = 1.0 / (double)(tileSize - 1);
 
-        for (int s = 0; s < write.s(); ++s)
+        // Process interior pixels only (excluding edges that need external sampling)
+        for (int t = 1; t < tileSize - 1; ++t)
         {
-            int p = (4 * write.s() * t + 4 * s);
+            double v = (double)t / (double)(tileSize - 1);
+            double y_or_lat = ex.yMin() + v * ex.height();
 
-            res.set(points[p].w(), res.getUnits());
-            dx = srs->transformDistance(res, Units::METERS, y_or_lat);
-            dy = srs->transformDistance(res, Units::METERS, 0.0);
-            //dx = res.asDistance(Units::METERS, y_or_lat);
-            //dy = res.asDistance(Units::METERS, 0.0);
-
-            riPixel.r() = 0.0f;
-
-            // only attempt to create a normal vector if all the data is valid:
-            // a valid resolution value and four valid corner points.
-            if (res.getValue() != FLT_MAX &&
-                points[p + 0].z() != NO_DATA_VALUE &&
-                points[p + 1].z() != NO_DATA_VALUE &&
-                points[p + 2].z() != NO_DATA_VALUE &&
-                points[p + 3].z() != NO_DATA_VALUE)
+            for (int s = 1; s < tileSize - 1; ++s)
             {
-                a[0].set(-dx, 0, points[p + 0].z());
-                a[1].set(dx, 0, points[p + 1].z());
-                a[2].set(0, -dy, points[p + 2].z());
-                a[3].set(0, dy, points[p + 3].z());
+                double u = (double)s / (double)(tileSize - 1);
+                double x_or_lon = ex.xMin() + u * ex.width();
 
-                normal = (a[1] - a[0]) ^ (a[3] - a[2]);
-                normal.normalize();
+                // For interior pixels, all neighbors are within the tile
+                z_west = heights->getRawElevationUV(u - du, v);
+                z_east = heights->getRawElevationUV(u + du, v);
+                z_north = heights->getRawElevationUV(u, v + dv);
+                z_south = heights->getRawElevationUV(u, v - dv);
 
-                if (ruggedness)
+                double dx = srs->transformDistance(res, Units::METERS, y_or_lat);
+
+                // only attempt to create a normal vector if all the data is valid:
+                // four valid corner points.
+                if (z_west != NO_DATA_VALUE && z_east != NO_DATA_VALUE && z_north != NO_DATA_VALUE && z_south != NO_DATA_VALUE)
                 {
-                    // rudimentary normalized ruggedness index
-                    riPixel.r() = 0.25 * (
-                        fabs(points[p + 0].z() - points[p + 3].z()) +
-                        fabs(points[p + 1].z() - points[p + 0].z()) +
-                        fabs(points[p + 2].z() - points[p + 1].z()) +
-                        fabs(points[p + 3].z() - points[p + 2].z()));
-                    riPixel.r() = clamp(riPixel.r() / (float)dy, 0.0f, 1.0f);
-                    riPixel.r() = harden(harden(riPixel.r()));
+                    a[0].set(-dx, 0, z_west);
+                    a[1].set(dx, 0, z_east);
+                    a[2].set(0, -dy, z_south);
+                    a[3].set(0, dy, z_north);
+                    normal = (a[1] - a[0]) ^ (a[3] - a[2]);
+                    normal.normalize();
                 }
-            }
-            else
-            {
-                normal.set(0, 0, 1);
-            }
+                else
+                {
+                    normal.set(0, 0, 1);
+                }
 
-            NormalMapGenerator::pack(normal, pixel);
-
-            // TODO: won't actually be written until we make the format GL_RGB
-            // but we need to rewrite the curvature generator first
-            //pixel.b() = 0.0f; // 0.5f*(1.0f+normalMap->getCurvature(s, t));
-
-            write(pixel, s, t);
-
-            if (ruggedness)
-            {
-                writeRuggedness(riPixel, s, t);
+                write(pack(normal), s, t);
             }
         }
+
+        // now do the edges by using the elevation pool.
+        struct Workspace
+        {
+            std::vector<osg::Vec4d> vectorToSample; // actual points we'll send to the elevation pool
+        };
+        static thread_local Workspace w;
+
+        w.vectorToSample.clear();
+        w.vectorToSample.reserve((tileSize+2) * 4);
+
+        double r = res.getValue();
+
+        // bottom row
+        for (int s = 0; s < tileSize; ++s)
+        {
+            double u = (double)s / (double)(tileSize - 1);
+            double x = ex.xMin() + u * ex.width();
+            w.vectorToSample.emplace_back(x, ex.yMin() - r, 0, r);
+        }
+        // top row
+        for (int s = 0; s < tileSize; ++s)
+        {
+            double u = (double)s / (double)(tileSize - 1);
+            double x = ex.xMin() + u * ex.width();
+            w.vectorToSample.emplace_back(x, ex.yMax() + r, 0, r);
+        }
+        // left column
+        for (int t = 0; t < tileSize; ++t)
+        {
+            double v = (double)t / (double)(tileSize - 1);
+            double y = ex.yMin() + v * ex.height();
+            w.vectorToSample.emplace_back(ex.xMin() - r, y, 0, r);
+        }
+        // right column
+        for (int t = 0; t < tileSize; ++t)
+        {
+            double v = (double)t / (double)(tileSize - 1);
+            double y = ex.yMin() + v * ex.height();
+            w.vectorToSample.emplace_back(ex.xMax() + r, y, 0, r);
+        }
+
+        int sampleOK = map->getElevationPool()->sampleMapCoords(
+            w.vectorToSample.begin(), w.vectorToSample.end(),
+            workingSet,
+            progress);
+
+        if (progress && progress->isCanceled())
+        {
+            // canceled. Bail.
+            return nullptr;
+        }
+
+        if (sampleOK < 0)
+        {
+            OE_WARN << LC << "Internal error - contact support" << std::endl;
+            return nullptr;
+        }
+
+        // Now compute normals for edge pixels using the sampled external data
+        // Data organization in w.vectorToSample:
+        // [0 to tileSize-1]: bottom row (y = yMin - dy) - tileSize points
+        // [tileSize to 2*tileSize-1]: top row (y = yMax + dy) - tileSize points
+        // [2*tileSize to 3*tileSize-1]: left column (x = xMin - dx) - tileSize points
+        // [3*tileSize to 4*tileSize-1]: right column (x = xMax + dx) - tileSize points
+
+        int bottomRowStart = 0;
+        int topRowStart = tileSize;
+        int leftColStart = 2 * tileSize;
+        int rightColStart = 3 * tileSize;
+
+        double dy = srs->transformDistance(res, Units::METERS, 0.0);
+
+        // Process all edge pixels
+        for (int t = 0; t < tileSize; ++t)
+        {
+            for (int s = 0; s < tileSize; ++s)
+            {
+                // Skip interior pixels - they were already processed
+                if (t > 0 && t < tileSize - 1 && s > 0 && s < tileSize - 1)
+                    continue;
+
+                double u = (double)s / (double)(tileSize - 1);
+                double v = (double)t / (double)(tileSize - 1);
+                double y_or_lat = ex.yMin() + v * ex.height();
+
+                double z_west, z_east, z_north, z_south;
+
+                // Get west elevation (one pixel to the left)
+                if (s == 0) {
+                    // Left edge: use sampled left column data (external point)
+                    int leftIdx = leftColStart + t;
+                    z_west = w.vectorToSample[leftIdx].z();
+                } else {
+                    // Interior: use tile data (internal point)
+                    z_west = heights->getRawElevationUV(u - du, v);
+                }
+
+                // Get east elevation (one pixel to the right)
+                if (s == tileSize - 1) {
+                    // Right edge: use sampled right column data (external point)
+                    int rightIdx = rightColStart + t;
+                    z_east = w.vectorToSample[rightIdx].z();
+                } else {
+                    // Interior: use tile data (internal point)
+                    z_east = heights->getRawElevationUV(u + du, v);
+                }
+
+                // Get south elevation (one pixel down)
+                if (t == 0) {
+                    // Bottom edge: use sampled bottom row data (external point)
+                    int bottomIdx = bottomRowStart + s;
+                    z_south = w.vectorToSample[bottomIdx].z();
+                } else {
+                    // Interior: use tile data (internal point)
+                    z_south = heights->getRawElevationUV(u, v - dv);
+                }
+
+                // Get north elevation (one pixel up)
+                if (t == tileSize - 1) {
+                    // Top edge: use sampled top row data (external point)
+                    int topIdx = topRowStart + s;
+                    z_north = w.vectorToSample[topIdx].z();
+                } else {
+                    // Interior: use tile data (internal point)
+                    z_north = heights->getRawElevationUV(u, v + dv);
+                }
+
+                // Use the same fixed dx that was used for sampling external points
+                // (In a perfect implementation, this should vary with latitude, but for
+                // consistency with the sampling, we use the fixed value from line 331)
+
+                double dx = srs->transformDistance(res, Units::METERS, y_or_lat);
+
+                // Compute normal if all data is valid
+                if (z_west != NO_DATA_VALUE && z_east != NO_DATA_VALUE && z_north != NO_DATA_VALUE && z_south != NO_DATA_VALUE)
+                {
+                    a[0].set(-dx, 0, z_west);
+                    a[1].set(+dx, 0, z_east);
+                    a[2].set(0, -dy, z_south);
+                    a[3].set(0, +dy, z_north);
+                    normal = (a[1] - a[0]) ^ (a[3] - a[2]);
+                    normal.normalize();
+                }
+                else
+                {
+                    normal.set(0, 0, 1);
+                }
+
+                write(pack(normal), s, t);
+            }
+        }
+    }
+
+    else
+    {
+        struct Point {
+            double x, y;
+        };
+
+        struct PointHash {
+            inline std::size_t operator()(const Point& k) const {
+                auto h1 = std::hash<double>()(k.x);
+                auto h2 = std::hash<double>()(k.y);
+                return h1 ^ (h2 << 1);
+            }
+        };
+        struct PointEquals {
+            inline bool operator()(const Point& lhs, const Point& rhs) const {
+                return lhs.x == rhs.x && lhs.y == rhs.y;
+            }
+        };
+
+        struct Workspace {
+            std::unordered_map<Point, int, PointHash, PointEquals> uniquePoints; // map a point to its index in vectorToSample
+            std::vector<osg::Vec4d> vectorToSample; // actual points we'll send to the elevation pool
+            std::vector<int> rasterIndex; // maps the raster offset to an entry in vectorToSample.
+        };
+        static thread_local Workspace w;
+
+        w.uniquePoints.clear();
+        w.vectorToSample.clear();
+        w.vectorToSample.reserve(write.s() * write.t() * 4);
+        w.rasterIndex.clear();
+        w.rasterIndex.reserve(write.s() * write.t() * 4);
+
+        for (int t = 0; t < write.t(); ++t)
+        {
+            double v = (double)t / (double)(write.t() - 1);
+            double y = ex.yMin() + v * ex.height();
+
+            for (int s = 0; s < write.s(); ++s)
+            {
+                double u = (double)s / (double)(write.s() - 1);
+                double x = ex.xMin() + u * ex.width();
+                double r = heights->getResolution(s, t);
+
+                {
+                    auto [iter, isNew] = w.uniquePoints.emplace(Point{ x - r, y }, (int)w.vectorToSample.size());
+                    if (isNew) w.vectorToSample.emplace_back(x - r, y, 0, r);
+                    w.rasterIndex.emplace_back(iter->second);
+                }
+                {
+                    auto [iter, isNew] = w.uniquePoints.emplace(Point{ x + r, y }, (int)w.vectorToSample.size());
+                    if (isNew) w.vectorToSample.emplace_back(x + r, y, 0, r);
+                    w.rasterIndex.emplace_back(iter->second);
+                }
+                {
+                    auto [iter, isNew] = w.uniquePoints.emplace(Point{ x, y - r }, (int)w.vectorToSample.size());
+                    if (isNew) w.vectorToSample.emplace_back(x, y - r, 0, r);
+                    w.rasterIndex.emplace_back(iter->second);
+                }
+                {
+                    auto [iter, isNew] = w.uniquePoints.emplace(Point{ x, y + r }, (int)w.vectorToSample.size());
+                    if (isNew) w.vectorToSample.emplace_back(x, y + r, 0, r);
+                    w.rasterIndex.emplace_back(iter->second);
+                }
+            }
+        }
+
+        int sampleOK = map->getElevationPool()->sampleMapCoords(
+            w.vectorToSample.begin(), w.vectorToSample.end(),
+            workingSet,
+            progress);
+
+        if (progress && progress->isCanceled())
+        {
+            // canceled. Bail.
+            return NULL;
+        }
+
+        if (sampleOK < 0)
+        {
+            OE_WARN << LC << "Internal error - contact support" << std::endl;
+            return NULL;
+        }
+
+        osg::Vec3 normal;
+        std::array<osg::Vec3, 4> a;
+        auto* srs = key.getProfile()->getSRS();
+        Distance res(0.0, srs->getUnits());
+        double dx, dy;
+        double z_west, z_east, z_south, z_north;
+
+        unsigned p = 0;
+
+        for (int t = 0; t < write.t(); ++t)
+        {
+            double v = (double)t / (double)(write.t() - 1);
+            double y_or_lat = ex.yMin() + v * ex.height();
+
+            for (int s = 0; s < write.s(); ++s)
+            {
+                auto sampleRes = w.vectorToSample[w.rasterIndex[p]].w();
+                z_west = w.vectorToSample[w.rasterIndex[p++]].z();
+                z_east = w.vectorToSample[w.rasterIndex[p++]].z();
+                z_south = w.vectorToSample[w.rasterIndex[p++]].z();
+                z_north = w.vectorToSample[w.rasterIndex[p++]].z();
+
+                res.set(sampleRes, res.getUnits());
+                dx = srs->transformDistance(res, Units::METERS, y_or_lat);
+                dy = srs->transformDistance(res, Units::METERS, 0.0);
+
+                // only attempt to create a normal vector if all the data is valid:
+                // a valid resolution value and four valid corner points.
+                if (res.getValue() != FLT_MAX &&
+                    z_west != NO_DATA_VALUE && z_east != NO_DATA_VALUE && z_south != NO_DATA_VALUE && z_north != NO_DATA_VALUE)
+                {
+                    a[0].set(-dx, 0, z_west);
+                    a[1].set(+dx, 0, z_east);
+                    a[2].set(0, -dy, z_south);
+                    a[3].set(0, +dy, z_north);
+
+                    normal = (a[1] - a[0]) ^ (a[3] - a[2]);
+                    normal.normalize();
+                }
+                else
+                {
+                    normal.set(0, 0, 1);
+                }
+
+                write(pack(normal), s, t);
+            }
+        }
+    }
+
+    if (compress)
+    {
+        // compress the image (using BC5/RGTC2) and generate mipmaps.
+        ImageUtils::compressImageInPlace(image.get());
     }
 
     osg::Texture2D* normalTex = new osg::Texture2D(image.get());
 
-    normalTex->setInternalFormat(GL_RG8);
+    normalTex->setDataVariance(osg::Object::STATIC);
+    normalTex->setInternalFormat(image->getInternalTextureFormat());
     normalTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
     normalTex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR_MIPMAP_LINEAR);
     normalTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
@@ -392,282 +620,7 @@ NormalMapGenerator::createNormalMap(
     normalTex->setResizeNonPowerOfTwoHint(false);
     normalTex->setMaxAnisotropy(1.0f);
     normalTex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
-    ImageUtils::mipmapImageInPlace(image.get());
 
     return normalTex;
 }
-#else
 
-namespace
-{
-    inline bool fastContains(const GeoExtent& b, const osg::Vec3d& sample)
-    {
-        return
-            sample.x() >= b.xMin() && sample.x() <= b.xMax() &&
-            sample.y() >= b.yMin() && sample.y() <= b.yMax();
-    }
-}
-
-osg::Texture2D*
-NormalMapGenerator::createNormalMap(
-    const TileKey& key,
-    const Map* map,
-    void* ws,
-    osg::Image* ruggedness,
-    ProgressCallback* progress)
-{
-    if (!map)
-        return NULL;
-
-    OE_PROFILING_ZONE;
-
-    ElevationPool::WorkingSet* workingSet = static_cast<ElevationPool::WorkingSet*>(ws);
-
-    osg::ref_ptr<osg::Image> image = new osg::Image();
-    image->allocateImage(
-        ELEVATION_TILE_SIZE, ELEVATION_TILE_SIZE, 1,
-        GL_RG, GL_UNSIGNED_BYTE);
-
-    ElevationPool* pool = map->getElevationPool();
-
-    ImageUtils::PixelWriter write(image.get());
-
-    ImageUtils::PixelWriter writeRuggedness(ruggedness);
-
-    osg::Vec3 normal;
-    osg::Vec2 packedNormal;
-    osg::Vec4 pixel;
-
-    const GeoExtent& ex = key.getExtent();
-
-    osg::ref_ptr<ElevationTexture> centerTexture;
-    pool->getTile(key, true, centerTexture, workingSet, progress);
-
-    if (!centerTexture.valid())
-        return NULL;
-
-
-    TileKey westKey = key.createNeighborKey(-1, 0);
-    TileKey eastKey = key.createNeighborKey(1, 0);
-    TileKey northKey = key.createNeighborKey(0, -1);
-    TileKey southKey = key.createNeighborKey(0, 1);
-    TileKey parentKey = key.createParentKey();
-
-    osg::ref_ptr<ElevationTexture> westTexture, eastTexture, northTexture, southTexture, parentTexture;
-    if (westKey.valid())
-    {
-        pool->getTile(westKey, false, westTexture, workingSet, progress);
-    }
-    if (eastKey.valid())
-    {
-        pool->getTile(eastKey, false, eastTexture, workingSet, progress);
-    }
-    if (southKey.valid())
-    {
-        pool->getTile(southKey, false, southTexture, workingSet, progress);
-    }
-    if (northKey.valid())
-    {
-        pool->getTile(northKey, false, northTexture, workingSet, progress);
-    }
-
-    if (parentKey.valid())
-    {
-        // We always want a parent key, should we have the accept lower lods to true or false?
-        pool->getTile(parentKey, true, parentTexture, workingSet, progress);
-    }
-
-    if (progress && progress->isCanceled())
-    {
-        return NULL;
-    }
-
-    osg::Texture2D* normalTex = new osg::Texture2D(image.get());
-
-    normalTex->setInternalFormat(GL_RG8);
-    normalTex->setFilter(osg::Texture::MAG_FILTER, osg::Texture::LINEAR);
-    normalTex->setFilter(osg::Texture::MIN_FILTER, osg::Texture::LINEAR);
-    normalTex->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
-    normalTex->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
-    normalTex->setResizeNonPowerOfTwoHint(false);
-    normalTex->setMaxAnisotropy(1.0f);
-    normalTex->setUnRefImageDataAfterApply(Registry::instance()->unRefImageDataAfterApply().get());
-    normalTex->setUnRefImageDataAfterApply(false);
-
-    // Generate the normal map directly from the heightfield
-    Distance res((float)key.getResolution(centerTexture->getImage()->s()).second, key.getProfile()->getSRS()->getUnits());
-
-    GeoHeightField centerHF(centerTexture->getHeightField(), centerTexture->getExtent());
-
-    GeoHeightField westHF, eastHF, northHF, southHF, parentHF;
-    if (westTexture)
-    {
-        westHF = GeoHeightField(westTexture->getHeightField(), westTexture->getExtent());
-    }
-    if (eastTexture)
-    {
-        eastHF = GeoHeightField(eastTexture->getHeightField(), eastTexture->getExtent());
-    }
-    if (southTexture)
-    {
-        southHF = GeoHeightField(southTexture->getHeightField(), southTexture->getExtent());
-    }
-    if (northTexture)
-    {
-        northHF = GeoHeightField(northTexture->getHeightField(), northTexture->getExtent());
-    }
-    if (parentTexture)
-    {
-        parentHF = GeoHeightField(parentTexture->getHeightField(), parentTexture->getExtent());
-    }
-
-    if (parentTexture)
-    {
-        parentTexture->generateNormalMap(map, ws, nullptr);
-    }
-
-    double dx = centerHF.getXInterval();
-    double dy = centerHF.getYInterval();
-
-    for (unsigned int r = 0; r < centerHF.getHeightField()->getNumRows(); ++r)
-    {
-        double y_or_lat = ex.yMin() + dy * (double)r;
-
-        for (unsigned int c = 0; c < centerHF.getHeightField()->getNumColumns(); ++c)
-        {
-            double x = ex.xMin() + dx * (double)c;
-
-            double pixelResolution = centerTexture->getResolution(c, r);
-
-            if (pixelResolution == res.getValue())
-            {
-                res.set(pixelResolution, res.getUnits());
-
-                double offsetX = res.asDistance(Units::METERS, y_or_lat);
-                double offsetY = res.asDistance(Units::METERS, 0.0);
-
-                osg::Vec3 west(-offsetX, 0.0f, 0.0f);
-                osg::Vec3 east(offsetX, 0.0f, 0.0f);
-                osg::Vec3 north(0.0f, offsetY, 0.0f);
-                osg::Vec3 south(0.0f, -offsetY, 0.0f);
-
-                osg::Vec3d westSample(x - pixelResolution, y_or_lat, 0.0);
-                osg::Vec3d eastSample(x + pixelResolution, y_or_lat, 0.0);
-                osg::Vec3d northSample(x, y_or_lat + pixelResolution, 0.0);
-                osg::Vec3d southSample(x, y_or_lat - pixelResolution, 0.0);
-
-                // West
-                if (fastContains(centerHF.getExtent(), westSample))
-                {
-                    west.z() = centerHF.getElevation(westSample.x(), westSample.y());
-                }
-                else if (westTexture)
-                {
-                    west.z() = westHF.getElevation(westSample.x(), westSample.y());
-                }
-                else
-                {
-                    west.z() = parentHF.getElevation(westSample.x(), westSample.y());
-                }
-
-                // East                
-                if (fastContains(centerHF.getExtent(), eastSample))
-                {
-                    east.z() = centerHF.getElevation(eastSample.x(), eastSample.y());
-                }
-                else if (eastTexture)
-                {
-                    east.z() = eastHF.getElevation(eastSample.x(), eastSample.y());
-                }
-                else
-                {
-                    east.z() = parentHF.getElevation(eastSample.x(), eastSample.y());
-                }
-
-                // North
-                if (fastContains(centerHF.getExtent(), northSample))
-                {
-                    north.z() = centerHF.getElevation(northSample.x(), northSample.y());
-                }
-                else if (northTexture)
-                {
-                    north.z() = northHF.getElevation(northSample.x(), northSample.y());
-                }
-                else
-                {
-                    north.z() = parentHF.getElevation(northSample.x(), northSample.y());
-                }
-
-                // South
-                if (fastContains(centerHF.getExtent(), southSample))
-                {
-                    south.z() = centerHF.getElevation(southSample.x(), southSample.y());
-                }
-                else if (southTexture)
-                {
-                    south.z() = southHF.getElevation(southSample.x(), southSample.y());
-                }
-                else
-                {
-                    south.z() = parentHF.getElevation(southSample.x(), southSample.y());
-                }
-
-                osg::Vec3 normal = (east - west) ^ (north - south);
-                normal.normalize();
-                osg::Vec4 packed;
-                NormalMapGenerator::pack(normal, packed);
-                write(packed, c, r);
-            }
-            else
-            {
-                if (parentTexture)
-                {
-                    osg::Vec4 packed;
-                    parentTexture->getPackedNormal(x, y_or_lat, packed);
-                    write(packed, c, r);
-                }
-                else
-                {
-                    osg::Vec3 normal(1, 0, 0);
-                    normal.normalize();
-                    osg::Vec4 packed;
-                    NormalMapGenerator::pack(normal, packed);
-                    write(packed, c, r);
-                }
-            }
-        }
-    }
-
-    return normalTex;
-}
-#endif
-
-void
-NormalMapGenerator::pack(const osg::Vec3& n, osg::Vec4& p)
-{
-    // octohodreal normal packing
-    float d = 1.0/(fabs(n.x())+fabs(n.y())+fabs(n.z()));
-    p.x() = n.x() * d;
-    p.y() = n.y() * d;
-
-    if (n.z() < 0.0)
-    {
-        p.x() = (1.0 - fabs(p.y())) * (p.x() >= 0.0? 1.0 : -1.0);
-        p.y() = (1.0 - fabs(p.x())) * (p.y() >= 0.0? 1.0 : -1.0);
-    }
-
-    p.x() = 0.5f*(p.x()+1.0f);
-    p.y() = 0.5f*(p.y()+1.0f);
-}
-
-void
-NormalMapGenerator::unpack(const osg::Vec4& packed, osg::Vec3& normal)
-{
-    normal.x() = packed.x()*2.0-1.0;
-    normal.y() = packed.y()*2.0-1.0;
-    normal.z() = 1.0-fabs(normal.x())-fabs(normal.y());
-    float t = osg::clampBetween(-normal.z(), 0.0f, 1.0f);
-    normal.x() += (normal.x() > 0)? -t : t;
-    normal.y() += (normal.y() > 0)? -t : t;
-    normal.normalize();
-}

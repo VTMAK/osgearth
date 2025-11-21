@@ -625,7 +625,7 @@ RexTerrainEngineNode::setupRenderBindings()
         elevation.usage() = SamplerBinding::ELEVATION;
         elevation.samplerName() = "oe_tile_elevationTex";
         elevation.matrixName() = "oe_tile_elevationTexMatrix";
-        elevation.setDefaultTexture(osgEarth::createEmptyElevationTexture());
+        elevation.setDefaultTexture(osgEarth::createEmptyElevationTile());
         elevation.getDefaultTexture()->setName("terrain default elevation");
 
         if (!GLUtils::useNVGL())
@@ -1404,12 +1404,6 @@ RexTerrainEngineNode::updateState()
             if (options.getEnableBlending())
             {
                 _surfaceSS->setDefine("OE_TERRAIN_BLEND_IMAGERY");
-            }
-
-            // Compressed normal maps
-            if (options.getCompressNormalMaps())
-            {
-                _surfaceSS->setDefine("OE_COMPRESSED_NORMAL_MAP");
             }
 
             // Morphing (imagery and terrain)

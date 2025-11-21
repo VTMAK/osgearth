@@ -7,6 +7,7 @@
 #include <osgEarth/Registry>
 #include <osgEarth/Feature>
 #include <osgDB/ReadFile>
+#include <mutex>
 
 using namespace osgEarth;
 
@@ -72,20 +73,16 @@ ScriptEngine::run(
 #define LC "[ScriptEngineFactory] "
 #define SCRIPT_ENGINE_OPTIONS_TAG "__osgEarth::ScriptEngineOptions"
 
-ScriptEngineFactory* ScriptEngineFactory::s_singleton = 0L;
-std::mutex ScriptEngineFactory::s_singletonMutex;
-
 ScriptEngineFactory*
 ScriptEngineFactory::instance()
 {
-    if ( !s_singleton )
-    {
-        std::lock_guard<std::mutex> lock(s_singletonMutex);
-        if ( !s_singleton )
-        {
-            s_singleton = new ScriptEngineFactory();
-        }
-    }
+    static std::once_flag s_once;
+    static ScriptEngineFactory* s_singleton = nullptr;
+
+    std::call_once(s_once, []() {
+        s_singleton = new ScriptEngineFactory();
+    });
+
     return s_singleton;
 }
 
@@ -170,4 +167,22 @@ ScriptEngineDriver::getScriptEngineOptions( const osgDB::ReaderWriter::Options* 
     static ScriptEngineOptions s_default;
     const void* data = options->getPluginData(SCRIPT_ENGINE_OPTIONS_TAG);
     return data ? *static_cast<const ScriptEngineOptions*>(data) : s_default;
+}
+
+
+
+std::string
+osgEarth::evaluateExpression(const std::string& expr, ScriptEngine* engine)
+{
+    OE_SOFT_ASSERT_AND_RETURN(engine, {});
+
+    // Evaluate the expression using the engine.
+    auto result = engine->run(expr);
+
+    if (result.success())
+        return result.asString();
+    else
+        OE_WARN << LC << "Expression evaluation failed: " << result.message() << std::endl;
+
+    return {};
 }

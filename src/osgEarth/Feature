@@ -9,10 +9,7 @@
 #include <osgEarth/Style>
 #include <osgEarth/GeoCommon>
 #include <osgEarth/SpatialReference>
-#include <osg/Array>
 #include <osg/Shape>
-#include <map>
-#include <list>
 #include <vector>
 
 namespace osgEarth
@@ -36,7 +33,7 @@ namespace osgEarth
         FeatureProfile(const Profile* tilingProfile);
 
         //! Copy ctor
-        FeatureProfile(const FeatureProfile& rhs);
+        FeatureProfile(const FeatureProfile& rhs) = default;
 
         //! Spatial extents of the features data
         void setExtent(const GeoExtent& value) { _extent = value; }
@@ -69,47 +66,46 @@ namespace osgEarth
 
         osg::ref_ptr< const osgEarth::Profile > _tilingProfile;
         GeoExtent _extent;
-        int _firstLevel;
-        int _maxLevel;
+        int _firstLevel = 0;
+        int _maxLevel = -1;
         optional<GeoInterpolation> _geoInterp;
     };
 
-    struct AttributeValueUnion
-    {
-        std::string stringValue;
-        double doubleValue;
-        long long intValue;
-        bool boolValue;
-        std::vector<double> doubleArrayValue;
-        bool set = false;
-    };
-
+    /** Featuer attribute types */
     enum AttributeType
     {
         ATTRTYPE_UNSPECIFIED,
         ATTRTYPE_STRING,
-        ATTRTYPE_INT,
         ATTRTYPE_DOUBLE,
-        ATTRTYPE_BOOL,
-        ATTRTYPE_DOUBLEARRAY
+        ATTRTYPE_INT,
+        ATTRTYPE_BOOL
     };
 
-    struct OSGEARTH_EXPORT AttributeValue
+    /** Union of attribute values. The order here must match that of AttributeType. */
+    using AttributeUnion = std::variant<std::monostate, std::string, double, long long, bool>;
+
+    /**
+    * A value of an attribute in a feature.
+    * This is a union type that can hold a string, double, int, or bool
+    * and includes some convenience getter methods.
+    */
+    struct OSGEARTH_EXPORT AttributeValue : public AttributeUnion
     {
-        AttributeType type;
-        AttributeValueUnion value;
         std::string getString() const;
         double getDouble(double defaultValue = 0.0) const;
         long long getInt(long long defaultValue = 0) const;
         bool getBool(bool defaultValue = false) const;
-        const std::vector<double>& getDoubleArrayValue() const;
+        inline AttributeType getType() const { return (AttributeType)index(); }
+        template<class T> inline bool is() const { return std::holds_alternative<T>(*this); }
+        template<class T> const T& get() const { return std::get<T>(*this); }
     };
 
     using AttributeTable = vector_map<std::string, AttributeValue>;
 
     using FeatureID = std::int64_t; // long long;
 
-    using FeatureSchema = std::map<std::string, AttributeType>;
+    // MUST be a vector_map to maintain attribute index order.
+    using FeatureSchema = vector_map<std::string, AttributeType>;
 
     class Feature;
 
@@ -131,17 +127,17 @@ namespace osgEarth
     public:
 
         //! The unique ID of this feature (unique relative to its provider)
-        FeatureID getFID() const;
+        FeatureID getFID() const { return _fid; }
 
         //! Set the FID of this feature.
         void setFID(FeatureID fid);
 
-        //! Gets the GeoExtent of this Feature
+        //! Extent of this feature
         GeoExtent getExtent() const;
 
         //! The geometry in this feature.
         void setGeometry( Geometry* geom );
-        Geometry* getGeometry() { dirty(); return _geom.get(); }
+        Geometry* getGeometry() { return _geom.get(); }
         const Geometry* getGeometry() const { return _geom.get(); }
 
         //! The spatial reference of the geometry in this feature.
@@ -167,19 +163,18 @@ namespace osgEarth
 
         const AttributeTable& getAttrs() const { return _attrs; }
 
-        void set( const std::string& name, const std::string& value );
-        void set( const std::string& name, double value );
+        //! Sets an attribute value
+        void set(const std::string& name, const std::string& value);
+        void set(const std::string& name, double value);
         void set(const std::string& name, int value);
-        void set( const std::string& name, long long value );
-        void set( const std::string& name, bool value );
-        void set( const std::string& name, const std::vector<double>& value );
-        void setSwap( const std::string& name, std::vector<double>& value );
-        void set( const std::string& name, const AttributeValue& value);
+        void set(const std::string& name, long long value);
+        void set(const std::string& name, bool value);
+        void set(const std::string& name, const AttributeValue& value);
 
-        /** Sets the attribute to NULL */
-        void setNull( const std::string& name );
-        void setNull( const std::string& name, AttributeType type );
+        //! Sets the named attribute to null (with no implicit type)
+        void setNull(const std::string& name);
 
+        //! Removes an attribute
         void removeAttribute(const std::string& name);
 
         bool hasAttr( const std::string& name ) const;
@@ -188,7 +183,6 @@ namespace osgEarth
         double getDouble( const std::string& name, double defaultValue =0.0 ) const;
         long long getInt( const std::string& name, long long defaultValue =0 ) const;
         bool getBool( const std::string& name, bool defaultValue =false ) const;
-        const std::vector<double>* getDoubleArray( const std::string& name ) const;
 
         //! Index of the names attribute (for fast access)
         int indexOf(const std::string& name) const {
@@ -208,17 +202,17 @@ namespace osgEarth
             return _attrs.at(index).getBool();
         }        
 
-        /**
-         * Gets whether the attribute is set, meaning it is non-NULL
-         */
-        bool isSet( const std::string& name ) const;
+        //! Whether the attribute is set, meaning it is non-NULL
+        bool isSet(const std::string& name) const;
 
-        /** Embedded style. */
-        optional<Style>& style() { return _style; }
-        const optional<Style>& style() const { return _style; }
+        //! Optional embedded style
+        const Style* style() const { return _style.get(); }
+        const Style* getStyle() const { return _style.get(); }
+        Style& getOrCreateStyle();
+        void setStyle(const Style& style);
 
         /** Geodetic interpolation method. */
-        optional<GeoInterpolation>& geoInterp() { dirty(); return _geoInterp; }
+        optional<GeoInterpolation>& geoInterp() { return _geoInterp; }
         const optional<GeoInterpolation>& geoInterp() const { return _geoInterp; }
 
         /** populates the variables of an expression with attribute values and evals the expression. */
@@ -247,33 +241,28 @@ namespace osgEarth
         //! @param includeNulls if true, null properties will be included in the output
         static std::string featuresToGeoJSON(const FeatureList& features, bool includeNulls = false);
 
-    public:
-        /**
-         * Transforms this Feature to the given SpatialReference
-         */
+        //! Transforms this Feature to the given SpatialReference
         void transform( const SpatialReference* srs );
 
-        /**
-         * Splits this feature into multiple features if it is a geodetic feature and cross the date line.
-         */
+        //! Splits this feature into multiple features if it is a geodetic feature and cross the date line.
         void splitAcrossAntimeridian();
 
     protected:
 
-        Feature();
-        Feature( FeatureID fid );
+        Feature() = default;
+        Feature(FeatureID fid);
 
         virtual ~Feature() { }
 
-        FeatureID                            _fid;
-        osg::ref_ptr<Geometry>               _geom;
+        FeatureID _fid = 0LL;
+        osg::ref_ptr<Geometry> _geom;
         osg::ref_ptr<const SpatialReference> _srs;
-        AttributeTable                       _attrs;
-        optional<Style>                      _style;
-        optional<GeoInterpolation>           _geoInterp;
-        GeoExtent                            _cachedExtent;
-
-        void dirty();
+        AttributeTable _attrs;
+        optional<GeoInterpolation> _geoInterp;
+        std::shared_ptr<Style> _style;
     };
+
+    //! Evaluate an expression against a feature and a filter context.
+    extern OSGEARTH_EXPORT std::string evaluateExpression(const std::string& expr, const Feature* feature, const FilterContext& context);
 
 } // namespace osgEarth

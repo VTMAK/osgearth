@@ -19,7 +19,7 @@
 
 #include <ogr_api.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
@@ -112,8 +112,8 @@ TFS::ReaderWriter::write(const TFS::Layer& layer, std::ostream& output)
 
     doc->addSubElement("Title", layer.getTitle());
     doc->addSubElement("Abstract", layer.getAbstract());
-    doc->addSubElement("MaxLevel", toString<unsigned int>(layer.getMaxLevel()));
-    doc->addSubElement("FirstLevel", toString<unsigned int>(layer.getFirstLevel()));
+    doc->addSubElement("MaxLevel", std::to_string(layer.getMaxLevel()));
+    doc->addSubElement("FirstLevel", std::to_string(layer.getFirstLevel()));
 
     osg::ref_ptr<XmlElement> e_bounding_box = new XmlElement("BoundingBox");
     e_bounding_box->getAttrs()["minx"] = toString(layer.getExtent().xMin());
@@ -325,7 +325,7 @@ TFSFeatureSource::getFeatures(const std::string& buffer, const TileKey& key, con
         OGRLayerH layer = OGR_DS_GetLayer(ds, 0);
         if (layer)
         {
-            OgrUtils::OGRFeatureFactory factory;
+            OGRFeatureFactory factory;
             factory.srs = getFeatureProfile()->getSRS();
             factory.interp = getFeatureProfile()->geoInterp();
             factory.rewindPolygons = _options->rewindPolygons().value();

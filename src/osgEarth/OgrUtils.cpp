@@ -2,7 +2,8 @@
 * Copyright 2025 Pelican Mapping
 * MIT License
 */
-#include <osgEarth/OgrUtils>
+#include "OgrUtils"
+#include "Feature"
 
 #define LC "[FeatureSource] "
 
@@ -57,7 +58,7 @@ OgrUtils::createTIN(OGRGeometryH geomHandle)
             unsigned int numSubParts = OGR_G_GetGeometryCount(partRef);
             OGRGeometryH subPartRef = OGR_G_GetGeometryRef(partRef, 0);
             unsigned int numSubPoints = OGR_G_GetPointCount(subPartRef);
-            Polygon *output = new Polygon(numSubPoints);
+            osgEarth::Polygon *output = new osgEarth::Polygon(numSubPoints);
             populate(subPartRef, output, numSubPoints);
             output->open();
 
@@ -71,16 +72,16 @@ OgrUtils::createTIN(OGRGeometryH geomHandle)
     return multi;
 }
 
-Polygon*
+osgEarth::Polygon*
 OgrUtils::createPolygon( OGRGeometryH geomHandle, bool rewindPolygons)
 {
-    Polygon* output = 0L;
+    osgEarth::Polygon* output = 0L;
 
     int numParts = OGR_G_GetGeometryCount( geomHandle );
     if ( numParts == 0 )
     {
         int numPoints = OGR_G_GetPointCount( geomHandle );
-        output = new Polygon( numPoints );
+        output = new osgEarth::Polygon( numPoints );
         populate( geomHandle, output, numPoints );
 
         if (rewindPolygons)
@@ -98,7 +99,7 @@ OgrUtils::createPolygon( OGRGeometryH geomHandle, bool rewindPolygons)
 
             if ( p == 0 )
             {
-                output = new Polygon( numPoints );
+                output = new osgEarth::Polygon( numPoints );
                 populate( partRef, output, numPoints );
                 if (rewindPolygons)
                 {
@@ -423,7 +424,7 @@ OgrUtils::createOgrGeometry(const osgEarth::Geometry* geometry, OGRwkbGeometryTy
 }
 
 Feature*
-OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
+OGRFeatureFactory::createFeature(OGRFeatureH handle) const
 {
     FeatureID fid = OGR_F_GetFID( handle );
 
@@ -447,8 +448,15 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
         OGRFieldDefnH field_handle_ref = OGR_F_GetFieldDefnRef( handle, i );
 
         // get the field name and convert to lower case:
-        const char* field_name = OGR_Fld_GetNameRef( field_handle_ref );
-        std::string name = osgEarth::toLower( std::string(field_name) );
+        std::string name;
+        if (i < fieldNames.size())
+        {
+            name = fieldNames[i];
+        }
+        else
+        {
+            name = osgEarth::toLower(std::string(OGR_Fld_GetNameRef(field_handle_ref)));
+        }
 
         // get the field type and set the value appropriately
         OGRFieldType field_type = OGR_Fld_GetType( field_handle_ref );
@@ -463,7 +471,7 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
                 }
                 else if (keepNullValues)
                 {
-                    feature->setNull( name, ATTRTYPE_INT );
+                    feature->setNull(name);
                 }
             }
             break;
@@ -477,7 +485,7 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
                 }
                 else if (keepNullValues)
                 {
-                    feature->setNull(name, ATTRTYPE_INT);
+                    feature->setNull(name);
                 }
             }
             break;
@@ -491,7 +499,7 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
                 }
                 else if (keepNullValues)
                 {
-                    feature->setNull( name, ATTRTYPE_DOUBLE );
+                    feature->setNull(name);
                 }
             }
             break;
@@ -504,7 +512,7 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
                 }
                 else if (keepNullValues)
                 {
-                    feature->setNull( name, ATTRTYPE_STRING );
+                    feature->setNull(name);
                 }
             }
         }
@@ -514,7 +522,7 @@ OgrUtils::OGRFeatureFactory::createFeature(OGRFeatureH handle) const
 }
 
 AttributeType
-OgrUtils::getAttributeType( OGRFieldType type )
+OgrUtils::getAttributeType(OGRFieldType type)
 {
     switch (type)
     {

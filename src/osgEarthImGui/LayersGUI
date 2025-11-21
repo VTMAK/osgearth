@@ -115,7 +115,7 @@ namespace osgEarth
         {
             AddWMSDialog()
             {
-                strcpy(url, "http://readymap.org/readymap/tiles");
+                strncpy(url, "http://readymap.org/readymap/tiles", sizeof(url));
                 memset(name, 0, sizeof(name));
             }
 
@@ -219,7 +219,7 @@ namespace osgEarth
                     if (ImGui::IsItemClicked())
                     {
                         selectedWMSLayer = layer;
-                        strcpy(name, selectedWMSLayer->getTitle().c_str());
+                        strncpy(name, selectedWMSLayer->getTitle().c_str(), sizeof(name));
                     }
                     ImGui::TableNextColumn();
                     ImGui::Text("%s", layer->getTitle().c_str());
@@ -338,6 +338,7 @@ namespace osgEarth
 
             void draw(ContourMapLayer* layer)
             {
+                bool dirty = false;
                 if (!visible) return;
                 ImGui::Begin("Edit Contours", &visible);
                 auto xfer = layer->getTransferFunction();
@@ -776,7 +777,7 @@ namespace osgEarth
                         auto tileLayer = dynamic_cast<osgEarth::TileLayer*>(layer);
                         auto imageLayer = dynamic_cast<osgEarth::ImageLayer*>(layer);
                         auto elevationLayer = dynamic_cast<osgEarth::ElevationLayer*>(layer);
-                        //auto featureSource = dynamic_cast<osgEarth::FeatureSource*>(layer);
+                        auto featureSource = dynamic_cast<osgEarth::FeatureSource*>(layer);
 
                         if (tileLayer)
                         {
@@ -1012,6 +1013,9 @@ namespace osgEarth
                                     if (_coverageLayerValueUnderMouse->isOK())
                                     {
                                         auto& value = _coverageLayerValueUnderMouse->value();
+                                        auto json = value.getConfig().toJSON(true);
+                                        ImGui::TextWrapped("%s", json.c_str());
+#if 0
                                         if (value.biomeid().isSet())
                                             ImGui::Text("Biome ID: %s", value.biomeid()->c_str());
                                         if (value.dense().isSet())
@@ -1022,6 +1026,7 @@ namespace osgEarth
                                             ImGui::Text("Rugged: %.2f", value.rugged().value());    
                                         if (value.soiltype().isSet())
                                             ImGui::Text("Soil Type: %s", value.soiltype()->c_str());
+#endif
                                     }
                                     else
                                     {
@@ -1446,7 +1451,7 @@ namespace osgEarth
 
                                 auto factory = osgEarth::Procedural::LandCoverSample::Factory::create(_mouseOverCoverageLayer);
                                 osgEarth::Procedural::LandCoverSample value;
-                                for (TileKey key2 = key; !value.valid() && key2.valid(); key2.makeParent()) {
+                                for(TileKey key2 = key; !value.valid() && key2.valid(); key2.makeParent()) {
                                     auto coverage = factory->createCoverage(key2, prog.get());
                                     if (coverage.valid())
                                     {

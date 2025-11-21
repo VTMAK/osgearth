@@ -66,7 +66,7 @@ TileDrawable::TileDrawable(
     _bboxCB(NULL)
 {
     // builds the initial mesh.
-    setElevationRaster(0L, osg::Matrixf::identity());
+    setElevationRaster(nullptr, osg::Matrixf::identity());
 }
 
 TileDrawable::~TileDrawable()
@@ -75,8 +75,7 @@ TileDrawable::~TileDrawable()
 }
 
 void
-TileDrawable::setElevationRaster(const osg::Image*   image,
-                                 const osg::Matrixf& scaleBias)
+TileDrawable::setElevationRaster(Texture::Ptr image, const osg::Matrixf& scaleBias)
 {
     _elevationRaster = image;
     _elevationScaleBias = scaleBias;
@@ -97,16 +96,19 @@ TileDrawable::setElevationRaster(const osg::Image*   image,
         _mesh.resize(verts.size());
     }
 
-    if ( _elevationRaster.valid() )
+    if ( _elevationRaster)
     {
         const osg::Vec3Array& normals = *static_cast<osg::Vec3Array*>(_geom->getNormalArray());
         const osg::Vec3Array& units = *static_cast<osg::Vec3Array*>(_geom->getTexCoordArray());
 
-        //OE_INFO << LC << _key.str() << " - rebuilding height cache" << std::endl;
-
-        ImageUtils::PixelReader readElevation(_elevationRaster.get());
+        ImageUtils::PixelReader readElevation(_elevationRaster->osgTexture()->getImage(0));
         readElevation.setBilinear(true);
         osg::Vec4f sample;
+
+        auto encoding = ElevationTile::encodingFor(_elevationRaster->internalFormat().value());
+        bool decode16bitHeight = _elevationRaster->minValue().isSet();
+        float minh = _elevationRaster->minValue().value();
+        float maxh = _elevationRaster->maxValue().value();
 
         float
             scaleU = _elevationScaleBias(0,0),
@@ -123,12 +125,12 @@ TileDrawable::setElevationRaster(const osg::Image*   image,
         {
             if ( ((int)units[i].z() & VERTEX_HAS_ELEVATION) == 0)
             {
-                readElevation(
-                    sample,
+                sample = readElevation(
                     clamp(units[i].x()*scaleU + biasU, 0.0f, 1.0f),
                     clamp(units[i].y()*scaleV + biasV, 0.0f, 1.0f));
 
-                _mesh[i] = verts[i] + normals[i] * sample.r();
+                auto h = ElevationTile::decodeElevation(sample, encoding, minh, maxh);
+                _mesh[i] = verts[i] + normals[i] * h;
             }
             else
             {

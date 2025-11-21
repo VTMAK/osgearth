@@ -99,7 +99,6 @@ namespace osgEarth
                     ImGui::TableNextColumn(); ImGui::Text("Run"); //ImGui::SetItemTooltip("Running");
                     ImGui::TableNextColumn(); ImGui::Text("Mrg"); //ImGui::SetItemTooltip("Merging / postprocessing");
                     ImGui::TableNextColumn(); ImGui::Text("Que"); //ImGui::SetItemTooltip("Queued jobs (waiting to run)");
-                    //ImGui::TableNextColumn(); ImGui::Text("Can"); //ImGui::SetItemTooltip("Canceled jobs");
                     ImGui::TableNextColumn(); ImGui::Text("Max"); //ImGui::SetItemTooltip("Number of available threads");
                     ImGui::TableNextColumn();
 
@@ -122,13 +121,13 @@ namespace osgEarth
                             if (ImGui::InputInt("", &pc))
                                 jobs::get_pool(pool_metrics->name)->set_concurrency(
                                     std::max(1, std::min(pc, (int)std::thread::hardware_concurrency())));
+                            ImGui::SameLine();
+                            ImGui::Checkbox("##visible", &pool_metrics->visible);
                             ImGui::PopID();
                         }
                     }
                     ImGui::EndTable();
                 }
-
-                //OE_HARD_ASSERT(jobs::get_metrics()->total() == jobs::get_metrics()->total_running() + jobs::get_metrics()->total_pending() + jobs::get_metrics()->total_postprocessing());
 
                 ImGui::Separator();
 
@@ -139,11 +138,11 @@ namespace osgEarth
                     frame_times[f] = now - t_previous;
                     t_previous = now;
                     auto avg_timing_ms = 1e-6 * (float)get_average_timing_ns(&frame_times, 120, f);
-                    sprintf(buf, "%.2f ms / %d fps", avg_timing_ms, (int)std::ceil(1000.0 / avg_timing_ms));
+                    snprintf( buf, sizeof(buf), "%.2f ms / %d fps", avg_timing_ms, (int)std::ceil(1000.0 / avg_timing_ms));
                     ImGuiLTable::PlotLines("Frame", get_timing_ms, &frame_times, frame_count, frame_num, buf, 0.0f, 32.0f);
 
                     total_jobs[f] = jobs::get_metrics()->total();
-                    sprintf(buf, "%d", total_jobs[f]);
+                    snprintf(buf, sizeof(buf), "%d", total_jobs[f]);
                     ImGuiLTable::PlotLines("Jobs", get_counts, &total_jobs, frame_count, frame_num, buf, 0u, 100u);
 
                     auto pager = view(ri)->getDatabasePager();
@@ -151,7 +150,7 @@ namespace osgEarth
                         auto ico = pager->getIncrementalCompileOperation();
                         if (ico) {
                             ico_jobs[f] = ico->getToCompile().size();
-                            sprintf(buf, "%d", ico_jobs[f]);
+                            snprintf(buf, sizeof(buf), "%d", ico_jobs[f]);
                             ImGuiLTable::PlotLines("ICO", get_counts, &ico_jobs, frame_count, frame_num, buf, 0u, 4u);
                         }
                     }
@@ -184,8 +183,6 @@ namespace osgEarth
                     if (ImGuiLTable::SliderFloat("Font Scale", &ImGui::GetIO().FontGlobalScale, 0.5f, 2.0f))
                         dirtySettings();
 
-                    //ImGuiLTable::Text("Dirty timer", "%.1f", ImGui::GetCurrentContext()->SettingsDirtyTimer); // ::GetIO().IniSavingRate);
-
                     ImGuiLTable::End();
                 }
 
@@ -195,7 +192,6 @@ namespace osgEarth
                     auto& caps = osgEarth::Registry::capabilities();
                     ImGuiLTable::Text("osgEarth", "%s", osgEarthGetVersion());
                     ImGuiLTable::Text("OSG", "%s", osgGetVersion());
-                    //ImGuiLTable::Text("GL_VENDOR", caps.getVendor().c_str());
                     ImGuiLTable::Text("GL_RENDERER", "%s", caps.getRenderer().c_str());
                     ImGuiLTable::Text("GL_VERSION", "%s", caps.getVersion().c_str());
                     ImGuiLTable::Text("GL Profile", "%s", caps.isCoreProfile() ? "Core" : "Compatibility");

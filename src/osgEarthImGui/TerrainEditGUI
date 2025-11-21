@@ -376,7 +376,7 @@ namespace osgEarth
                 {
                     if (_ditchCursor->getNodeMask() == 0)
                     {
-                        Style& style = _ditchFeature->style().mutable_value();
+                        Style& style = _ditchFeature->getOrCreateStyle();
                         auto line = style.getOrCreate<LineSymbol>();
                         line->stroke()->width() = Distance(_width, Units::METERS);
                         line->tessellationSize()->set(_width, Units::METERS);
@@ -476,7 +476,7 @@ namespace osgEarth
                 _lifemapDecal->setBlendFuncs(
                     GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                     GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                    GL_ZERO, GL_ONE, // Set lush to not blend as it affects asset placement.
                     GL_ZERO, GL_ONE);
 
                 // If there is a LifeMapLayer, append to it as a Post, otherwise standalone decal.
