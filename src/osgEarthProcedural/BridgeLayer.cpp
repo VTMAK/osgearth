@@ -846,7 +846,7 @@ namespace
         features.reserve(c_features.size());
         std::transform(c_features.begin(), c_features.end(), std::back_inserter(features), [](Feature* f) {
             return new Feature(*f); });
-        
+
         auto node = GeometryCompiler().compile(features, style, context);
         return node;
     }
