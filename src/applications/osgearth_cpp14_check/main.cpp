@@ -134,8 +134,6 @@
 #include <osgEarth/GLUtils>
 #include <osgEarth/GeoCommon>
 #include <osgEarth/GeoData>
-#include <osgEarth/GeoEllipsoid>
-#include <osgEarth/GeoImageOverlay>
 #include <osgEarth/GeoMath>
 #include <osgEarth/GeoPositionNode>
 #include <osgEarth/GeoPositionNodeAutoScaler>
