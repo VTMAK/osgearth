@@ -150,7 +150,6 @@
 #include <osgEarth/GeometryRasterizer>
 #include <osgEarth/GeometryUtils>
 #include <osgEarth/GraticuleLabelingEngine>
-#include <osgEarth/GroupLayer>
 #include <osgEarth/HTM>
 #include <osgEarth/HTTPClient>
 #include <osgEarth/HeightFieldUtils>
