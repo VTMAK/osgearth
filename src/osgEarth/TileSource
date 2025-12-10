@@ -49,6 +49,9 @@ namespace osgEarth { namespace Contrib
         optional<ProfileOptions>& profile() { return _profileOptions; }
         const optional<ProfileOptions>& profile() const { return _profileOptions; }
 
+        /** Whether to rasterize into coverage data, which contains discrete non-interpolable values. */
+        optional<bool>& coverage() { return _coverage; }
+        const optional<bool>& coverage() const { return _coverage; }
         /** osgDB::Options option string to pass through to osgDB reader/writers. */
         optional<std::string>& osgOptionString() { return _osgOptionString; }
         const optional<std::string>& osgOptionString() const { return _osgOptionString; }
