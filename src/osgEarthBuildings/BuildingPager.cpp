@@ -317,6 +317,13 @@ void BuildingPager::setVerboseWarnings(bool value)
     _verboseWarnings = value;
 }
 
+void BuildingPager::resetRenderLeafTracking()
+{
+   if (!_caches.valid()) return;
+   _caches->_renderLeavesDetected.exchange(false);
+   _caches->_renderLeaves.exchange(0);
+}
+
 bool
 BuildingPager::cacheReadsEnabled(const osgDB::Options* readOptions) const
 {

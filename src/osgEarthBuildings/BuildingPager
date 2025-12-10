@@ -73,6 +73,10 @@ namespace osgEarth { namespace Buildings
         //! Whether to dump warning messages for failed features
         void setVerboseWarnings(bool value);
 
+        //! reset the render leaves tracking to prevent release of
+        //! gl objects when switch rendermodes in sfx
+        void resetRenderLeafTracking();
+
     public: // SimplePager
 
         //! Override this so we can install a cache manager
