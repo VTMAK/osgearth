@@ -85,7 +85,7 @@ SubstituteModelFilter::SubstituteModelFilter(const Style& style) :
     _useDrawInstanced(true),
     _merge(true),
     _normalScalingRequired(false),
-    _instanceCache(false),     // cache per object so MT not required
+    _instanceCache(128u),
     _filterUsage(FILTER_USAGE_NORMAL)
 {
     //NOP
@@ -98,13 +98,14 @@ SubstituteModelFilter::findResource(const URI&            uri,
     std::set<URI>&        missing,
     osg::ref_ptr<InstanceResource>& output)
 {
-    // be careful about refptrs here since _instanceCache is an LRU.
 
-    InstanceCache::Record rec;
-    if (_instanceCache.get(uri, rec))
+    // be careful about refptrs here since _instanceCache is an LRU.
+    auto cached = _instanceCache.get(uri);
+    
+    if (cached.has_value())
     {
         // found it in the cache:
-        output = rec.value().get();
+        output = cached.value().get();
     }
     else if (_resourceLib.valid())
     {
@@ -231,7 +232,10 @@ void calculateGeometryHeading(Feature* input, FilterContext& context)
     }
     if (!headings.empty())
     {
-        input->setSwap("node-headings", headings);
+        std::stringstream buf;
+        for(auto& heading : headings)
+            buf << std::to_string(heading);
+        input->set("node-headings", buf.str());
     }
 }
 }
@@ -383,14 +387,18 @@ SubstituteModelFilter::process(const FeatureList&           features,
         scaleMatrix = osg::Matrix::scale( scaleVec );
         
         osg::Matrixd headingRotation;
-        const std::vector<double>* headingArray = 0L;
+        std::vector<double> headingArray;
+
         if ( modelSymbol )
         {
             if ( modelSymbol->orientationFromFeature().get() )
             {
                 if (input->hasAttr("node-headings"))
                 {
-                    headingArray = input->getDoubleArray("node-headings");
+                    std::string value = input->getString("node-headings");
+                    auto values = StringTokenizer().delim(",").tokenize(value);
+                    for (auto& value : values)
+                        headingArray.emplace_back(std::atof(value.c_str()));
                 }
                 else if (input->hasAttr("heading"))
                 {
@@ -492,9 +500,9 @@ SubstituteModelFilter::process(const FeatureList&           features,
 
                     scaleMatrix = osg::Matrix::scale(scaleVec);
 
-                    if ( modelSymbol && headingArray && geom->getType() == Geometry::TYPE_LINESTRING)
+                    if ( modelSymbol && !headingArray.empty() && geom->getType() == Geometry::TYPE_LINESTRING)
                     {
-                        headingRotation.makeRotate(osg::Quat(osg::DegreesToRadians((*headingArray)[pointIdx++]),
+                        headingRotation.makeRotate(osg::Quat(osg::DegreesToRadians(headingArray[pointIdx++]),
                                                              osg::Vec3(0,0,1)));
                     }
 

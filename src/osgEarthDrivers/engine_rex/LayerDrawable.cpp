@@ -230,6 +230,17 @@ LayerDrawableNVGL::refreshRenderState()
                     s._texture->ownerRevision() = _rs.revision;
                     buf.elevIndex = textures->add(s._texture);
                     COPY_MAT4F(s._matrix, buf.elevMat);
+
+                    if (s._texture->minValue().isSet() && s._texture->maxValue().isSet())
+                    {
+                        buf.elevMin = s._texture->minValue().get();
+                        buf.elevMax = s._texture->maxValue().get();
+                    }
+                    else
+                    {
+                        // If the texture does not have min/max values, use the default.
+                        buf.elevMin = buf.elevMax = 0.0f;
+                    }
                 }
             }
 
@@ -240,7 +251,7 @@ LayerDrawableNVGL::refreshRenderState()
                 const Sampler& s = (*tile._sharedSamplers)[SamplerBinding::NORMAL];
                 if (s._texture)
                 {
-                    s._texture->compress() = false;
+                    s._texture->compress() = true;
                     s._texture->mipmap() = true;
                     s._texture->maxAnisotropy() = 1.0f;
                     s._texture->ownerRevision() = _rs.revision;

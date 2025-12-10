@@ -406,6 +406,7 @@ MapNode::open()
 
     osg::StateSet* stateset = getOrCreateStateSet();
 
+    // install the screen-space error "global" uniform
     stateset->addUniform(_sseU.get());
 
     if ( options().enableLighting().isSet() )
@@ -854,6 +855,8 @@ MapNode::traverse( osg::NodeVisitor& nv )
     {
         osgUtil::CullVisitor* cv = Culling::asCullVisitor(nv);
 
+        int stateSetsPushed = 0;
+
         // find a database pager with an ICO
         if (cv && cv->getCurrentCamera())
         {
@@ -868,13 +871,25 @@ MapNode::traverse( osg::NodeVisitor& nv )
 
             if (_drapingManager != nullptr)
                 ObjectStorage::set(&nv, _drapingManager);
+
+            // update any per-camera data:
+            auto* cam = cv->getCurrentCamera();
+            auto& percam = _percam.get(cam);
+            if (!percam.stateSet.valid()) {
+                percam.dprU = new osg::Uniform("oe_dpr", 1.0f);
+                percam.stateSet = new osg::StateSet();
+                percam.stateSet->addUniform(percam.dprU);
+            }
+            percam.dprU->set(Registry::instance()->getDevicePixelRatio(cam->getGraphicsContext()));
+
+            cv->pushStateSet(percam.stateSet);
+            ++stateSetsPushed;
         }
 
 
         LayerVector layers;
         getMap()->getLayers(layers);
 
-        int count = 0;
         for (auto& layer : layers)
         {
             if (layer->isOpen())
@@ -883,7 +898,7 @@ MapNode::traverse( osg::NodeVisitor& nv )
                 if (ss)
                 {
                     cv->pushStateSet(ss);
-                    ++count;
+                    ++stateSetsPushed;
                 }
             }
         }
@@ -892,7 +907,7 @@ MapNode::traverse( osg::NodeVisitor& nv )
         for (auto& child : _children)
             child->accept(nv);
 
-        for(int i=0; i<count; ++i)
+        for(int i=0; i< stateSetsPushed; ++i)
             cv->popStateSet();
 
         //Config c = CullDebugger().dumpRenderBin(cv->getCurrentRenderBin());

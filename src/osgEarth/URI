@@ -2,8 +2,7 @@
  * Copyright 2025 Pelican Mapping
  * MIT License
  */
-#ifndef OSGEARTH_URI
-#define OSGEARTH_URI 1
+#pragma once
 
 #include <osgEarth/Common>
 #include <osgEarth/Containers>
@@ -12,11 +11,6 @@
 #include <osg/Node>
 #include <osgDB/Options>
 #include <osgDB/ReaderWriter>
-
-namespace osgUtil
-{
-    class IncrementalCompileOperation;
-}
 
 namespace osgEarth
 {
@@ -375,8 +369,8 @@ namespace osgEarth
      */
     struct /*header-only*/ URIResultCache : public LRUCache<URI, ReadResult>
     {
-        URIResultCache( bool threadsafe =true )
-            : LRUCache<URI,ReadResult>( threadsafe ) { }
+        URIResultCache()
+            : LRUCache<URI,ReadResult>(128u) { }
 
         static URIResultCache* from(const osgDB::Options* options) {
             return options ? const_cast<URIResultCache*>(static_cast<const URIResultCache*>(options->getPluginData("osgEarth::URIResultCache"))) : 0L;
@@ -505,5 +499,3 @@ namespace osgEarth
         return escaped.str();
     }
 }
-
-#endif // OSGEARTH_URI

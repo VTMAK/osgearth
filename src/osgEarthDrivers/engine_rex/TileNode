@@ -94,14 +94,18 @@ namespace osgEarth { namespace REX
         SurfaceNode* getSurfaceNode() { return _surface.get(); }
 
         /** Elevation data for this node along with its scale/bias matrix; needed for bounding box */
-        void setElevationRaster(const osg::Image* image, const osg::Matrixf& matrix);
+        void setElevationRaster(Texture::Ptr image, const osg::Matrixf& matrix);
         void updateElevationRaster();
-        const osg::Image* getElevationRaster() const;
+        Texture::Ptr getElevationRaster() const;
         const osg::Matrixf& getElevationMatrix() const;
 
         // access to subtiles
-        TileNode* getSubTile(unsigned i) { return static_cast<TileNode*>(_children[i].get()); }
-        const TileNode* getSubTile(unsigned i) const { return static_cast<TileNode*>(_children[i].get()); }
+        inline TileNode* getSubTile(unsigned i) { 
+            return i < _children.size() ? static_cast<TileNode*>(_children[i].get()) : nullptr;
+        }
+        inline const TileNode* getSubTile(unsigned i) const {
+            return i < _children.size() ? static_cast<TileNode*>(_children[i].get()) : nullptr;
+        }
 
         /** Merge new Tile model data into this tile's rendering data model. */
         void merge(

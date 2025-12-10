@@ -278,29 +278,32 @@ BridgeLayer::addedToMap(const Map* map)
     //_filters.emplace_back(new JoinLinesFilter());
 
     // create a terrain constraint layer that will 'clamp' the terrain to the end caps of our bridges.
-    auto* c = new TerrainConstraintLayer();
-    c->setName(getName() + "_constraints");
-    c->setRemoveInterior(false);
-    c->setRemoveExterior(false);
-    c->setHasElevation(true);
-    c->setMinLevel(std::max(options().constraintMinLevel().value(), getMinLevel()));
-
-    c->constraintCallback([this](const TileKey& key, MeshConstraint& result, FilterContext*, ProgressCallback* progress)
-        {
-            this->addConstraint(key, result, progress);
-        });
-
-    auto status = c->open(getReadOptions());
-    if (!status.isOK())
+    if (options().constraintMinLevel() > 0 && options().constraintMinLevel() <= 21)
     {
-        OE_WARN << LC << "Failed to open constraint layer: " << status.message() << std::endl;
-        return;
-    }
-    
-    Map* mutableMap = const_cast<Map*>(map);
-    mutableMap->addLayer(c);
+        auto* c = new TerrainConstraintLayer();
+        c->setName(getName() + "_constraints");
+        c->setRemoveInterior(false);
+        c->setRemoveExterior(false);
+        c->setHasElevation(true);
+        c->setMinLevel(std::max(options().constraintMinLevel().value(), getMinLevel()));
 
-    _constraintLayer = c;
+        c->constraintCallback([this](const TileKey& key, MeshConstraint& result, FilterContext*, ProgressCallback* progress)
+            {
+                this->addConstraint(key, result, progress);
+            });
+
+        auto status = c->open(getReadOptions());
+        if (!status.isOK())
+        {
+            OE_WARN << LC << "Failed to open constraint layer: " << status.message() << std::endl;
+            return;
+        }
+
+        Map* mutableMap = const_cast<Map*>(map);
+        mutableMap->addLayer(c);
+
+        _constraintLayer = c;
+    }
 }
 
 void
@@ -330,7 +333,7 @@ namespace
             if (line->size() < 2)
                 continue;
 
-            Polygon* poly = new Polygon();
+            osgEarth::Polygon* poly = new osgEarth::Polygon();
             poly->resize(line->size() * 2);
 
             for (int i = 0; i < line->size(); ++i)
@@ -843,7 +846,7 @@ namespace
         features.reserve(c_features.size());
         std::transform(c_features.begin(), c_features.end(), std::back_inserter(features), [](Feature* f) {
             return new Feature(*f); });
-        
+
         auto node = GeometryCompiler().compile(features, style, context);
         return node;
     }

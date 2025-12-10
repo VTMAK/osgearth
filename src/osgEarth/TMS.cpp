@@ -567,7 +567,10 @@ TileMapReaderWriter::read( const Config& conf )
     const Config* extentsConf = tileMapConf->find(ELEM_DATA_EXTENTS);
     if ( extentsConf )
     {
-        osg::ref_ptr< const osgEarth::Profile > profile = tileMap->createProfile();
+        // NOTE: DataExtents are a custom Pelican extension, and are ALWAYS in WGS84
+        auto* profile = tileMap->createProfile();
+        auto* wgs84 = SpatialReference::get("wgs84");
+
         //OE_DEBUG << LC << "Found DataExtents " << std::endl;
         const ConfigSet& children = extentsConf->children(ELEM_DATA_EXTENT);
         for( ConfigSet::const_iterator i = children.begin(); i != children.end(); ++i )
@@ -582,21 +585,22 @@ TileMapReaderWriter::read( const Config& conf )
 
             std::string description = conf.value<std::string>(ATTR_DESCRIPTION, std::string());
 
-            //OE_DEBUG << LC << "Read area " << minX << ", " << minY << ", " << maxX << ", " << maxY << ", minlevel=" << minLevel << " maxlevel=" << maxLevel << std::endl;
+            // convert the extent to the tilemap profile.
+            GeoExtent e = profile->clampAndTransformExtent(GeoExtent(wgs84, minX, minY, maxX, maxY));
 
             if ( maxLevel > 0 )
             {
                 if(description.empty())
-                    tileMap->getDataExtents().push_back( DataExtent(GeoExtent(profile->getSRS(), minX, minY, maxX, maxY), 0, maxLevel));
+                    tileMap->getDataExtents().push_back( DataExtent(e, 0, maxLevel));
                 else
-                    tileMap->getDataExtents().push_back( DataExtent(GeoExtent(profile->getSRS(), minX, minY, maxX, maxY), 0, maxLevel, description));
+                    tileMap->getDataExtents().push_back( DataExtent(e, 0, maxLevel, description));
             }
             else
             {
                 if(description.empty())
-                    tileMap->getDataExtents().push_back( DataExtent(GeoExtent(profile->getSRS(), minX, minY, maxX, maxY), 0) );
+                    tileMap->getDataExtents().push_back( DataExtent(e, 0) );
                 else
-                    tileMap->getDataExtents().push_back( DataExtent(GeoExtent(profile->getSRS(), minX, minY, maxX, maxY), 0, description) );
+                    tileMap->getDataExtents().push_back( DataExtent(e, 0, description) );
             }
         }
     }
@@ -637,8 +641,8 @@ tileMapToXmlDocument(const TileMap* tileMap)
     osg::ref_ptr<XmlElement> e_tile_format = new XmlElement( ELEM_TILE_FORMAT );
     e_tile_format->getAttrs()[ ATTR_EXTENSION ] = tileMap->getFormat().getExtension();
     e_tile_format->getAttrs()[ ATTR_MIME_TYPE ] = tileMap->getFormat().getMimeType();
-    e_tile_format->getAttrs()[ ATTR_WIDTH ] = toString<unsigned int>(tileMap->getFormat().getWidth());
-    e_tile_format->getAttrs()[ ATTR_HEIGHT ] = toString<unsigned int>(tileMap->getFormat().getHeight());
+    e_tile_format->getAttrs()[ ATTR_WIDTH ] = std::to_string(tileMap->getFormat().getWidth());
+    e_tile_format->getAttrs()[ ATTR_HEIGHT ] = std::to_string(tileMap->getFormat().getHeight());
     doc->getChildren().push_back(e_tile_format.get());
 
     osg::ref_ptr< const osgEarth::Profile > profile = tileMap->createProfile();
@@ -668,8 +672,8 @@ tileMapToXmlDocument(const TileMap* tileMap)
     {
         osg::ref_ptr<XmlElement> e_tile_set = new XmlElement( ELEM_TILESET );
         e_tile_set->getAttrs()[ATTR_HREF] = itr->getHref();
-        e_tile_set->getAttrs()[ATTR_ORDER] = toString<unsigned int>(itr->getOrder());
-        e_tile_set->getAttrs()[ATTR_UNITSPERPIXEL] = toString(itr->getUnitsPerPixel(), DOUBLE_PRECISION);
+        e_tile_set->getAttrs()[ATTR_ORDER] = std::to_string(itr->getOrder());
+        e_tile_set->getAttrs()[ATTR_UNITSPERPIXEL] = std::to_string(itr->getUnitsPerPixel());
         e_tile_sets->getChildren().push_back( e_tile_set.get() );
     }
     doc->getChildren().push_back(e_tile_sets.get());
@@ -686,9 +690,9 @@ tileMapToXmlDocument(const TileMap* tileMap)
             e_data_extent->getAttrs()[ATTR_MAXX] = toString(itr->xMax(), DOUBLE_PRECISION);
             e_data_extent->getAttrs()[ATTR_MAXY] = toString(itr->yMax(), DOUBLE_PRECISION);
             if ( itr->minLevel().isSet() )
-                e_data_extent->getAttrs()[ATTR_MIN_LEVEL] = toString<unsigned int>(*itr->minLevel());
+                e_data_extent->getAttrs()[ATTR_MIN_LEVEL] = std::to_string(*itr->minLevel());
             if ( itr->maxLevel().isSet() )
-                e_data_extent->getAttrs()[ATTR_MAX_LEVEL] = toString<unsigned int>(*itr->maxLevel());
+                e_data_extent->getAttrs()[ATTR_MAX_LEVEL] = std::to_string(*itr->maxLevel());
             if ( itr->description().isSet() )
                 e_data_extent->getAttrs()[ATTR_DESCRIPTION] = *itr->description();
             e_data_extents->getChildren().push_back( e_data_extent );
@@ -1069,7 +1073,7 @@ TMS::Driver::write(const URI& uri,
         {
             osgDB::ReaderWriter::WriteResult result;
 
-            std::string data = GDAL::heightFieldToTiff(heightfield);
+            std::string data = GDAL_detail::heightFieldToTiff(heightfield);
 
             std::ofstream fout;
             fout.open(image_url.c_str(), std::ios::out | std::ios::binary);
@@ -1390,20 +1394,17 @@ TMSElevationLayer::createHeightFieldImplementation(const TileKey& key, ProgressC
         MetaTile<GeoImage> metaImage;
         metaImage.setCreateTileFunction([this](const TileKey& key, ProgressCallback* progress)
             {
-                Util::LRUCache<TileKey, GeoImage>::Record r;
-                if (_stitchingCache.get(key, r))
-                {
-                    return r.value();
-                }
-                else
-                {
-                    GeoImage image = _imageLayer->createImage(key, progress);
-                    if (image.valid())
+                auto record = _stitchingCache.get_or_insert(
+                    key,
+                    [&](auto& out)
                     {
-                        _stitchingCache.insert(key, image);
-                    }
-                    return image;
-                }
+                        GeoImage image = _imageLayer->createImage(key, progress);
+                        if (image.valid()) out = image;                        
+                    });
+
+                if (record.has_value())
+                    return record.value();
+                return GeoImage::INVALID;
             });
         metaImage.setCenterTileKey(key, progress);
 

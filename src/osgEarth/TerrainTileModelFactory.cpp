@@ -17,10 +17,10 @@
 
 using namespace osgEarth;
 
-#define LABEL_IMAGERY "Terrain textures"
-#define LABEL_NORMALMAP "Terrain textures"
-#define LABEL_ELEVATION "Terrain textures"
-#define LABEL_COVERAGE "Terrain textures"
+#define LABEL_IMAGERY "Terrain images"
+#define LABEL_NORMALMAP "Terrain normals"
+#define LABEL_ELEVATION "Terrain elevation"
+#define LABEL_COVERAGE "Terrain coverage"
 
 //.........................................................................
 
@@ -429,7 +429,7 @@ TerrainTileModelFactory::addElevation(
         return;
 
 
-    osg::ref_ptr<ElevationTexture> elevTex;
+    osg::ref_ptr<ElevationTile> elevTex;
 
     const bool acceptLowerRes = false;
 
@@ -438,13 +438,25 @@ TerrainTileModelFactory::addElevation(
         if (elevTex.valid())
         {
             model->elevation.revision = combinedRevision;
-            model->elevation.texture = Texture::create(elevTex.get());
+            model->elevation.texture = Texture::create(elevTex->getElevationTile());
+
+            auto a = elevTex->getMaxima(); auto& minh = a.first; auto& maxh = a.second;
+            //auto [minh, maxh] = elevTex->getMaxima(); // c++17
+            if (elevTex->encoding() != ElevationTile::Encoding::R32F)
+            {
+                model->elevation.texture->minValue() = minh;
+                model->elevation.texture->maxValue() = maxh;
+            }
+
             model->elevation.texture->category() = LABEL_ELEVATION;
 
-            if (_options.useNormalMaps() == true)
+            model->elevation.minHeight = minh;
+            model->elevation.maxHeight = maxh;
+
+            if (_options.useNormalMaps() == true && key.getLOD() >= _options.minNormalMapLOD().value())
             {
                 // Make a normal map if it doesn't already exist
-                elevTex->generateNormalMap(map, &_workingSet, progress);
+                elevTex->generateNormalMap(map, _options.normalMapTileSize().value(), &_workingSet, progress);
 
                 if (elevTex->getNormalMapTexture())
                 {

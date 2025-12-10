@@ -20,7 +20,7 @@ using namespace osgEarth;
 
 ElevationPool::ElevationPool() :
     _tileSize(257),
-    _L2(true, 64u)
+    _L2(64u)
 {
 }
 
@@ -150,7 +150,7 @@ ElevationPool::getLOD(double x, double y, WorkingSet* ws)
 }
 
 ElevationPool::WorkingSet::WorkingSet(unsigned size) :
-    _lru(true, size)
+    _lru(size)
 {
     //nop
 }
@@ -165,7 +165,7 @@ ElevationPool::WorkingSet::clear()
 bool
 ElevationPool::findExistingRaster(
     const Internal::RevElevationKey& key,
-    osg::ref_ptr<ElevationTexture>& output,
+    osg::ref_ptr<ElevationTile>& output,
     bool* fromLUT)
 {
     OE_PROFILING_ZONE;
@@ -203,13 +203,13 @@ ElevationPool::findExistingRaster(
     return output.valid();
 }
 
-osg::ref_ptr<ElevationTexture>
+osg::ref_ptr<ElevationTile>
 ElevationPool::getOrCreateRaster(MapData& snapshot, const Internal::RevElevationKey& key, bool acceptLowerRes, ProgressCallback* progress)
 {
     OE_PROFILING_ZONE;
 
     // first check for pre-existing data for this key:
-    osg::ref_ptr<ElevationTexture> result;
+    osg::ref_ptr<ElevationTile> result;
     bool fromLUT;
 
     findExistingRaster(key, result, &fromLUT);
@@ -258,10 +258,10 @@ ElevationPool::getOrCreateRaster(MapData& snapshot, const Internal::RevElevation
 
         if (populated)
         {
-            result = new ElevationTexture(
+            result = new ElevationTile(
                 keyToUse,
                 GeoHeightField(hf.get(), keyToUse.getExtent()),
-                resolutions);
+                std::move(resolutions));
         }
         else
         {
@@ -293,46 +293,6 @@ ElevationPool::getOrCreateRaster(MapData& snapshot, const Internal::RevElevation
     return result;
 }
 
-namespace
-{
-    inline void quickSample(
-        const ImageUtils::PixelReader& reader,
-        double u, double v,
-        osg::Vec4f& out,
-        ElevationPool::Envelope::QuickSampleVars& a)
-    {
-        const double sizeS = (double)(reader.s() - 1);
-        const double sizeT = (double)(reader.t() - 1);
-
-        // u, v => [0..1]
-        const double s = u * sizeS;
-        const double t = v * sizeT;
-
-        const double s0 = std::max(floor(s), 0.0);
-        const int intS0 = s0;
-        const double s1 = std::min(s0 + 1.0, sizeS);
-        const int intS1 = s1;
-        const double smix = s0 < s1 ? (s - s0) / (s1 - s0) : 0.0;
-
-        const double t0 = std::max(floor(t), 0.0);
-        const int intT0 = t0;
-        const double t1 = std::min(t0 + 1.0, sizeT);
-        const int intT1 = t1;
-        const double tmix = t0 < t1 ? (t - t0) / (t1 - t0) : 0.0;
-
-        reader(a.UL, intS0, intT0, 0, 0); // upper left
-        reader(a.UR, intS1, intT0, 0, 0); // upper right
-        reader(a.LL, intS0, intT1, 0, 0); // lower left
-        reader(a.LR, intS1, intT1, 0, 0); // lower right
-
-        const double minusSmix = 1.0 - smix;
-        const double minusTmis = 1.0 - tmix;
-
-        a.TOP = a.UL * minusSmix + a.UR * smix;
-        a.BOT = a.LL * minusSmix + a.LR * smix;
-        out = a.TOP * minusTmis + a.BOT * tmix;
-    }
-}
 
 bool
 ElevationPool::prepareEnvelope(ElevationPool::Envelope& env, const GeoPoint& refPoint,
@@ -420,69 +380,67 @@ ElevationPool::Envelope::sampleMapCoords(std::vector<osg::Vec3d>::iterator begin
     {
         auto& p = *iter;
 
+        bool tileKeyChanged = false;
+
+        rx = (p.x() - _pxmin) / _pw, ry = (p.y() - _pymin) / _ph;
+        tx = osg::clampBelow((unsigned)(rx * (double)_tw), _tw - 1u); // TODO: wrap around for geo
+        ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)_th), _th - 1u);
+
+        if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
         {
-            //OE_PROFILING_ZONE_NAMED("createTileKey");
-
-            rx = (p.x() - _pxmin) / _pw, ry = (p.y() - _pymin) / _ph;
-            tx = osg::clampBelow((unsigned)(rx * (double)_tw), _tw - 1u); // TODO: wrap around for geo
-            ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)_th), _th - 1u);
-
-            if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
-            {
-                _key._tilekey = TileKey(lod, tx, ty, _profile.get());
-                lod_prev = lod;
-                tx_prev = tx;
-                ty_prev = ty;
-            }
+            _key._tilekey = TileKey(lod, tx, ty, _profile.get());
+            lod_prev = lod;
+            tx_prev = tx;
+            ty_prev = ty;
+            tileKeyChanged = true;
         }
 
         if (_key._tilekey.valid())
         {
-            auto iter = _cache.find(_key);
-
-            if (iter == _cache.end())
+            if (tileKeyChanged || !_raster.valid())
             {
-                _raster = _pool->getOrCreateRaster(
-                    _mapDataSnapshot,
-                    _key,   // key to query
-                    true,  // fall back on lower resolution data if necessary
-                    progress);
+                auto iter = _cache.find(_key);
 
-                // bail on cancelation before using the quickcache
-                if (progress && progress->isCanceled())
+                if (iter == _cache.end())
                 {
-                    return -1;
-                }
+                    _raster = _pool->getOrCreateRaster(
+                        _mapDataSnapshot,
+                        _key,   // key to query
+                        true,  // fall back on lower resolution data if necessary
+                        progress);
 
-                _cache[_key] = _raster.get();
+                    // bail on cancelation before using the quickcache
+                    if (progress && progress->isCanceled())
+                    {
+                        return -1;
+                    }
 
-                if (_ws)
-                    _ws->_lru.insert(_key, _raster);
-            }
-            else
-            {
-                _raster = iter->second;
-            }
+                    _cache[_key] = _raster.get();
 
-            {
-                //OE_PROFILING_ZONE_NAMED("sample");
-                if (_raster.valid())
-                {
-                    u = (p.x() - _raster->getExtent().xMin()) / _raster->getExtent().width();
-                    v = (p.y() - _raster->getExtent().yMin()) / _raster->getExtent().height();
-
-                    // Note: This can happen on the map edges..
-                    // TODO: consider looping around for geo and clamping for projected
-                    u = osg::clampBetween(u, 0.0, 1.0);
-                    v = osg::clampBetween(v, 0.0, 1.0);
-
-                    quickSample(_raster->reader(), u, v, elev, _vars);
-                    p.z() = elev.r();
+                    if (_ws)
+                        _ws->_lru.insert(_key, _raster);
                 }
                 else
                 {
-                    p.z() = failValue;
+                    _raster = iter->second;
                 }
+            }
+
+            if (_raster.valid())
+            {
+                u = (p.x() - _raster->getExtent().xMin()) / _raster->getExtent().width();
+                v = (p.y() - _raster->getExtent().yMin()) / _raster->getExtent().height();
+
+                // Note: This can happen on the map edges..
+                // TODO: consider looping around for geo and clamping for projected
+                u = clamp(u, 0.0, 1.0);
+                v = clamp(v, 0.0, 1.0);
+
+                p.z() = _raster->getRawElevationUV(u, v);
+            }
+            else
+            {
+                p.z() = failValue;
             }
         }
         else
@@ -526,7 +484,7 @@ ElevationPool::sampleMapCoords(
     Internal::RevElevationKey key;
     key._hash = snapshot.hash;
 
-    osg::ref_ptr<ElevationTexture> raster;
+    osg::ref_ptr<ElevationTile> raster;
     osg::Vec4 elev;
     double u, v;
 
@@ -539,7 +497,6 @@ ElevationPool::sampleMapCoords(
     int count = 0;
 
     Envelope::QuickCache quickCache;
-    Envelope::QuickSampleVars qvars;
 
     unsigned tw, th;
     double rx, ry;
@@ -559,77 +516,72 @@ ElevationPool::sampleMapCoords(
         if (p.w() == FLT_MAX)
             continue;
 
-        {
-            //OE_PROFILING_ZONE_NAMED("createTileKey");            
+        bool tileKeyChanged = false;
 
-            pointRes.set(p.w(), units);
+        pointRes.set(p.w(), units);
 
             double resolutionInMapUnits = srs->transformDistance(pointRes, units, p.y());
 
-            lod = profile->getLevelOfDetailForHorizResolution(
-                resolutionInMapUnits,
-                ELEVATION_TILE_SIZE);
+        lod = profile->getLevelOfDetailForHorizResolution(
+            resolutionInMapUnits,
+            ELEVATION_TILE_SIZE);
 
-            profile->getNumTiles(lod, tw, th);
+        profile->getNumTiles(lod, tw, th);
 
-            rx = (p.x() - pxmin) / pw, ry = (p.y() - pymin) / ph;
-            tx = osg::clampBelow((unsigned)(rx * (double)tw), tw - 1u); // TODO: wrap around for geo
-            ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)th), th - 1u);
+        rx = (p.x() - pxmin) / pw, ry = (p.y() - pymin) / ph;
+        tx = osg::clampBelow((unsigned)(rx * (double)tw), tw - 1u); // TODO: wrap around for geo
+        ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)th), th - 1u);
 
-            if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
-            {
-                key._tilekey = TileKey(lod, tx, ty, profile);
-                lod_prev = lod;
-                tx_prev = tx;
-                ty_prev = ty;
-            }
+        if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
+        {
+            key._tilekey = TileKey(lod, tx, ty, profile);
+            lod_prev = lod;
+            tx_prev = tx;
+            ty_prev = ty;
+            tileKeyChanged = true;
         }
 
         if (key._tilekey.valid())
         {
-            auto iter = quickCache.find(key);
-
-            if (iter == quickCache.end())
+            if (tileKeyChanged || !raster.valid())
             {
-                const bool fallback_if_necessary = true;
+                auto iter = quickCache.find(key);
 
-                raster = getOrCreateRaster(snapshot, key, fallback_if_necessary, progress);
-
-                // bail on cancelation before using the quickcache
-                if (progress && progress->isCanceled())
+                if (iter == quickCache.end())
                 {
-                    return -1;
-                }
+                    const bool fallback_if_necessary = true;
 
-                quickCache[key] = raster.get();
+                    raster = getOrCreateRaster(snapshot, key, fallback_if_necessary, progress);
 
-                if (ws)
-                    ws->_lru.insert(key, raster);
-            }
-            else
-            {
-                raster = iter->second;
-            }
+                    // bail on cancelation before using the quickcache
+                    if (progress && progress->isCanceled())
+                    {
+                        return -1;
+                    }
 
-            {
-                //OE_PROFILING_ZONE_NAMED("sample");
-                if (raster.valid())
-                {
-                    u = (p.x() - raster->getExtent().xMin()) / raster->getExtent().width();
-                    v = (p.y() - raster->getExtent().yMin()) / raster->getExtent().height();
-
-                    // Note: This can happen on the map edges..
-                    // TODO: consider looping around for geo and clamping for projected
-                    u = osg::clampBetween(u, 0.0, 1.0);
-                    v = osg::clampBetween(v, 0.0, 1.0);
-
-                    quickSample(raster->reader(), u, v, elev, qvars);
-                    p.z() = elev.r();
+                    quickCache[key] = raster.get();
                 }
                 else
                 {
-                    p.z() = failValue;
+                    raster = iter->second;
                 }
+            }
+
+            if (raster.valid())
+            {
+                u = (p.x() - raster->getExtent().xMin()) / raster->getExtent().width();
+                v = (p.y() - raster->getExtent().yMin()) / raster->getExtent().height();
+
+                // Note: This can happen on the map edges..
+                // TODO: consider looping around for geo and clamping for projected
+                u = clamp(u, 0.0, 1.0);
+                v = clamp(v, 0.0, 1.0);
+
+                p.z() = raster->getRawElevationUV(u, v);
+            }
+            else
+            {
+                p.z() = failValue;
             }
         }
         else
@@ -675,8 +627,7 @@ ElevationPool::sampleMapCoords(
     key._hash = snapshot.hash;
         
 
-    osg::ref_ptr<ElevationTexture> raster;
-    osg::Vec4 elev;
+    osg::ref_ptr<ElevationTile> raster;
     double u, v;
 
     const Profile* profile = map->getProfile();
@@ -688,7 +639,6 @@ ElevationPool::sampleMapCoords(
     int count = 0;
 
     Envelope::QuickCache quickCache;
-    Envelope::QuickSampleVars qvars;
 
     unsigned tw, th;
     double rx, ry;
@@ -703,80 +653,76 @@ ElevationPool::sampleMapCoords(
     for (auto iter = begin; iter != end; ++iter)
     {
         auto& p = *iter;
+
+        bool tileKeyChanged = false;
+
+        double resolutionInMapUnits = srs->transformDistance(resolution, units, p.y());
+
+        int computedLOD = profile->getLevelOfDetailForHorizResolution(
+            resolutionInMapUnits,
+            ELEVATION_TILE_SIZE);
+
+        lod = std::min(getLOD(p.x(), p.y(), ws), (int)computedLOD);
+
+        if (lod < 0)
         {
-            //OE_PROFILING_ZONE_NAMED("createTileKey");
-            double resolutionInMapUnits = srs->transformDistance(resolution, units, p.y());
+            p.z() = failValue;
+            continue;
+        }
 
-            int computedLOD = profile->getLevelOfDetailForHorizResolution(
-                resolutionInMapUnits,
-                ELEVATION_TILE_SIZE);
+        profile->getNumTiles(lod, tw, th);
+        rx = (p.x() - pxmin) / pw, ry = (p.y() - pymin) / ph;
+        tx = osg::clampBelow((unsigned)(rx * (double)tw), tw - 1u);
+        ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)th), th - 1u);
 
-            lod = osg::minimum(getLOD(p.x(), p.y(), ws), (int)computedLOD);
-
-            if (lod < 0)
-            {
-                p.z() = failValue;
-                continue;
-            }
-
-            profile->getNumTiles(lod, tw, th);
-
-            rx = (p.x() - pxmin) / pw, ry = (p.y() - pymin) / ph;
-            tx = osg::clampBelow((unsigned)(rx * (double)tw), tw - 1u); // TODO: wrap around for geo
-            ty = osg::clampBelow((unsigned)((1.0 - ry) * (double)th), th - 1u);
-
-            if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
-            {
-                key._tilekey = TileKey(lod, tx, ty, profile);
-                lod_prev = lod;
-                tx_prev = tx;
-                ty_prev = ty;
-            }
+        if (lod != lod_prev || tx != tx_prev || ty != ty_prev)
+        {
+            key._tilekey = TileKey(lod, tx, ty, profile);
+            lod_prev = lod;
+            tx_prev = tx;
+            ty_prev = ty;
+            tileKeyChanged = true;
         }
 
         if (key._tilekey.valid())
         {
-            auto iter = quickCache.find(key);
-
-            if (iter == quickCache.end())
+            if (tileKeyChanged || !raster.valid())
             {
-                raster = getOrCreateRaster(snapshot, key, true /* fallback */, progress);
+                auto iter = quickCache.find(key);
 
-                // bail on cancelation before using the quickcache
-                if (progress && progress->isCanceled())
+                if (iter == quickCache.end())
                 {
-                    return -1;
-                }
+                    raster = getOrCreateRaster(snapshot, key, true /* fallback */, progress);
 
-                quickCache[key] = raster.get();
+                    // bail on cancelation before using the quickcache
+                    if (progress && progress->isCanceled())
+                    {
+                        return -1;
+                    }
 
-                if (ws)
-                    ws->_lru.insert(key, raster);
-            }
-            else
-            {                
-                raster = iter->second;
-            }
-
-            {
-                //OE_PROFILING_ZONE_NAMED("sample");
-                if (raster.valid())
-                {
-                    u = (p.x() - raster->getExtent().xMin()) / raster->getExtent().width();
-                    v = (p.y() - raster->getExtent().yMin()) / raster->getExtent().height();
-
-                    // Note: This can happen on the map edges..
-                    // TODO: consider looping around for geo and clamping for projected
-                    u = osg::clampBetween(u, 0.0, 1.0);
-                    v = osg::clampBetween(v, 0.0, 1.0);
-
-                    quickSample(raster->reader(), u, v, elev, qvars);
-                    p.z() = elev.r();
+                    quickCache[key] = raster.get();
                 }
                 else
                 {
-                    p.z() = failValue;
+                    raster = iter->second;
                 }
+            }
+
+            if (raster.valid())
+            {
+                u = (p.x() - raster->getExtent().xMin()) / raster->getExtent().width();
+                v = (p.y() - raster->getExtent().yMin()) / raster->getExtent().height();
+
+                // Note: This can happen on the map edges..
+                // TODO: consider looping around for geo and clamping for projected
+                u = clamp(u, 0.0, 1.0);
+                v = clamp(v, 0.0, 1.0);
+
+                p.z() = raster->getRawElevationUV(u, v);
+            }
+            else
+            {
+                p.z() = failValue;
             }
         }
         else
@@ -812,7 +758,7 @@ ElevationPool::getSample(const GeoPoint& p, unsigned maxLOD, WorkingSet* ws, Pro
         key._tilekey = snapshot.mapProfile->createTileKey(p.x(), p.y(), lod);
         key._hash = snapshot.hash;
 
-        osg::ref_ptr<ElevationTexture> raster = getOrCreateRaster(
+        osg::ref_ptr<ElevationTile> raster = getOrCreateRaster(
             snapshot,
             key,   // key to query
             true,  // fall back on lower resolution data if necessary

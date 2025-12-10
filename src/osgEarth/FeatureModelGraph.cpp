@@ -1504,7 +1504,10 @@ FeatureModelGraph::build(
 
                 // Get the Group that parents all features of this particular style. Note, this
                 // might be NULL if the factory does not support style groups.
-                osg::Group* styleGroup = getOrCreateStyleGroupFromFactory(*feature->style());
+                static Style emptyStyle;
+                const Style& feature_style = feature->style() ? *feature->style() : emptyStyle;
+
+                osg::Group* styleGroup = getOrCreateStyleGroupFromFactory(feature_style);
                 if (styleGroup)
                 {
                     if (!group->containsNode(styleGroup))
@@ -1513,7 +1516,7 @@ FeatureModelGraph::build(
                     }
                 }
 
-                if ( createOrUpdateNode(cursor.get(), *feature->style(), context, readOptions, node, baseQuery))
+                if ( createOrUpdateNode(cursor.get(), feature_style, context, readOptions, node, baseQuery))
                 {
                     if (node.valid())
                     {

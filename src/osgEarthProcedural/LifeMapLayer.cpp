@@ -9,12 +9,7 @@
 #include <osgEarth/ElevationPool>
 #include <osgEarth/Math>
 #include <osgEarth/MetaTile>
-#include <osgEarth/rtree.h>
-
-#include <osgDB/ReadFile>
-#include <osgDB/FileNameUtils>
-#include <osgDB/ReaderWriter>
-
+#include <osgEarth/TerrainEngineNode>
 #include <random>
 
 #define LC "[" << className() << "] \"" << getName() << "\" "
@@ -172,6 +167,13 @@ Status
 LifeMapLayer::closeImplementation()
 {
     return super::closeImplementation();
+}
+
+void
+LifeMapLayer::prepareForRendering(TerrainEngine* terrain)
+{
+    super::prepareForRendering(terrain);
+    _terrainOptions = terrain->getOptions();
 }
 
 void
@@ -394,14 +396,15 @@ LifeMapLayer::createImageImplementation(
         return GeoImage::INVALID;
 
     // collect the elevation data:
-    osg::ref_ptr<ElevationTexture> elevTile;
+    osg::ref_ptr<ElevationTile> elevTile;
     ElevationPool* ep = map->getElevationPool();
     ep->getTile(key, true, elevTile, &_workingSet, progress);
 
     // ensure we have a normal map for slopes and curvatures:
     if (elevTile.valid() && getTerrainWeight() > 0.0f)
     {
-        elevTile->generateNormalMap(map.get(), &_workingSet, progress);
+        elevTile->generateNormalMap(map.get(), _terrainOptions.getNormalMapTileSize(),
+            &_workingSet, progress);
     }
 
     GeoExtent extent = key.getExtent();
