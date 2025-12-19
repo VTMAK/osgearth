@@ -16,6 +16,7 @@ find_package(geos QUIET)
 find_package(blend2d QUIET)
 find_package(spdlog QUIET)
 find_package(meshoptimizer QUIET)
+find_package(AWSSDK CONFIG COMPONENTS core s3 QUIET)
 
 if(OSGEARTH_BUILD_SHARED_LIBS)
     find_package(blosc QUIET)
@@ -59,10 +60,14 @@ set(TARGET_GLSL
     CascadeDraping.glsl
     Chonk.glsl
     Chonk.Culling.glsl
+    Decals.h.glsl
     Decals.glsl
+    Decals.Culling.glsl
     DepthOffset.glsl
     Draping.glsl
     DrawInstancedAttribute.glsl
+    FrustumGrid.h.glsl
+    FrustumGridComputer.glsl
     GPUClamping.glsl
     GPUClamping.lib.glsl
     HexTiling.glsl
@@ -325,6 +330,7 @@ SET(TARGET_H
     Picker
     PlaceNode
     PluginLoader
+    PMTiles
     PointDrawable
     PointSymbol
     PolyfillCPP14
@@ -675,6 +681,7 @@ set(TARGET_SRC
     PBRMaterial.cpp
     PhongLightingEffect.cpp
     PlaceNode.cpp
+    PMTiles.cpp
     PointDrawable.cpp
     PointSymbol.cpp
     PolygonizeLines.cpp
@@ -922,6 +929,14 @@ if(SuperluminalAPI_FOUND)
     message(STATUS "Found SuperLuminalAPI.")
     set(OSGEARTH_HAVE_SUPERLUMINALAPI ON)
     target_link_libraries(${LIB_NAME} PRIVATE SuperluminalAPI)    
+endif()
+
+if(aws-cpp-sdk-core_FOUND)
+    message(STATUS "Found AWS SDK.")
+    set(OSGEARTH_HAVE_AWS_SDK_CORE ON)
+    target_include_directories(${LIB_NAME} PRIVATE ${AWSSDK_INCLUDE_DIRS})
+    target_link_libraries(${LIB_NAME} PRIVATE ${AWSSDK_LIBRARIES})
+
 endif()
 
 # pthreads?

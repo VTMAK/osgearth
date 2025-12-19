@@ -10,7 +10,10 @@
 #include <osg/ShapeDrawable>
 #include <osg/PolygonMode>
 
+#define TILES_PER_THREAD_GROUP 16
+
 using namespace osgEarth;
+
 
 void
 DecalNode::traverse(osg::NodeVisitor& nv)
@@ -22,6 +25,18 @@ DecalNode::traverse(osg::NodeVisitor& nv)
             osgUtil::CullVisitor* cv = Culling::asCullVisitor(nv);
             if (cv->getCurrentRenderBin()->getName() != "OE_EMPTY_RENDER_BIN")
             {
+                // SSE culling:
+                if (minPixels().isSet())
+                {
+                    float sse = 0.0f;
+                    if (nv.getUserValue("oe_sse", sse))
+                    {
+                        auto pixels = cv->clampedPixelSize(getBound()) / cv->getLODScale();
+                        if (pixels < minPixels().value() * sse)
+                            return;
+                    }
+                }
+
                 std::shared_ptr<detail::DecalDrawList> drawList;
                 if (ObjectStorage::get(&nv, drawList))
                 {
@@ -136,8 +151,6 @@ DecalRTTNode::traverse(osg::NodeVisitor& nv)
                         _decal.size.y() = bbox.yMax() - bbox.yMin();
                         _decal.textureSize->set(_decal.size.x(), _decal.size.y());
                     }
-                    //_decal.size.z() = std::max(_decal.size.x(), _decal.size.y());
-                    //_decal.size.x() = _decal.size.y() * (bbox.xMax() - bbox.xMin()) / (bbox.yMax() - bbox.yMin());
 
                     _needsRTT = getDynamic();
 
@@ -157,7 +170,7 @@ DecalRTTNode::traverse(osg::NodeVisitor& nv)
                 if (ObjectStorage::get(&nv, drawList))
                 {
                     auto& leaves = drawList->_perCamera.get(cv->getState()).leaves;
-                    auto& mm = *cv->getModelViewMatrix() * cv->getCurrentCamera()->getInverseViewMatrix();
+                    const auto& mm = *cv->getModelViewMatrix() * cv->getCurrentCamera()->getInverseViewMatrix();
                     Decal leaf = _decal;
                     leaf.matrix = mm * _decal.matrix;
                     leaves.emplace_back(std::move(leaf));
@@ -196,97 +209,310 @@ DecalRTTNode::computeBound() const
 }
 
 
-DecalDecorator*
-DecalDecorator::getOrCreate(osg::StateSet* stateSet)
-{
-    OE_HARD_ASSERT(stateSet);
-    auto dec = dynamic_cast<DecalDecorator*>(stateSet->getAttribute((osg::StateAttribute::Type)1001001001));
-    if (!dec)
-    {
-        dec = new DecalDecorator();
-        stateSet->setAttribute(dec);
-        auto* vp = VirtualProgram::getOrCreate(stateSet);
-        Shaders package;
-        package.load(vp, package.Decals);
-        //stateSet->setDefine("OE_DECALS_BUF_BINDING", std::to_string(dec->_bufferBinding), ~0);
-        //stateSet->setDefine("OE_DECALS_TEX_BINDING", std::to_string(dec->_texturesBinding), ~0);
-    }
-    return dec;
-}
-
-void
-DecalDecorator::remove(osg::StateSet* stateSet)
-{
-    OE_HARD_ASSERT(stateSet);
-    stateSet->removeAttribute(getType());
-    auto* vp = VirtualProgram::get(stateSet);
-    if (vp) vp->removeShader("oe_applyDecals");
-}
-
-void
-DecalDecorator::apply(osg::State& state) const
-{
-    auto& leaves = _drawList->_perCamera.get(&state).leaves;
-
-    //std::lock_guard<std::mutex> lock(_mutex);
-
-    auto& gc = GLObjects::get(_globjects, state);
-    if (!gc._ssbo) {
-        gc._ssbo = GLBuffer::create_shared(GL_SHADER_STORAGE_BUFFER, state);
-        gc._ssbo->bind();
-        gc._ssbo->debugLabel("Decals", "Decal instance buffer");
-        gc._ssbo->unbind();
-    }
-
-    if (leaves.empty() && gc._buffer.size() > 1) // there's always at least 1
-        return;
-
-    gc._buffer.resize(1);
-    gc._buffer[0].count = (std::uint32_t)(leaves.size());
-
-    auto& mvm = state.getModelViewMatrix();
-
-    // update the buffer
-    for (auto& leaf : leaves)
-    {
-        gc._buffer.emplace_back();
-        GPUDecalInstance& instance = gc._buffer.back();
-        instance.projMatrixVS = osg::Matrix::inverse(leaf.matrix * mvm);
-        instance.halfX = 0.5f * leaf.size.x();
-        instance.halfY = 0.5f * leaf.size.y();
-        instance.halfZ = 0.5f * leaf.size.z();
-        instance.textureIndex = leaf.texture ? (std::int32_t)_textures->add(leaf.texture) : -1;
-    }
-
-    // send it to the GPU
-    gc._ssbo->uploadData(gc._buffer);
-
-    // bind it for shader access
-    gc._ssbo->bindBufferBase(_bufferBinding);
-
-    // activate the decal texture arena
-    _textures->apply(state);
-
-    // reset the draw list. note: this is not multi-GC friendly yet.
-    leaves.clear();
-}
-
-void
-DecalDecorator::releaseGLObjects(osg::State* state) const
-{
-    if (state) {
-        auto& gc = GLObjects::get(_globjects, *state);
-        gc._ssbo = nullptr;
-    }
-    else {
-        _globjects.clear();
-    }
-}
-
-
 DecalGroup::DecalGroup(DecalDecorator* decorator)
 {
     OE_SOFT_ASSERT(decorator);
     if (decorator)
         _drawList = decorator->_drawList;
+}
+
+
+
+
+DecalDecorator*
+DecalDecorator::getOrCreate(osg::Group* target)
+{
+    OE_SOFT_ASSERT_AND_RETURN(target, nullptr);
+
+    // is one already there?
+    for (size_t i = 0; i < target->getNumChildren(); ++i)
+    {
+        auto dec = dynamic_cast<DecalDecorator*>(target->getChild(i));
+        if (dec)
+            return dec;
+    }
+
+    // add our decorator as a child of the target
+    auto dec = new DecalDecorator();
+    target->addChild(dec);
+
+    // add the applier to the target's stateset
+    auto applier = new DecalApplier();
+    applier->setDecorator(dec);
+    auto targetSS = target->getOrCreateStateSet();
+    targetSS->setAttribute(applier);
+
+    // load up the decal application shaders on the target:
+    auto* vp = VirtualProgram::getOrCreate(targetSS);
+    Shaders package;
+    package.load(vp, package.Decals);
+
+    return dec;
+}
+
+void
+DecalDecorator::remove(osg::Group* target)
+{
+    OE_SOFT_ASSERT_AND_RETURN(target, void());
+
+    for (size_t i = 0; i < target->getNumChildren(); ++i)
+    {
+        auto dec = dynamic_cast<DecalDecorator*>(target->getChild(i));
+        if (dec)
+        {
+            auto ss = target->getStateSet();
+            if (ss)
+                ss->removeAttribute(OE_DECAL_APPLIER_ATTR_TYPE);
+
+            target->getChild(i)->releaseGLObjects(nullptr);
+            target->removeChild(i);
+            return;
+        }
+    }
+}
+
+
+DecalDecorator::DecalDecorator()
+{
+    // set up the pre-render camera to force our decal culling pass
+    // to happen before any main scene rendering
+    this->setCullingActive(false);
+    this->setReferenceFrame(osg::Camera::ABSOLUTE_RF);
+    this->setRenderOrder(osg::Camera::PRE_RENDER);
+    this->setFinalDrawCallback(new CameraCallback(this));
+    this->setImplicitBufferAttachmentMask(0, 0);
+
+    // set up our compute shaders
+    Shaders shaders;
+
+    _computeFrustumsProgram = new osg::Program();
+    _computeFrustumsProgram->addShader(new osg::Shader(osg::Shader::COMPUTE,
+        ShaderLoader::load(shaders.FrustumGridComputer, shaders)));
+
+    _cullProgram = new osg::Program();
+    _cullProgram->addShader(new osg::Shader(osg::Shader::COMPUTE,
+        ShaderLoader::load(shaders.DecalsCulling, shaders)));
+
+    _drawList = std::make_shared<detail::DecalDrawList>();
+    _textures = new TextureArena();
+    _textures->setBindingPoint(_texturesBinding);
+}
+
+void
+DecalDecorator::dirtyUniforms()
+{
+    for (int i = 0; i < _globjects.size(); ++i)
+    {
+        _globjects[i].dirty = true;
+    }
+}
+
+void
+DecalDecorator::accept(osg::NodeVisitor& nv)
+{
+    if (nv.getVisitorType() == nv.CULL_VISITOR)
+    {
+        auto* cv = dynamic_cast<osgUtil::CullVisitor*>(&nv);
+        if (cv)
+        {
+            auto& gc = GLObjects::get(_globjects, *cv->getState());
+            gc.camera = cv->getCurrentCamera();
+            gc.mvm = *cv->getModelViewMatrix();
+        }
+    }
+    osg::Camera::accept(nv);
+}
+
+void
+DecalDecorator::operator()(osg::RenderInfo& ri) const
+{
+    auto& state = *ri.getState();
+    auto& leaves = _drawList->_perCamera.get(&state).leaves;
+
+    auto& gc = GLObjects::get(_globjects, state);
+    if (!gc.decalsBuffer)
+    {
+        // SSBO holding ALL known decal instances
+        gc.decalsBuffer = GLBuffer::create_shared(GL_SHADER_STORAGE_BUFFER, state);
+        gc.decalsBuffer->bind();
+        gc.decalsBuffer->debugLabel("Decals", "Decal instance buffer");
+        gc.decalsBuffer->unbind();
+
+        // UBO holding the paramater uniforms
+        gc.paramsBuffer = GLBuffer::create(GL_UNIFORM_BUFFER, state);
+        gc.paramsBuffer->bind();
+        gc.paramsBuffer->debugLabel("Decals", "Decal parameters buffer");
+        gc.paramsBuffer->unbind();
+
+        // SSBO holding the tiled frustums (GPU-side only)
+        gc.frustumsBuffer = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
+        gc.frustumsBuffer->bind();
+        gc.frustumsBuffer->debugLabel("Decals", "Decal frustums buffer");
+        gc.frustumsBuffer->unbind();
+
+        // SSBO holding the tile decal render lists (GPU-side only)
+        gc.tilesBuffer = GLBuffer::create(GL_SHADER_STORAGE_BUFFER, state);
+        gc.tilesBuffer->bind();
+        gc.tilesBuffer->debugLabel("Decals", "Decal tiles buffer");
+        gc.tilesBuffer->unbind();
+    }
+
+    if (leaves.empty() && gc.decals.size() == 1) // there's always at least 1
+        return;
+
+    // compute a new set of frustums for the current view if neccesary
+    bool newGrid = computeFrustumGrid(state, gc);
+
+    gc.decals.resize(1);
+    gc.decals[0].count = (std::uint32_t)(leaves.size());
+
+    // update the buffer
+    for (auto& leaf : leaves)
+    {
+        gc.decals.emplace_back();
+        GPUDecal& instance = gc.decals.back();
+        instance.mvm = leaf.matrix * gc.mvm;
+        instance.mvmInverse = osg::Matrix::inverse(instance.mvm);
+        instance.halfX = 0.5f * leaf.size.x();
+        instance.halfY = 0.5f * leaf.size.y();
+        instance.halfZ = 0.5f * leaf.size.z();
+        instance.textureIndex = leaf.texture ? (std::int32_t)_textures->add(leaf.texture) : -1;
+        instance.opacity = leaf.opacity;
+    }
+
+    // send it to the GPU
+    gc.decalsBuffer->uploadData(gc.decals);
+
+    // if we generated a new frustum tile grid, sync the output for the culling shader
+    if (newGrid)
+    {
+        gc.ext()->glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    }
+
+    // run the culling shader
+    cull(state, gc);
+
+    // reset the draw list. note: this is not multi-GC friendly yet.
+    leaves.clear();
+}
+
+bool
+DecalDecorator::computeFrustumGrid(osg::State& state, GLObjects& gc) const
+{
+    osg::Vec4i viewport(
+        gc.camera->getViewport()->x(),
+        gc.camera->getViewport()->y(),
+        gc.camera->getViewport()->width(),
+        gc.camera->getViewport()->height());
+
+    if (gc.dirty || viewport != gc.params.viewport)
+    {
+        gc.params.invProjMatrix = osg::Matrix::inverse(gc.camera->getProjectionMatrix());
+        gc.params.viewport = viewport;
+        gc.params.numTiles.x() = (int)((viewport[2] + _pixelsPerTile - 1) / _pixelsPerTile);
+        gc.params.numTiles.y() = (int)((viewport[3] + _pixelsPerTile - 1) / _pixelsPerTile);
+        gc.params.debugTiles = _debugTiles ? 1.0f : 0.0f;
+
+        // upload
+        gc.paramsBuffer->uploadData(sizeof(GPUParams), &gc.params);
+        _uniformsDirty = false;
+
+        // ensure enough storage space for the frustums grid:
+        gc.frustumsBuffer->bind();
+        gc.frustumsBuffer->bufferData(
+            sizeof(GPUFrustum) * gc.params.numTiles.x() * gc.params.numTiles.y(),
+            nullptr,
+            GL_DYNAMIC_DRAW);
+
+        // ensure enough storage space for the tiles index:
+        gc.tilesBuffer->bind();
+        gc.tilesBuffer->bufferData(
+            sizeof(GPUTile) * gc.params.numTiles.x() * gc.params.numTiles.y(),
+            nullptr,
+            GL_DYNAMIC_DRAW);
+
+        // activate the program
+        _computeFrustumsProgram->apply(state);
+        OE_HARD_ASSERT(state.getLastAppliedProgramObject(), "Shader compilation error!!");
+
+        // assign binding points for the buffers we will use in this shader:
+        gc.paramsBuffer->bindBufferBase(_paramsBinding);
+        gc.frustumsBuffer->bindBufferBase(_frustumsBinding);
+
+        // run it!
+        GLuint numGroupsX = (gc.params.numTiles.x() + TILES_PER_THREAD_GROUP - 1) / TILES_PER_THREAD_GROUP;
+        GLuint numGroupsY = (gc.params.numTiles.y() + TILES_PER_THREAD_GROUP - 1) / TILES_PER_THREAD_GROUP;
+        
+        gc.ext()->glDispatchCompute(numGroupsX, numGroupsY, 1);
+
+        gc.dirty = false;
+
+        // grid changed:
+        return true;
+    }
+
+    // grid did not change:
+    return false;
+}
+
+void
+DecalDecorator::cull(osg::State& state, GLObjects& gc) const
+{
+    _cullProgram->apply(state);
+    OE_HARD_ASSERT(state.getLastAppliedProgramObject(), "Shader compilation error!!");
+
+    // bind all buffers in the shader:
+    gc.decalsBuffer->bindBufferBase(_decalsBinding);
+    gc.paramsBuffer->bindBufferBase(_paramsBinding);
+    gc.frustumsBuffer->bindBufferBase(_frustumsBinding);
+    gc.tilesBuffer->bindBufferBase(_tilesBinding);
+
+    GLuint numGroupsX = (gc.params.numTiles.x() + TILES_PER_THREAD_GROUP - 1) / TILES_PER_THREAD_GROUP;
+    GLuint numGroupsY = (gc.params.numTiles.y() + TILES_PER_THREAD_GROUP - 1) / TILES_PER_THREAD_GROUP;
+
+    gc.ext()->glDispatchCompute(numGroupsX, numGroupsY, 1);
+}
+
+void
+DecalDecorator::applyRenderingState(osg::State& state) const
+{
+    auto& gc = GLObjects::get(_globjects, state);
+
+    gc.decalsBuffer->bindBufferBase(_decalsBinding);
+    gc.paramsBuffer->bindBufferBase(_paramsBinding);
+    gc.tilesBuffer->bindBufferBase(_tilesBinding);
+
+    // ensure the deal data generated by the culling shader is ready:
+    gc.ext()->glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    _textures->apply(state);
+
+    // ready to render!
+}
+
+void
+DecalDecorator::releaseGLObjects(osg::State* state) const
+{
+    if (state)
+    {
+        auto& gc = GLObjects::get(_globjects, *state);
+        gc.decalsBuffer = nullptr;
+        gc.paramsBuffer = nullptr;
+        gc.frustumsBuffer = nullptr;
+        gc.tilesBuffer = nullptr;
+    }
+    else
+    {
+        _globjects.clear();
+    }
+}
+
+
+void
+DecalApplier::apply(osg::State& state) const
+{
+    if (_decorator)
+    {
+        _decorator->applyRenderingState(state);
+    }
 }

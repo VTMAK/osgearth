@@ -405,6 +405,7 @@ MapNode::open()
     }
 
     osg::StateSet* stateset = getOrCreateStateSet();
+    stateset->setName("MapNode");
 
     // install the screen-space error "global" uniform
     stateset->addUniform(_sseU.get());
@@ -420,15 +421,12 @@ MapNode::open()
         stateset->setDefine("OE_IS_GEOCENTRIC");
     }
 
-    // VRV_PATCH, don't use OSG's GL material system
     // install a default material for everything in the map
-    osg::Material* defaultMaterial = new osg::Material();
+    osg::Material* defaultMaterial = new MaterialGL3();
     defaultMaterial->setDiffuse(defaultMaterial->FRONT, osg::Vec4(1,1,1,1));
     defaultMaterial->setAmbient(defaultMaterial->FRONT, osg::Vec4(1,1,1,1));
     stateset->setAttributeAndModes(defaultMaterial, 1);
-
-    // Note: without this, osgEarth's Sky won't work -gw
-    //MaterialCallback().operator()(defaultMaterial, 0L);
+    MaterialCallback().operator()(defaultMaterial, 0L);
 
     // activate PBR support.
     VirtualProgram* vp = VirtualProgram::getOrCreate(stateset);
@@ -871,6 +869,9 @@ MapNode::traverse( osg::NodeVisitor& nv )
 
             if (_drapingManager != nullptr)
                 ObjectStorage::set(&nv, _drapingManager);
+
+            // store the SSE:
+            nv.setUserValue("oe_sse", getScreenSpaceError());
 
             // update any per-camera data:
             auto* cam = cv->getCurrentCamera();
