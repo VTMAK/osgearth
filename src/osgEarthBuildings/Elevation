@@ -16,14 +16,12 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_ELEVATION_H
-#define OSGEARTH_BUILDINGS_ELEVATION_H
+#pragma once
 
 #include "Common"
 #include "Roof"
 #include <osg/BoundingBox>
 #include <osg/Vec3d>
-#include <osg/Texture>
 #include <osgEarth/Skins>
 #include <osgEarth/Geometry>
 #include <vector>
@@ -43,17 +41,18 @@ namespace osgEarth { namespace Buildings
     /**
      * A vertical section of a building.
      */
-    class OSGEARTHBUILDINGS_EXPORT Elevation : public osg::Referenced
+    class OSGEARTHBUILDINGS_EXPORT Elevation
     {
     public:
-        typedef std::vector<osg::ref_ptr<Elevation> > Vector;
+        using Vector = std::vector<Elevation>;
 
         /** Constructor */
         Elevation();
-
         Elevation(const Elevation& rhs);
-
-        virtual Elevation* clone() const;
+        Elevation(Elevation&& rhs) noexcept;
+        Elevation& operator=(const Elevation& rhs);
+        Elevation& operator=(Elevation&& rhs) noexcept;
+        ~Elevation() = default;
 
         /**
          * Sets the parent elevation of this elevation. If an elevation
@@ -123,8 +122,12 @@ namespace osgEarth { namespace Buildings
         /**
          * The roof.
          */
-        void setRoof(Roof* roof);
-        Roof* getRoof() const    { return _roof.get(); }
+        void setRoof(const Roof& roof);
+        void setRoof(Roof&& roof);
+        Roof* getRoof();
+        const Roof* getRoof() const;
+        bool hasRoof() const { return _roof.has_value(); }
+        void clearRoof() { _roof.reset(); }
 
         /**
          * Elevation color. If a skin is set, it will be modulated
@@ -163,7 +166,7 @@ namespace osgEarth { namespace Buildings
          */
         bool build(const Polygon* footprint, BuildContext& bc);
 
-        virtual Config getConfig() const;
+        Config getConfig() const;
 
     public: // structural data model elements
 
@@ -209,7 +212,18 @@ namespace osgEarth { namespace Buildings
         /** Gets the uppermost Z value in the wall geometry */
         float getUppermostZ() const;
 
-        virtual bool isDetail() const { return false; }
+        /**
+         * Parapet mode - when true, this elevation acts as a parapet
+         * (low wall along the edge of a roof).
+         */
+        void setParapet(bool value);
+        bool isParapet() const { return _isParapet; }
+
+        /**
+         * Width of the parapet, in meters (only used when isParapet() is true)
+         */
+        void setParapetWidth(float width);
+        float getParapetWidth() const { return _parapetWidth.get(); }
 
     public:
         
@@ -264,23 +278,23 @@ namespace osgEarth { namespace Buildings
             return osg::Matrix( _cosR, -_sinR, 0, 0, _sinR, _cosR, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
         }
 
-    protected:
-        optional<float>    _height;
-        optional<float>    _heightPercentage;
-        optional<unsigned> _numFloors;
-        optional<float>    _bottom;
-        float              _inset;
-        float              _xoffset;
-        float              _yoffset;
-        Color              _color;
-        osg::ref_ptr<Roof> _roof;
-        Vector             _elevations;
-        osg::BoundingBox   _aabb;
-        float              _cosR, _sinR;
-        osg::Vec3d         _longEdgeMidpoint;
-        osg::Vec3d         _longEdgeInsideNormal;
-        bool               _renderAABB;
-        std::string        _tag;
+    private:
+        optional<float>     _height;
+        optional<float>     _heightPercentage;
+        optional<unsigned>  _numFloors;
+        optional<float>     _bottom;
+        float               _inset;
+        float               _xoffset;
+        float               _yoffset;
+        Color               _color;
+        std::optional<Roof> _roof;
+        Vector              _elevations;
+        osg::BoundingBox    _aabb;
+        float               _cosR, _sinR;
+        osg::Vec3d          _longEdgeMidpoint;
+        osg::Vec3d          _longEdgeInsideNormal;
+        bool                _renderAABB;
+        std::string         _tag;
 
         osg::ref_ptr<SkinResource> _skinResource;
         osg::ref_ptr<SkinSymbol>   _skinSymbol;
@@ -288,16 +302,13 @@ namespace osgEarth { namespace Buildings
         Elevation* _parent;
         Walls      _walls;
 
-    protected:
-        virtual ~Elevation() { }
+        bool            _isParapet;
+        optional<float> _parapetWidth;
 
-        virtual bool buildImpl(const Polygon*, BuildContext& bc);
-        
+        bool buildImpl(const Polygon*, BuildContext& bc);
         void resolveSkin(BuildContext& bc);
     };
 
     typedef Elevation::Vector ElevationVector;
 
 } }
-
-#endif // OSGEARTH_BUILDINGS_ELEVATION_H

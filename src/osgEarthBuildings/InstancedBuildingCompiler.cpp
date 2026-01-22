@@ -33,31 +33,31 @@ _session( session )
 }
 
 bool
-InstancedBuildingCompiler::compile(const Building*    building,
+InstancedBuildingCompiler::compile(const Building&    building,
                                    CompilerOutput&    output,
                                    const osg::Matrix& world2local,
                                    ProgressCallback*  progress)
 {
-    if ( building == 0L ||
-         building->getElevations().size() == 0 ||
-         building->getInstancedModelResource() == 0L )
+    if ( !building ||
+         building.getElevations().size() == 0 ||
+         building.getInstancedModelResource() == 0L )
     {
         return false;
     }
 
     // precalculate the frame transformation; combining these will
     // prevent any precision loss during the transform.
-    osg::Matrix frame = building->getReferenceFrame() * world2local;
+    osg::Matrix frame = building.getReferenceFrame() * world2local;
     
     // Load models:
-    ModelResource* model = building->getInstancedModelResource();
+    ModelResource* model = building.getInstancedModelResource();
 
     // Use the first elevation to compute the AABB.
-    Elevation* elevation = building->getElevations().front().get();
+    const Elevation& elevation = building.getElevations().front();
 
-    const osg::BoundingBox& space = elevation->getAxisAlignedBoundingBox();
+    const osg::BoundingBox& space = elevation.getAxisAlignedBoundingBox();
 
-    // dimensions of the AABB:       
+    // dimensions of the AABB:
     float spaceWidth  = space.xMax() - space.xMin();
     float spaceLength = space.yMax() - space.yMin();
 
@@ -70,17 +70,17 @@ InstancedBuildingCompiler::compile(const Building*    building,
     osg::Vec3d scale(
         model->canScaleToFitXY() == true ? (spaceWidth / modelWidth) : 1.0f,
         model->canScaleToFitXY() == true ? (spaceLength / modelLength) : 1.0f,
-        model->canScaleToFitZ() == true ?  (elevation->getHeight()/modelHeight) : 1.0f
+        model->canScaleToFitZ() == true ?  (elevation.getHeight()/modelHeight) : 1.0f
     );
 
     osg::Matrix matrix;
-    
+
     osg::Vec3d spaceCenter = space.center();
-    elevation->unrotate(spaceCenter);
+    elevation.unrotate(spaceCenter);
     matrix.preMultTranslate( osg::Vec3d(spaceCenter.x(), spaceCenter.y(), 0.0) );
 
     // rotate the model:
-    matrix.preMult( elevation->getRotation() );
+    matrix.preMult( elevation.getRotation() );
 
     // scale the model to match the dimensions of the AABB.    
     matrix.preMultScale( scale );

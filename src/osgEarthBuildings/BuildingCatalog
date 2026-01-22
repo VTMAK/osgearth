@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_CATALOG_H
-#define OSGEARTH_BUILDINGS_BUILDING_CATALOG_H
+#pragma once
 
 #include "Common"
 #include "Building"
@@ -78,11 +77,11 @@ namespace osgEarth { namespace Buildings
 
     protected:
 
-        Building* cloneBuildingTemplate(Feature*, const TagVector& tags, float height, float area) const;
+        std::optional<Building> cloneBuildingTemplate(Feature*, const TagVector& tags, float height, float area) const;
         
         bool parseElevations(const Config&, Building*, Elevation*, ElevationVector&, SkinSymbol*, ProgressCallback*);
 
-        Roof* parseRoof(const Config*, ProgressCallback*) const;
+        Roof parseRoof(const Config*, ProgressCallback*) const;
         
         SkinSymbol* parseSkinSymbol(const Config* conf) const;
 
@@ -96,6 +95,4 @@ namespace osgEarth { namespace Buildings
     };
 
 } }
-
-#endif // OSGEARTH_BUILDINGS_BUILDING_CATALOG_H
 

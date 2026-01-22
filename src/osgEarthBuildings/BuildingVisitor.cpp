@@ -24,22 +24,18 @@ using namespace osgEarth::Buildings;
 void
 BuildingVisitor::traverse(Building* building)
 {
-    for(ElevationVector::iterator i = building->getElevations().begin();
-        i != building->getElevations().end();
-        ++i)
+    for (auto& e : building->getElevations())
     {
-        apply( i->get() );
+        apply(&e);
     }
 }
 
 void
 BuildingVisitor::traverse(Elevation* elevation)
 {
-    for(ElevationVector::iterator i = elevation->getElevations().begin();
-        i != elevation->getElevations().end();
-        ++i)
+    for (auto& e : elevation->getElevations())
     {
-        apply( i->get() );
+        apply(&e);
     }
 
     if ( elevation->getRoof() )

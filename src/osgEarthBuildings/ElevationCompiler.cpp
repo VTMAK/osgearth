@@ -28,16 +28,15 @@ using namespace osgEarth::Buildings;
 
 bool
 ElevationCompiler::compile(CompilerOutput&       output,
-                           const Building*       building,
-                           const Elevation*      elevation,
+                           const Building&       building,
+                           const Elevation&      elevation,
                            const osg::Matrix&    world2local,
                            const osgDB::Options* readOptions) const
 {
     if ( !building ) return false;
-    if ( !elevation ) return false;
 
     // make sure there's something to build:
-    const Elevation::Walls& walls = elevation->getWalls();
+    auto& walls = elevation.getWalls();
     if ( walls.size() == 0 )
     {
         OE_DEBUG << LC << "Elevation has no walls; skipping.\n";
@@ -46,9 +45,9 @@ ElevationCompiler::compile(CompilerOutput&       output,
 
     // precalculate the frame transformation; combining these will
     // prevent any precision loss during the transform.
-    osg::Matrix frame = building->getReferenceFrame() * world2local;
+    osg::Matrix frame = building.getReferenceFrame() * world2local;
         
-    SkinResource* skin = elevation->getSkinResource();
+    SkinResource* skin = elevation.getSkinResource();
     bool useTexture = skin != 0L;
     float texWidth = 0.0f;
     float texHeight = 0.0f;
@@ -72,8 +71,8 @@ ElevationCompiler::compile(CompilerOutput&       output,
     bool genNormals = false;
 
     //TODO
-    Color upperWallColor = elevation->getColor();
-    Color lowerWallColor = elevation->getColor();
+    Color upperWallColor = elevation.getColor();
+    Color lowerWallColor = elevation.getColor();
     if ( !skin )
         lowerWallColor = upperWallColor.brightness(0.95f);
 
@@ -88,50 +87,57 @@ ElevationCompiler::compile(CompilerOutput&       output,
 
     // Count the total number of verts.
     unsigned totalNumVerts = 0;
-    for(Elevation::Walls::const_iterator wall = walls.begin(); wall != walls.end(); ++wall)
-    {
-        totalNumVerts += (6 * wall->getNumPoints());
-    }
+    for(auto& wall : walls)
+        totalNumVerts += (6 * wall.getNumPoints());
+    totalNumVerts *= elevation.getNumFloors();
 
-    totalNumVerts *= elevation->getNumFloors();
     OE_DEBUG << LC << "Extrusion: total verts in elevation = " << totalNumVerts << "\n";
 
     // preallocate all attribute arrays.
     osg::Vec3Array* verts = new osg::Vec3Array();
-    geom->setVertexArray( verts );
+    verts->reserve(totalNumVerts);
+    geom->setVertexArray(verts);
 
-    osg::Vec4Array* colors = 0L;
+    osg::Vec4Array* colors = nullptr;
     if ( genColors )
     {
         colors = new osg::Vec4Array();
+        colors->reserve(totalNumVerts);
         geom->setColorArray( colors );
         geom->setColorBinding( geom->BIND_PER_VERTEX );
     }
 
-    osg::Vec3Array* texCoords = 0L;
+    osg::Vec3Array* texCoords = nullptr;
     if ( skin )
     {
         texCoords = new osg::Vec3Array();
+        texCoords->reserve(totalNumVerts);
         geom->setTexCoordArray( 0, texCoords );
     }
 
-    osg::Vec3Array* normals = 0L;
+    osg::Vec3Array* normals = nullptr;
     if ( genNormals )
     {
         normals = new osg::Vec3Array();
+        normals->reserve(totalNumVerts);
         geom->setNormalArray( normals );
         geom->setNormalBinding( geom->BIND_PER_VERTEX );
     }
 
     unsigned vertPtr = 0;
     //TODO
-    float  floorHeight = elevation->getHeight() / (float)elevation->getNumFloors();
+    float  floorHeight = elevation.getHeight() / (float)elevation.getNumFloors();
 
     OE_DEBUG << LC << "...elevation has " << walls.size() << " walls\n";
 
+    // Compute total index count for one-time preallocation
+    unsigned totalNumIndices = 0;
+    for(auto& wall : walls)
+        totalNumIndices += (6 * wall.faces.size() * elevation.getNumFloors());
+
     // Each elevation is a collection of walls. One outer wall and
     // zero or more inner walls (where there were holes in the original footprint).
-    for(Elevation::Walls::const_iterator wall = walls.begin(); wall != walls.end(); ++wall)
+    for(auto& wall : walls)
     {
         osg::DrawElements* de = 
             totalNumVerts > 0xFFFF ? (osg::DrawElements*) new osg::DrawElementsUInt  ( GL_TRIANGLES ) :
@@ -139,29 +145,29 @@ ElevationCompiler::compile(CompilerOutput&       output,
                                      (osg::DrawElements*) new osg::DrawElementsUByte ( GL_TRIANGLES );
 
         // pre-allocate for speed
-        //de->reserveElements( numWallVerts );
-        geom->addPrimitiveSet( de );
+        de->reserveElements(totalNumIndices);
+        geom->addPrimitiveSet(de);
 
-        OE_DEBUG << LC << "..elevation has " << elevation->getNumFloors() << " floors\n";
+        OE_DEBUG << LC << "..elevation has " << elevation.getNumFloors() << " floors\n";
 
-        float numFloorsF = (float)elevation->getNumFloors();
+        float numFloorsF = (float)elevation.getNumFloors();
             
-        for(unsigned flr=0; flr < elevation->getNumFloors(); ++flr)
+        for(unsigned flr=0; flr < elevation.getNumFloors(); ++flr)
         {
             float lowerZ = (float)flr * floorHeight;
     
-            OE_DEBUG << LC << "...wall has " << wall->faces.size() << " faces\n";
-            for(Elevation::Faces::const_iterator f = wall->faces.begin(); f != wall->faces.end(); ++f, vertPtr += 4)
+            OE_DEBUG << LC << "...wall has " << wall.faces.size() << " faces\n";
+            for(auto& face : wall.faces)
             {
-                osg::Vec3d Lvec = f->left.upper - f->left.lower; Lvec.normalize();
-                osg::Vec3d Rvec = f->right.upper - f->right.lower; Rvec.normalize();
+                osg::Vec3d Lvec = face.left.upper - face.left.lower; Lvec.normalize();
+                osg::Vec3d Rvec = face.right.upper - face.right.lower; Rvec.normalize();
 
                 float upperZ = lowerZ + floorHeight;
 
-                osg::Vec3d LL = (f->left.lower  + Lvec*lowerZ) * frame;
-                osg::Vec3d UL = (f->left.lower  + Lvec*upperZ) * frame;
-                osg::Vec3d LR = (f->right.lower + Rvec*lowerZ) * frame;
-                osg::Vec3d UR = (f->right.lower + Rvec*upperZ) * frame;
+                osg::Vec3d LL = (face.left.lower  + Lvec*lowerZ) * frame;
+                osg::Vec3d UL = (face.left.lower  + Lvec*upperZ) * frame;
+                osg::Vec3d LR = (face.right.lower + Rvec*lowerZ) * frame;
+                osg::Vec3d UR = (face.right.lower + Rvec*upperZ) * frame;
 
                 verts->push_back( UL );
                 verts->push_back( LL );
@@ -200,11 +206,9 @@ ElevationCompiler::compile(CompilerOutput&       output,
                     float uL = fmod(f->left.offsetX, texWidth) / texWidth;
                     float uR = fmod(f->right.offsetX, texWidth) / texWidth;
 #else
-                    float uL = f->left.offsetX / texWidth;
-                    float uR = f->right.offsetX / texWidth;
+                    float uL = face.left.offsetX / texWidth;
+                    float uR = face.right.offsetX / texWidth;
 #endif
-                    
-                    //OE_NOTICE << "Offset left=" << f->left.offsetX << " right=" << f->right.offsetX << " texWidth= " << texWidth << std::endl;
 
                     // Correct for the case in which the rightmost corner is exactly on a
                     // texture boundary.
@@ -218,8 +222,8 @@ ElevationCompiler::compile(CompilerOutput&       output,
 #else
                     osg::Vec2f texLL(uL, 0.0f);
                     osg::Vec2f texLR(uR, 0.0f);
-                    osg::Vec2f texUL(uL, f->left.height / texHeight);
-                    osg::Vec2f texUR(uR, f->right.height / texHeight);
+                    osg::Vec2f texUL(uL, face.left.height / texHeight);
+                    osg::Vec2f texUR(uR, face.right.height / texHeight);
 #endif
 
                     texUL = texBias + osg::componentMultiply(texUL, texScale);
@@ -241,6 +245,7 @@ ElevationCompiler::compile(CompilerOutput&       output,
                 de->addElement( vertPtr+2 );
                 de->addElement( vertPtr+3 );
 
+                vertPtr += 4;
             } // faces loop
 
         } // floors loop
@@ -258,7 +263,7 @@ ElevationCompiler::compile(CompilerOutput&       output,
         colors->push_back(osg::Vec4(1,1,1,1));
     }
     
-    output.addDrawable( geom.get(), elevation->getTag() );
+    output.addDrawable( geom.get(), elevation.getTag() );
 
     return true;
 }

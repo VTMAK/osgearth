@@ -16,18 +16,15 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_H
-#define OSGEARTH_BUILDINGS_BUILDING_H
+#pragma once
 
 #include "Common"
 #include "Elevation"
 #include "Zoning"
 #include <vector>
 #include <osgEarth/Geometry>
-#include <osgEarth/Tags>
-#include <osg/Referenced>
 
-namespace osgEarth { namespace Buildings 
+namespace osgEarth { namespace Buildings
 {
     using namespace osgEarth;
 
@@ -35,19 +32,54 @@ namespace osgEarth { namespace Buildings
     class BuildContext;
 
     /**
-     * Building represents one complete structure, comprised of 
+     * Building represents one complete structure, comprised of
      * at least one elevation and a roof.
      */
-    class OSGEARTHBUILDINGS_EXPORT Building : public Taggable<osg::Object>
+    class OSGEARTHBUILDINGS_EXPORT Building
     {
     public:
-        META_Object(osgEarthBuildings, Building);
-
         /** Construct a new Building */
         Building();
 
         /** Copy constructor */
-        Building(const Building& rhs, const osg::CopyOp& copy);
+        Building(const Building& rhs);
+
+        /** Move constructor */
+        Building(Building&& rhs) noexcept;
+
+        /** Copy assignment */
+        Building& operator=(const Building& rhs);
+
+        /** Move assignment */
+        Building& operator=(Building&& rhs) noexcept;
+
+        /** Destructor */
+        ~Building() = default;
+
+        /** Clone this building */
+        Building clone() const;
+
+        //! Valid
+        operator bool() const {
+            return !_elevations.empty() ||
+                _externalModelURI.isSet() ||
+                _instancedModelSymbol.valid();
+        }
+
+        /**
+         * Tag methods (inlined from Taggable)
+         */
+        void addTag(const std::string& tag);
+        void addTags(const TagVector& tags);
+        void addTags(const std::string& tagString);
+        void removeTag(const std::string& tag);
+        bool containsTag(const std::string& tag) const;
+        bool containsTags(const TagSet& tags) const;
+        bool containsTags(const TagVector& tags) const;
+        const TagSet& tags() const { return _tags; }
+        std::string tagString() const;
+        static std::string tagString(const TagSet& tags);
+        static std::string tagString(const TagVector& tags);
 
         /**
          * Building's unique identifier.
@@ -60,7 +92,7 @@ namespace osgEarth { namespace Buildings
          */
         void setReferenceFrame(const osg::Matrix& local2world) { _local2world = local2world; }
         const osg::Matrix& getReferenceFrame() const           { return _local2world; }
-        
+
         /**
          * Sets the overall height of the building in meters.
          * This method will traverse all the elevations and resolve any heights
@@ -71,17 +103,17 @@ namespace osgEarth { namespace Buildings
         /**
          * One or more elevations that comprise the facade of the building.
          */
-        ElevationVector& getElevations()             { return _elevations; }
-        const ElevationVector& getElevations() const { return _elevations; }
+        std::vector<Elevation>& getElevations()             { return _elevations; }
+        const std::vector<Elevation>& getElevations() const { return _elevations; }
 
         /**
-         * Zoning for this building 
+         * Zoning for this building
          */
         void setZoning(const Zoning::Type& zoning) { _zoning = zoning; }
         const Zoning::Type& getZoning() const      { return _zoning; }
 
         /**
-         * Minimum height for which to use this building. 
+         * Minimum height for which to use this building.
          */
         void setMinHeight(float value) { _minHeight = value; }
         float getMinHeight() const     { return _minHeight; }
@@ -139,8 +171,8 @@ namespace osgEarth { namespace Buildings
          * You must call setFootprint() before calling this function.
          */
         bool build(
-            const Polygon*, 
-            BuildContext& bi, 
+            const Polygon*,
+            BuildContext& bi,
             ProgressCallback* progress);
 
         /**
@@ -148,16 +180,13 @@ namespace osgEarth { namespace Buildings
          */
         void accept(BuildingVisitor& bv);
 
-        virtual Config getConfig() const;
+        Config getConfig() const;
 
-    protected:
-        virtual ~Building() { }
-
+    private:
+        TagSet                  _tags;
         UID                     _uid;
-        osg::ref_ptr<Polygon>   _footprint;
         optional<URI>           _externalModelURI;
-        ElevationVector         _elevations;
-        osg::ref_ptr<Roof>      _roof;
+        std::vector<Elevation>  _elevations;
         Zoning::Type            _zoning;
         osg::Matrix             _local2world;
         float                   _minHeight;
@@ -170,9 +199,9 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<ModelResource> _instancedModelResource;
 
         void resolveInstancedModel(BuildContext&, ProgressCallback* progress);
+
+        std::string normalize(const std::string& input) const;
     };
 
-    typedef std::vector< osg::ref_ptr<Building> > BuildingVector;
+    using BuildingVector = std::vector<Building>;
 } }
-
-#endif // OSGEARTH_BUILDINGS_BUILDING_H

@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_INSTANCED_BUILDING_COMPILER_H
-#define OSGEARTH_BUILDINGS_INSTANCED_BUILDING_COMPILER_H
+#pragma once
 
 #include "Compiler"
 #include "CompilerOutput"
@@ -34,7 +33,7 @@ namespace osgEarth { namespace Buildings
         InstancedBuildingCompiler(Session* session);
 
         virtual bool compile(
-            const Building*    input,
+            const Building&    input,
             CompilerOutput&    output,
             const osg::Matrix& world2local,
             ProgressCallback*  progress);
@@ -45,5 +44,3 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<Session> _session;
     };
 } }
-
-#endif // OSGEARTH_BUILDINGS_INSTANCED_BUILDING_COMPILER_H

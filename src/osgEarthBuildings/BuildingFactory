@@ -16,17 +16,13 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_FACTORY_H
-#define OSGEARTH_BUILDINGS_BUILDING_FACTORY_H
+#pragma once
 
 #include "Common"
 #include "Building"
 #include "BuildingCatalog"
-#include "BuildingSymbol"
 #include <osgEarth/Progress>
 #include <osgEarth/Session>
-#include <osgEarth/FeatureCursor>
-#include <osgEarth/AltitudeFilter>
 
 namespace osgEarth { namespace Buildings
 {
@@ -87,7 +83,7 @@ namespace osgEarth { namespace Buildings
          * Create a building object form a feature.
          * @param[in ] feature Feature from which to create a Building.
          */
-        virtual Building* createBuilding(
+        virtual std::optional<Building> createBuilding(
             Feature*          feature,
             ProgressCallback* progress);
 
@@ -98,10 +94,10 @@ namespace osgEarth { namespace Buildings
         virtual void cleanPolygon(Polygon* polygon);
 
         /** Creates a building meant to load an external model */
-        virtual Building* createExternalModelBuilding(Feature*, const URI& modelURI, BuildContext&);
+        virtual std::optional<Building> createExternalModelBuilding(Feature*, const URI& modelURI, BuildContext&);
 
         /** Add Elevation objects to a Building */
-        virtual Building* createSampleBuilding(const Feature* feature);
+        virtual std::optional<Building> createSampleBuilding(const Feature* feature);
 
         /** True if the feature's centroid falls within the extent */
         virtual bool cropToCentroid(const Feature* feature, const GeoExtent& extent) const;
@@ -113,6 +109,3 @@ namespace osgEarth { namespace Buildings
     };
 
 } } // namespace
-
-
-#endif // OSGEARTH_BUILDINGS_BUILDING_FACTORY_H

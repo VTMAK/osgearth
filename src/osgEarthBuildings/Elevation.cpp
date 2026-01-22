@@ -36,7 +36,8 @@ _color             ( Color::White ),
 _cosR              ( 1.0f ),
 _sinR              ( 0.0f ),
 _parent            ( 0L ),
-_renderAABB        ( false )
+_renderAABB        ( false ),
+_isParapet         ( false )
 {
     //nop
 }
@@ -49,43 +50,198 @@ _bottom          ( rhs._bottom ),
 _inset           ( rhs._inset ),
 _xoffset         ( rhs._xoffset ),
 _yoffset         ( rhs._yoffset ),
-_skinSymbol      ( rhs._skinSymbol.get() ),
-_skinResource    ( rhs._skinResource.get() ),
+_skinSymbol      ( rhs._skinSymbol ),
+_skinResource    ( rhs._skinResource ),
 _color           ( rhs._color ),
+_cosR            ( rhs._cosR ),
+_sinR            ( rhs._sinR ),
+_aabb            ( rhs._aabb ),
+_parent          ( nullptr ),
+_renderAABB      ( rhs._renderAABB ),
+_tag             ( rhs._tag ),
+_longEdgeMidpoint( rhs._longEdgeMidpoint ),
+_longEdgeInsideNormal( rhs._longEdgeInsideNormal ),
+_isParapet       ( rhs._isParapet ),
+_parapetWidth    ( rhs._parapetWidth )
+{
+    if (rhs._roof)
+    {
+        _roof = *rhs._roof;
+        _roof->setParent(this);
+    }
+
+    for (const auto& e : rhs._elevations)
+    {
+        _elevations.emplace_back(e);
+        _elevations.back().setParent(this);
+    }
+}
+
+Elevation::Elevation(Elevation&& rhs) noexcept :
+_height          ( std::move(rhs._height) ),
+_heightPercentage( std::move(rhs._heightPercentage) ),
+_numFloors       ( std::move(rhs._numFloors) ),
+_bottom          ( std::move(rhs._bottom) ),
+_inset           ( rhs._inset ),
+_xoffset         ( rhs._xoffset ),
+_yoffset         ( rhs._yoffset ),
+_skinSymbol      ( std::move(rhs._skinSymbol) ),
+_skinResource    ( std::move(rhs._skinResource) ),
+_color           ( std::move(rhs._color) ),
 _cosR            ( rhs._cosR ),
 _sinR            ( rhs._sinR ),
 _aabb            ( rhs._aabb ),
 _parent          ( rhs._parent ),
 _renderAABB      ( rhs._renderAABB ),
-_tag             ( rhs._tag ),
+_tag             ( std::move(rhs._tag) ),
 _longEdgeMidpoint( rhs._longEdgeMidpoint ),
-_longEdgeInsideNormal( rhs._longEdgeInsideNormal )
+_longEdgeInsideNormal( rhs._longEdgeInsideNormal ),
+_isParapet       ( rhs._isParapet ),
+_parapetWidth    ( std::move(rhs._parapetWidth) ),
+_roof            ( std::move(rhs._roof) ),
+_elevations      ( std::move(rhs._elevations) ),
+_walls           ( std::move(rhs._walls) )
 {
-    if ( rhs.getRoof() )
-    {
-        setRoof( new Roof(*rhs.getRoof()) );
-    }
-
-    for(ElevationVector::const_iterator e = rhs.getElevations().begin(); e != rhs.getElevations().end(); ++e) 
-    {
-        Elevation* copy = e->get()->clone();
-        copy->setParent( this );
-        _elevations.push_back( copy );
-    }
+    rhs._parent = nullptr;
+    // Fix up parent pointers
+    if (_roof)
+        _roof->setParent(this);
+    for (auto& e : _elevations)
+        e.setParent(this);
 }
 
-Elevation*
-Elevation::clone() const
+Elevation& Elevation::operator=(const Elevation& rhs)
 {
-    return new Elevation( *this );
+    if (this != &rhs)
+    {
+        _height = rhs._height;
+        _heightPercentage = rhs._heightPercentage;
+        _numFloors = rhs._numFloors;
+        _bottom = rhs._bottom;
+        _inset = rhs._inset;
+        _xoffset = rhs._xoffset;
+        _yoffset = rhs._yoffset;
+        _skinSymbol = rhs._skinSymbol;
+        _skinResource = rhs._skinResource;
+        _color = rhs._color;
+        _cosR = rhs._cosR;
+        _sinR = rhs._sinR;
+        _aabb = rhs._aabb;
+        _renderAABB = rhs._renderAABB;
+        _tag = rhs._tag;
+        _longEdgeMidpoint = rhs._longEdgeMidpoint;
+        _longEdgeInsideNormal = rhs._longEdgeInsideNormal;
+        _isParapet = rhs._isParapet;
+        _parapetWidth = rhs._parapetWidth;
+        _walls = rhs._walls;
+
+        _roof.reset();
+        if (rhs._roof)
+        {
+            _roof = *rhs._roof;
+            _roof->setParent(this);
+        }
+
+        _elevations.clear();
+        for (const auto& e : rhs._elevations)
+        {
+            _elevations.emplace_back(e);
+            _elevations.back().setParent(this);
+        }
+    }
+    return *this;
+}
+
+Elevation& Elevation::operator=(Elevation&& rhs) noexcept
+{
+    if (this != &rhs)
+    {
+        _height = std::move(rhs._height);
+        _heightPercentage = std::move(rhs._heightPercentage);
+        _numFloors = std::move(rhs._numFloors);
+        _bottom = std::move(rhs._bottom);
+        _inset = rhs._inset;
+        _xoffset = rhs._xoffset;
+        _yoffset = rhs._yoffset;
+        _skinSymbol = std::move(rhs._skinSymbol);
+        _skinResource = std::move(rhs._skinResource);
+        _color = std::move(rhs._color);
+        _cosR = rhs._cosR;
+        _sinR = rhs._sinR;
+        _aabb = rhs._aabb;
+        _renderAABB = rhs._renderAABB;
+        _tag = std::move(rhs._tag);
+        _longEdgeMidpoint = rhs._longEdgeMidpoint;
+        _longEdgeInsideNormal = rhs._longEdgeInsideNormal;
+        _isParapet = rhs._isParapet;
+        _parapetWidth = std::move(rhs._parapetWidth);
+        _roof = std::move(rhs._roof);
+        _elevations = std::move(rhs._elevations);
+        _walls = std::move(rhs._walls);
+
+        rhs._parent = nullptr;
+
+        // Fix up parent pointers
+        if (_roof)
+            _roof->setParent(this);
+        for (auto& e : _elevations)
+            e.setParent(this);
+    }
+    return *this;
 }
 
 void
-Elevation::setRoof(Roof* roof)
+Elevation::setRoof(const Roof& roof)
 {
     _roof = roof;
-    if ( roof )
-        roof->setParent( this );
+    _roof->setParent(this);
+}
+
+void
+Elevation::setRoof(Roof&& roof)
+{
+    _roof = std::move(roof);
+    _roof->setParent(this);
+}
+
+Roof*
+Elevation::getRoof()
+{
+    return _roof ? &(*_roof) : nullptr;
+}
+
+const Roof*
+Elevation::getRoof() const
+{
+    return _roof ? &(*_roof) : nullptr;
+}
+
+void
+Elevation::setParapet(bool value)
+{
+    _isParapet = value;
+    if (value)
+    {
+        _numFloors = 1u;
+        setTag("parapet");
+    }
+}
+
+void
+Elevation::setParapetWidth(float width)
+{
+    _parapetWidth = width;
+    if (width > 0.0f)
+    {
+        Roof roof;
+        roof.setType(Roof::TYPE_FLAT);
+        roof.setTag("parapet");
+        setRoof(std::move(roof));
+    }
+    else
+    {
+        _roof.reset();
+    }
 }
 
 void
@@ -109,9 +265,9 @@ Elevation::setHeight(float height)
         _height.init( height + _height.get() );
     }
 
-    for(ElevationVector::iterator e = _elevations.begin(); e != _elevations.end(); ++e)
+    for (auto& e : _elevations)
     {
-        e->get()->setHeight( height );
+        e.setHeight( height );
     }
 }
 
@@ -183,7 +339,31 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
         OE_DEBUG << LC << "Discarding invalid footprint.\n";
         return false;
     }
-    
+
+    // Handle parapet geometry by creating inner hole
+    osg::ref_ptr<Polygon> parapetCopy;
+    if (_isParapet && getParapetWidth() > 0.0f)
+    {
+        // copy the outer ring of the footprint. Ignore any holes.
+        parapetCopy = dynamic_cast<Polygon*>(footprint->clone());
+        parapetCopy->getHoles().clear();
+
+        // apply a negative buffer to the outer ring:
+        osg::ref_ptr<Geometry> hole;
+        BufferParameters bp(BufferParameters::CAP_DEFAULT, BufferParameters::JOIN_MITRE);
+        if (parapetCopy->buffer(-getParapetWidth(), hole, bp))
+        {
+            Ring* ring = dynamic_cast<Ring*>(hole.get());
+            if (ring)
+            {
+                // rewind the new geometry CW and add it as a hole:
+                ring->rewind(Geometry::ORIENTATION_CW);
+                parapetCopy->getHoles().push_back(ring);
+                footprint = parapetCopy.get();
+            }
+        }
+    }
+
     _walls.clear();
 
     /** calculates the rotation based on the footprint */
@@ -235,7 +415,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
 
     // roof data:
     osg::Vec2f roofTexSpan;
-    SkinResource* roofSkin = _roof.valid() ? _roof->getSkinResource() : 0L;
+    SkinResource* roofSkin = _roof ? _roof->getSkinResource() : nullptr;
     if ( roofSkin )
     {
         if ( roofSkin->isTiled() == true )
@@ -265,7 +445,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
             continue;
 
         // add a new wall.
-        _walls.push_back( Wall() );
+        _walls.emplace_back( Wall() );
         Wall& wall = _walls.back();
 
         float cornerOffset = 0.0;
@@ -356,7 +536,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
 
                     if (isLastEdge)
                     {
-                        corners.push_back(Corner());
+                        corners.emplace_back(Corner());
                         new_corner = c;
                         new_corner++;
                     }
@@ -418,7 +598,7 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
             if ( ++next_corner == corners.end() )
                 next_corner = corners.begin();
 
-            faces.push_back(Face());
+            faces.emplace_back(Face());
             Face& face = faces.back();
             face.left  = *this_corner;
             face.right = *next_corner;
@@ -434,9 +614,9 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
         }
     }
 
-    for(ElevationVector::iterator e = _elevations.begin(); e != _elevations.end(); ++e)
+    for (auto& e : _elevations)
     {
-        e->get()->build( footprint, bc );
+        e.build( footprint, bc );
     }
 
     return true;
@@ -573,18 +753,24 @@ Elevation::getConfig() const
 {
     Config conf;
 
+    if (_isParapet)
+    {
+        conf.add("type", "parapet");
+        conf.add("width", getParapetWidth());
+    }
+
     conf.set("inset", getInset());
     conf.set("height_percentage", _heightPercentage);
     conf.set("height", _height);
-    
+
     if ( getRoof() )
         conf.set("roof", getRoof()->getConfig());
 
     if ( !getElevations().empty() )
     {
         Config evec("elevations");
-        for(ElevationVector::const_iterator sub = getElevations().begin(); sub != getElevations().end(); ++sub)
-            evec.add("elevation", sub->get()->getConfig());
+        for (const auto& sub : getElevations())
+            evec.add("elevation", sub.getConfig());
         conf.set(evec);
     }
     return conf;

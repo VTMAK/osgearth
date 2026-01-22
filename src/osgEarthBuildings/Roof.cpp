@@ -19,7 +19,6 @@
 #include "Roof"
 #include "Elevation"
 #include "BuildContext"
-#include "Parapet"
 
 #define LC "[Roof] "
 
@@ -35,18 +34,70 @@ _hasModelBox( false )
     //nop
 }
 
-Roof::Roof(const Roof& rhs)
+Roof::Roof(const Roof& rhs) :
+    _type(rhs._type),
+    _parent(rhs._parent),
+    _color(rhs._color),
+    _skinSymbol(rhs._skinSymbol),
+    _skin(rhs._skin),
+    _modelSymbol(rhs._modelSymbol),
+    _model(rhs._model),
+    _tag(rhs._tag),
+    _hasModelBox(rhs._hasModelBox)
 {
-    _type = rhs._type;
-    _parent = rhs._parent;
-    _hasModelBox = rhs._hasModelBox;
     for(int i=0; i<4; ++i) _modelBox[i] = rhs._modelBox[i];
-    _skinSymbol = rhs._skinSymbol;
-    _skin = rhs._skin;
-    _modelSymbol = rhs._modelSymbol;
-    _model = rhs._model;
-    _tag = rhs._tag;
-    _color = rhs._color;
+}
+
+Roof::Roof(Roof&& rhs) noexcept :
+    _type(rhs._type),
+    _parent(rhs._parent),
+    _color(std::move(rhs._color)),
+    _skinSymbol(std::move(rhs._skinSymbol)),
+    _skin(std::move(rhs._skin)),
+    _modelSymbol(std::move(rhs._modelSymbol)),
+    _model(std::move(rhs._model)),
+    _tag(std::move(rhs._tag)),
+    _hasModelBox(rhs._hasModelBox)
+{
+    for(int i=0; i<4; ++i) _modelBox[i] = rhs._modelBox[i];
+    rhs._parent = nullptr;
+}
+
+Roof& Roof::operator=(const Roof& rhs)
+{
+    if (this != &rhs)
+    {
+        _type = rhs._type;
+        _parent = rhs._parent;
+        _color = rhs._color;
+        _skinSymbol = rhs._skinSymbol;
+        _skin = rhs._skin;
+        _modelSymbol = rhs._modelSymbol;
+        _model = rhs._model;
+        _tag = rhs._tag;
+        _hasModelBox = rhs._hasModelBox;
+        for(int i=0; i<4; ++i) _modelBox[i] = rhs._modelBox[i];
+    }
+    return *this;
+}
+
+Roof& Roof::operator=(Roof&& rhs) noexcept
+{
+    if (this != &rhs)
+    {
+        _type = rhs._type;
+        _parent = rhs._parent;
+        _color = std::move(rhs._color);
+        _skinSymbol = std::move(rhs._skinSymbol);
+        _skin = std::move(rhs._skin);
+        _modelSymbol = std::move(rhs._modelSymbol);
+        _model = std::move(rhs._model);
+        _tag = std::move(rhs._tag);
+        _hasModelBox = rhs._hasModelBox;
+        for(int i=0; i<4; ++i) _modelBox[i] = rhs._modelBox[i];
+        rhs._parent = nullptr;
+    }
+    return *this;
 }
 
 Config
@@ -98,7 +149,7 @@ Roof::resolveSkin(const Polygon* footprint, BuildContext& bc)
             // if this is the top-most roof, consider a non-tiled texture. It should also
             // be low aspect ratio (not too stretched out).
             if (getType() == TYPE_FLAT &&
-                (getParent()->getElevations().empty() || dynamic_cast<Parapet*>(getParent()->getElevations().front().get())))
+                (getParent()->getElevations().empty() || getParent()->getElevations().front().isParapet()))
             {
                 getSkinSymbol()->isTiled() = false;
 

@@ -19,13 +19,11 @@
 #include "Common"
 #include "BuildingFactory"
 #include "BuildingCompiler"
+#include "BuildingSymbol"
 
 #include <osgDB/FileNameUtils>
 #include <osgDB/Registry>
-#include <osgDB/WriteFile>
-#include <osgUtil/Optimizer>
 
-#include <osgEarth/Registry>
 #include <osgEarth/Utils>
 #include <osgEarth/FeatureSource>
 #include <osgEarth/StyleSheet>

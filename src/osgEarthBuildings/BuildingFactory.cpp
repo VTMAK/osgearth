@@ -20,13 +20,13 @@
 #include "BuildingSymbol"
 #include "BuildingVisitor"
 #include "BuildContext"
-#include "Parapet"
 
 #include <osgEarth/Session>
 #include <osgEarth/AltitudeFilter>
 #include <osgEarth/Geometry>
 #include <osgEarth/ResourceLibrary>
 #include <osgEarth/StyleSheet>
+#include <memory>
 
 using namespace osgEarth;
 using namespace osgEarth::Buildings;
@@ -173,7 +173,7 @@ BuildingFactory::create(Feature*               feature,
                 else
                 {
                     // If there's no tag expression, the default is "building".
-                    tags.push_back("building");
+                    tags.emplace_back("building");
                 }
             }
         }
@@ -207,12 +207,14 @@ BuildingFactory::create(Feature*               feature,
         if (needToClamp && feature->getGeometry() && map.valid())
         {
             std::vector<osg::Vec3d> points;
+            points.reserve(feature->getGeometry()->getTotalPointCount());
+
             ConstGeometryIterator cgi(feature->getGeometry(), false);
             while (cgi.hasMore())
             {
                 auto part = cgi.next();
                 for (auto& i : part->asVector())
-                    points.push_back(i);
+                    points.emplace_back(i);
             }
             envelope.sampleMapCoords(points.begin(), points.end(), progress);
 
@@ -234,10 +236,10 @@ BuildingFactory::create(Feature*               feature,
         // If this is an external model, set up a building referencing the model
         if ( externalModelURI.isSet() )
         {
-            Building* building = createExternalModelBuilding( feature, externalModelURI.get(), context );
-            if ( building )
+            auto building = createExternalModelBuilding( feature, externalModelURI.get(), context );
+            if ( building.has_value() )
             {
-                output.push_back( building );
+                output.emplace_back( std::move(*building) );
             }
         }
 
@@ -246,7 +248,7 @@ BuildingFactory::create(Feature*               feature,
         {
             // If using a catalog, ask it to create one or more buildings for this feature:
             if ( _catalog.valid() )
-            {   
+            {
                 float minHeight = terrainMinMaxValid ? max-min+3.0f : 3.0f;
                 height = std::max( height, minHeight );
                 _catalog->createBuildings(feature, tags, height, context, output, progress);
@@ -255,10 +257,10 @@ BuildingFactory::create(Feature*               feature,
             // Otherwise, create a simple one by hand:
             else
             {
-                Building* building = createBuilding(feature, progress);
-                if ( building )
+                auto building = createBuilding(feature, progress);
+                if ( building.has_value() )
                 {
-                    output.push_back( building );
+                    output.emplace_back( std::move(*building) );
                 }
             }
         }
@@ -267,20 +269,20 @@ BuildingFactory::create(Feature*               feature,
     return true;
 }
 
-Building*
+std::optional<Building>
 BuildingFactory::createExternalModelBuilding(Feature*      feature,
                                              const URI&    modelURI,
                                              BuildContext& context)
 {
     if ( !feature || modelURI.empty() )
-        return 0L;
+        return std::nullopt;
 
     Geometry* geometry = feature->getGeometry();
     if ( !geometry || !geometry->isValid() )
-        return 0L;
+        return std::nullopt;
 
-    osg::ref_ptr<Building> building = new Building();
-    building->setExternalModelURI( modelURI );
+    Building building;
+    building.setExternalModelURI( modelURI );
 
     // Calculate a local reference frame for this building.
     // The frame clamps the building by including the terrain elevation that was passed in.
@@ -288,18 +290,18 @@ BuildingFactory::createExternalModelBuilding(Feature*      feature,
     GeoPoint centerPoint( feature->getSRS(), center2d.x(), center2d.y(), context.getTerrainMin(), ALTMODE_ABSOLUTE );
     osg::Matrix local2world;
     centerPoint.createLocalToWorld( local2world );
-    building->setReferenceFrame( local2world );
+    building.setReferenceFrame( local2world );
 
-    return building.release();
+    return building;
 }
 
-Building*
+std::optional<Building>
 BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
 {
-    if ( feature == 0L )
-        return 0L;
+    if ( feature == nullptr )
+        return std::nullopt;
 
-    osg::ref_ptr<Building> building;
+    std::optional<Building> building;
 
     Geometry* geometry = feature->getGeometry();
 
@@ -339,14 +341,17 @@ BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
                 // A footprint is the minumum info required to make a building.
                 building = createSampleBuilding( feature );
 
-                // Install the reference frame of the footprint geometry:
-                building->setReferenceFrame( local2world );
+                if (building.has_value())
+                {
+                    // Install the reference frame of the footprint geometry:
+                    building->setReferenceFrame( local2world );
 
-                // Do initial cleaning of the footprint and install is:
-                cleanPolygon( polygon );
+                    // Do initial cleaning of the footprint and install is:
+                    cleanPolygon( polygon );
 
-                // Finally, build the internal structure from the footprint.
-                building->build( polygon, context, progress );
+                    // Finally, build the internal structure from the footprint.
+                    building->build( polygon, context, progress );
+                }
             }
             else
             {
@@ -355,7 +360,7 @@ BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
         }
     }
 
-    return building.release();
+    return building;
 }
 
 void
@@ -370,11 +375,11 @@ BuildingFactory::cleanPolygon(Polygon* polygon)
     // TODO: remove colinear points? for skeleton?
 }
 
-Building*
+std::optional<Building>
 BuildingFactory::createSampleBuilding(const Feature* feature)
 {
-    Building* building = new Building();
-    building->setUID( feature->getFID() );
+    Building building;
+    building.setUID( feature->getFID() );
 
     // figure out the building's height and number of floors.
     // single-elevation building.
@@ -382,15 +387,13 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
     unsigned numFloors = 1u;
 
     // Add a single elevation.
-    Elevation* elevation = new Elevation();
-    building->getElevations().push_back(elevation);
-    
-    Roof* roof = new Roof();
-    roof->setType( Roof::TYPE_FLAT );
-    elevation->setRoof( roof );
-    
-    SkinResource* wallSkin = 0L;
-    SkinResource* roofSkin = 0L;
+    Elevation elevation;
+
+    Roof roof;
+    roof.setType( Roof::TYPE_FLAT );
+
+    SkinResource* wallSkin = nullptr;
+    SkinResource* roofSkin = nullptr;
 
     if ( _session.valid() )
     {
@@ -398,10 +401,10 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
         if ( reslib )
         {
             wallSkin = reslib->getSkin( "facade.commercial.1" );
-            elevation->setSkinResource( wallSkin );
+            elevation.setSkinResource( wallSkin );
 
             roofSkin = reslib->getSkin( "roof.commercial.1" );
-            roof->setSkinResource( roofSkin );
+            roof.setSkinResource( roofSkin );
         }
         else
         {
@@ -414,7 +417,7 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
             if ( feature )
             {
                 NumericExpression heightExpr = sym->height().get();
-                height = feature->eval( heightExpr, _session.get() );
+                height = const_cast<Feature*>(feature)->eval( heightExpr, _session.get() );
             }
 
             // calculate the number of floors
@@ -429,21 +432,27 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
         }
     }
 
-    elevation->setHeight( height );
-    elevation->setNumFloors( numFloors );
+    elevation.setHeight( height );
+    elevation.setNumFloors( numFloors );
+    elevation.setRoof( std::move(roof) );
 
-    Parapet* parapet = new Parapet();
-    parapet->setParent( elevation );
-    parapet->setWidth( 2.0f );
-    parapet->setHeight( 2.0f );
-    parapet->setNumFloors( 1u );
+    // Create parapet as a child elevation
+    Elevation parapet;
+    parapet.setParapet(true);
+    parapet.setParapetWidth( 2.0f );
+    parapet.setHeight( 2.0f );
+    parapet.setColor( Color::Gray.brightness(1.3f) );
 
-    parapet->setColor( Color::Gray.brightness(1.3f) );
-    parapet->setRoof( new Roof() );
-    parapet->getRoof()->setSkinResource( roofSkin );
-    parapet->getRoof()->setColor( Color::Gray.brightness(1.2f) );
+    Roof parapetRoof;
+    parapetRoof.setSkinResource( roofSkin );
+    parapetRoof.setColor( Color::Gray.brightness(1.2f) );
+    parapet.setRoof( std::move(parapetRoof) );
 
-    elevation->getElevations().push_back( parapet );
+    elevation.getElevations().emplace_back( std::move(parapet) );
+    // Fix up parent pointer after push_back
+    elevation.getElevations().back().setParent( &elevation );
+
+    building.getElevations().emplace_back( std::move(elevation) );
 
     return building;
 }

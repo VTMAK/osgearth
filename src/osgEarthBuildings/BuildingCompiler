@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_COMPILER_H
-#define OSGEARTH_BUILDINGS_BUILDING_COMPILER_H
+#pragma once
 
 #include "Compiler"
 #include "CompilerOutput"
@@ -30,7 +29,6 @@
 #include "FilterUsage"
 
 #include <osgEarth/Progress>
-#include <osgEarth/FeatureCursor>
 
 namespace osgEarth { namespace Buildings
 {
@@ -63,11 +61,11 @@ namespace osgEarth { namespace Buildings
 
         const Style& getStyle() const;
 
-        virtual bool addExternalModel(CompilerOutput&, const Building*, const osg::Matrix&, const osgDB::Options* readOptions, ProgressCallback*) const;
+        virtual bool addExternalModel(CompilerOutput&, const Building&, const osg::Matrix&, const osgDB::Options* readOptions, ProgressCallback*) const;
 
-        virtual bool addElevations(CompilerOutput&, const Building*, const ElevationVector&, const osg::Matrix&, const osgDB::Options* readOptions) const;
+        virtual bool addElevations(CompilerOutput&, const Building&, const ElevationVector&, const osg::Matrix&, const osgDB::Options* readOptions) const;
 
-        virtual bool addRoof(CompilerOutput&, const Building*, const Elevation*, const osg::Matrix&, const osgDB::Options* readOptions) const;
+        virtual bool addRoof(CompilerOutput&, const Building&, const Elevation&, const osg::Matrix&, const osgDB::Options* readOptions) const;
 
     protected:
         osg::ref_ptr<Session>                   _session;
@@ -81,6 +79,3 @@ namespace osgEarth { namespace Buildings
     };
 
 } } // namespace
-
-
-#endif // OSGEARTH_BUILDINGS_BUILDING_COMPILER_H

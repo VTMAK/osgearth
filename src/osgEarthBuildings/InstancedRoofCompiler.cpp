@@ -28,26 +28,25 @@ using namespace osgEarth::Buildings;
 
 bool
 InstancedRoofCompiler::compile(CompilerOutput&       output,
-                               const Building*       building,
-                               const Elevation*      elevation,
+                               const Building&       building,
+                               const Elevation&      elevation,
                                const osg::Matrix&    world2local,
                                const osgDB::Options* readOptions) const
 {
     if ( !building ) return false;
-    if ( !elevation ) return false;
-    if ( !elevation->getRoof() ) return false;
+    if ( !elevation.getRoof() ) return false;
 
-    const Roof* roof = elevation->getRoof();
+    const Roof* roof = elevation.getRoof();
 
     // precalculate the frame transformation; combining these will
     // prevent any precision loss during the transform.
-    osg::Matrix frame = building->getReferenceFrame() * world2local;
+    osg::Matrix frame = building.getReferenceFrame() * world2local;
     
     // Load models:
     ModelResource* model = roof->getModelResource();
     if ( model )
     {
-        const osg::BoundingBox& space = elevation->getAxisAlignedBoundingBox();
+        const osg::BoundingBox& space = elevation.getAxisAlignedBoundingBox();
 
         // dimensions of the AABB:       
         float spaceWidth  = space.xMax() - space.xMin();
@@ -64,17 +63,17 @@ InstancedRoofCompiler::compile(CompilerOutput&       output,
         osg::Matrix matrix;
 
         osg::Vec3d spaceCenter = space.center();
-        elevation->unrotate(spaceCenter);
+        elevation.unrotate(spaceCenter);
         matrix.preMultTranslate( osg::Vec3d(spaceCenter.x(), spaceCenter.y(), 0.0) );
 
         // rotate the model:
-        matrix.preMult( elevation->getRotation() );
+        matrix.preMult( elevation.getRotation() );
 
         // scale the model to match the dimensions of the AABB.
         matrix.preMultScale( osg::Vec3d(xRatio, yRatio, 1.0) );
 
         // translates model so it's centers on 0,0,0.
-        matrix.preMultTranslate( osg::Vec3d(-modelCenter.x(), -modelCenter.y(), elevation->getHeight() - bbox.zMin()) );
+        matrix.preMultTranslate( osg::Vec3d(-modelCenter.x(), -modelCenter.y(), elevation.getHeight() - bbox.zMin()) );
         
         // scale the height of the roof model so it's in line with the x and y scaling:
         float minRatio = std::min(1.0f, std::min(xRatio, yRatio) );

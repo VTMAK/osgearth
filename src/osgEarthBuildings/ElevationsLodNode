@@ -25,7 +25,7 @@ namespace osgEarth
 
 
             const osg::LOD * getelevationsLOD() const;
-            void setelevationsLOD(osg::LOD * lod);
+            void setelevationsLOD(osg::LOD* lod);
 
             const osg::Matrixd & getxform() const { return xform; }
             void setxform(const osg::Matrixd & mat) { xform = mat; }
