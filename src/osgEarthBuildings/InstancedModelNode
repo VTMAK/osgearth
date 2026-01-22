@@ -3,12 +3,11 @@
 
 #include <osgEarth/ModelSource>
 #include <osgEarth/ObjectIndex>
+#include <osgEarth/Containers>
 
 #include <string>
 #include <vector>
 #include <osg/Matrixd>
-
-#include <map>
 
 namespace osgEarth
 {
@@ -20,17 +19,14 @@ namespace osgEarth
         class OSGEARTHBUILDINGS_EXPORT InstancedModelNode : public osg::Node
         {
         public:
-
             InstancedModelNode();
             InstancedModelNode(const InstancedModelNode& rhs, const osg::CopyOp& copyop);
             InstancedModelNode& operator=(const InstancedModelNode& rhs);
 
-
             META_Node(osgEarth::Buildings, InstancedModelNode);
 
-
-            typedef std::vector<osg::Matrixd> MatrixdVector;
-            typedef std::vector<osgEarth::ObjectID> ObjectIdVector;
+            using MatrixdVector = std::vector<osg::Matrixd>;
+            using ObjectIdVector = std::vector<osgEarth::ObjectID>;
 
             struct Instances
             {
@@ -38,9 +34,10 @@ namespace osgEarth
                 ObjectIdVector objectIds;
                 float minRange;
                 float maxRange;
+                unsigned totalCount = 0;
             };
 
-            typedef std::map< std::string, Instances > MapModelToInstances;
+            using MapModelToInstances = osgEarth::vector_map<std::string, Instances>;
 
             MapModelToInstances _mapModelToInstances;
         };

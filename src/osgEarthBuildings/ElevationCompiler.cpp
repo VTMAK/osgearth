@@ -100,25 +100,28 @@ ElevationCompiler::compile(CompilerOutput&       output,
     osg::Vec3Array* verts = new osg::Vec3Array();
     geom->setVertexArray( verts );
 
-    osg::Vec4Array* colors = 0L;
+    osg::Vec4Array* colors = nullptr;
     if ( genColors )
     {
         colors = new osg::Vec4Array();
+        colors->reserve(totalNumVerts);
         geom->setColorArray( colors );
         geom->setColorBinding( geom->BIND_PER_VERTEX );
     }
 
-    osg::Vec3Array* texCoords = 0L;
+    osg::Vec3Array* texCoords = nullptr;
     if ( skin )
     {
         texCoords = new osg::Vec3Array();
+        texCoords->reserve(totalNumVerts);
         geom->setTexCoordArray( 0, texCoords );
     }
 
-    osg::Vec3Array* normals = 0L;
+    osg::Vec3Array* normals = nullptr;
     if ( genNormals )
     {
         normals = new osg::Vec3Array();
+        normals->reserve(totalNumVerts);
         geom->setNormalArray( normals );
         geom->setNormalBinding( geom->BIND_PER_VERTEX );
     }
@@ -128,6 +131,11 @@ ElevationCompiler::compile(CompilerOutput&       output,
     float  floorHeight = elevation->getHeight() / (float)elevation->getNumFloors();
 
     OE_DEBUG << LC << "...elevation has " << walls.size() << " walls\n";
+
+    // Compute total index count for one-time preallocation
+    unsigned totalNumIndices = 0;
+    for(auto& wall : walls)
+        totalNumIndices += (6 * wall.faces.size() * elevation->getNumFloors());
 
     // Each elevation is a collection of walls. One outer wall and
     // zero or more inner walls (where there were holes in the original footprint).
@@ -139,8 +147,8 @@ ElevationCompiler::compile(CompilerOutput&       output,
                                      (osg::DrawElements*) new osg::DrawElementsUByte ( GL_TRIANGLES );
 
         // pre-allocate for speed
-        //de->reserveElements( numWallVerts );
-        geom->addPrimitiveSet( de );
+        de->reserveElements(totalNumIndices);
+        geom->addPrimitiveSet(de);
 
         OE_DEBUG << LC << "..elevation has " << elevation->getNumFloors() << " floors\n";
 
@@ -203,8 +211,6 @@ ElevationCompiler::compile(CompilerOutput&       output,
                     float uL = f->left.offsetX / texWidth;
                     float uR = f->right.offsetX / texWidth;
 #endif
-                    
-                    //OE_NOTICE << "Offset left=" << f->left.offsetX << " right=" << f->right.offsetX << " texWidth= " << texWidth << std::endl;
 
                     // Correct for the case in which the rightmost corner is exactly on a
                     // texture boundary.

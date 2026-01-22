@@ -414,7 +414,7 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
             if ( feature )
             {
                 NumericExpression heightExpr = sym->height().get();
-                height = feature->eval( heightExpr, _session.get() );
+                height = const_cast<Feature*>(feature)->eval( heightExpr, _session.get() );
             }
 
             // calculate the number of floors

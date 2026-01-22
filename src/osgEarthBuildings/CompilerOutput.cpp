@@ -19,10 +19,8 @@
 #include "CompilerOutput"
 #include "InstancedModelNode"
 #include "ElevationsLodNode"
-#include <osgEarth/OEAssert>
 #include <osg/LOD>
 #include <osg/MatrixTransform>
-#include <osg/ProxyNode>
 #include <osgUtil/Optimizer>
 #include <osgEarth/ShaderGenerator>
 #include <osgEarth/DrawInstanced>
@@ -32,8 +30,6 @@
 #include <osgEarth/ResourceCache>
 #include <osgEarth/MeshFlattener>
 #include <osgEarth/Chonk>
-#include <osgEarth/Capabilities>
-#include <osgDB/WriteFile>
 #include <set>
 
 using namespace osgEarth;
@@ -49,12 +45,27 @@ using namespace osgEarth::Buildings;
 #define DEBUG_ROOT            "_oeb_deb"
 
 #define USE_LODS 1
+#define USE_MESH_FLATTENER 1
+#define USE_MERGE_GEOMETRY 1
+
+namespace
+{
+    // hack to reserve child space in a group
+    struct GroupEx : public osg::Group {
+        static GroupEx* cast(osg::Group* group) {
+            return static_cast<GroupEx*>(group);
+        }
+        void reserve(size_t numChildren) {
+            _children.reserve(numChildren);
+        }
+    };
+}
 
 CompilerOutput::CompilerOutput() :
-_range( FLT_MAX ),
-_index( 0L ),
-_currentFeature( 0L ),
-_filterUsage(FILTER_USAGE_NORMAL)
+    _range(FLT_MAX),
+    _index(0L),
+    _currentFeature(0L),
+    _filterUsage(FILTER_USAGE_NORMAL)
 {
     _externalModelsGroup = new osg::Group();
     _externalModelsGroup->setName(EXTERNALS_ROOT);
@@ -73,34 +84,34 @@ CompilerOutput::setLocalToWorld(const osg::Matrix& m)
 void
 CompilerOutput::addDrawable(osg::Drawable* drawable)
 {
-    addDrawable( drawable, "" );
+    addDrawable(drawable, "");
 }
 
 void CompilerOutput::setFilterUsage(FilterUsage usage)
 {
-   _filterUsage = usage;
+    _filterUsage = usage;
 }
 
 void
 CompilerOutput::addDrawable(osg::Drawable* drawable, const std::string& tag)
 {
-    if ( !drawable )
+    if (!drawable)
         return;
 
     osg::ref_ptr<osg::Geode>& geode = _geodes[tag];
-    if ( !geode.valid() )
+    if (!geode.valid())
     {
         geode = new osg::Geode();
     }
-    geode->addDrawable( drawable );
+    geode->addDrawable(drawable);
 
-    if ( _index && _currentFeature )
+    if (_index && _currentFeature)
     {
-        _index->tagDrawable( drawable, _currentFeature );
+        _index->tagDrawable(drawable, _currentFeature);
     }
 
     if (_metadata && _currentFeature)
-    {     
+    {
         auto id = _metadata->add(_currentFeature, true);
         _metadata->tagDrawable(drawable, id);
     }
@@ -109,7 +120,7 @@ CompilerOutput::addDrawable(osg::Drawable* drawable, const std::string& tag)
 void
 CompilerOutput::addInstance(ModelResource* model, const osg::Matrix& matrix)
 {
-    _instances[model].push_back( std::make_pair(matrix, _currentFeature));    
+    _instances[model].push_back(std::make_pair(matrix, _currentFeature));
 }
 
 std::string
@@ -134,7 +145,7 @@ namespace
     struct ConsolidateTextures : public TextureAndImageVisitor
     {
         TextureCache* _cache;
-        ConsolidateTextures(TextureCache* cache) : _cache(cache) { }
+        ConsolidateTextures(TextureCache* cache) : _cache(cache) {}
         void apply(osg::StateSet& stateSet)
         {
             osg::StateSet::TextureAttributeList& a = stateSet.getTextureAttributeList();
@@ -165,15 +176,15 @@ namespace
 osg::Node*
 CompilerOutput::readFromCache(const osgDB::Options* readOptions, ProgressCallback* progress) const
 {
-   //GNP restored this code now works
-    // This means that indirect is on. So don't use cache. Indirect cannot handle it
-//    if (_filterUsage == FILTER_USAGE_ZERO_WORK_CALLBACK_BASED)
-//    {
-//        return 0L;;
-//    }
+    //GNP restored this code now works
+     // This means that indirect is on. So don't use cache. Indirect cannot handle it
+ //    if (_filterUsage == FILTER_USAGE_ZERO_WORK_CALLBACK_BASED)
+ //    {
+ //        return 0L;;
+ //    }
     CacheSettings* cacheSettings = CacheSettings::get(readOptions);
 
-    if ( !cacheSettings || !cacheSettings->getCacheBin() )
+    if (!cacheSettings || !cacheSettings->getCacheBin())
         return 0L;
 
     std::string cacheKey = createCacheKey();
@@ -225,15 +236,15 @@ CompilerOutput::getSkinStateSet(SkinResource* skin, const osgDB::Options* readOp
 void
 CompilerOutput::writeToCache(osg::Node* node, const osgDB::Options* writeOptions, ProgressCallback* progress) const
 {
-   //GNP restored this code now works
-    // This means that indirect is on. So don't use cache. Indirect cannot handle it
-    //if (_filterUsage==FILTER_USAGE_ZERO_WORK_CALLBACK_BASED)
-    //{
-        //return;
-    //}
+    //GNP restored this code now works
+     // This means that indirect is on. So don't use cache. Indirect cannot handle it
+     //if (_filterUsage==FILTER_USAGE_ZERO_WORK_CALLBACK_BASED)
+     //{
+         //return;
+     //}
     CacheSettings* cacheSettings = CacheSettings::get(writeOptions);
 
-    if ( !node || !cacheSettings || !cacheSettings->getCacheBin() )
+    if (!node || !cacheSettings || !cacheSettings->getCacheBin())
         return;
 
     std::string cacheKey = createCacheKey();
@@ -248,168 +259,186 @@ CompilerOutput::writeToCache(osg::Node* node, const osgDB::Options* writeOptions
 void CompilerOutput::addInstancesNormal(osg::MatrixTransform* root, Session* session, const CompilerSettings& settings, const osgDB::Options* readOptions, ProgressCallback*) const
 {
 #ifdef USE_LODS
-   // group to hold all instanced models:
-   osg::LOD* instances = new osg::LOD();
+    // group to hold all instanced models:
+    osg::LOD* instances = new osg::LOD();
 #else
-   osg::Group* instances = new osg::Group();
+    osg::Group* instances = new osg::Group();
 #endif
-   instances->setName(INSTANCES_ROOT);
+    instances->setName(INSTANCES_ROOT);
 
-   // keeps one copy of each instanced model per resource:
-   typedef std::map< ModelResource*, osg::ref_ptr<osg::Node> > ModelNodes;
-   ModelNodes modelNodes;
+    // keeps one copy of each instanced model per resource:
+    using ModelNodes = vector_map< ModelResource*, osg::ref_ptr<osg::Node> >;
+    ModelNodes modelNodes;
 
-   for (InstanceMap::const_iterator i = _instances.begin(); i != _instances.end(); ++i)
-   {
-      ModelResource* res = i->first.get();
+    for (auto& modelInstances : _instances)
+    {
+        ModelResource* res = modelInstances.first.get();
 
-      // look up or create the node corresponding to this instance:
-      osg::ref_ptr<osg::Node>& modelNode = modelNodes[res];
-      if (!modelNode.valid())
-      {
-         // Instance models use the GLOBAL resource cache, so that an instance model gets
-         // loaded only once. Then it's cloned for each tile. That way the shader generator
-         // will never touch live data. (Note that texture images are memory-cached in the
-         // readOptions.)
-         //
-         // TODO: even though the images are shared, the texture object itself is not.
-         // So it would be great to post-process this node and consolidate its texture
-         // references with those in the global texture cache, thereby reducing the GPU
-         // memory footprint.
-         if (!session->getResourceCache()->cloneOrCreateInstanceNode(res, modelNode, readOptions))
-         {
-            OE_WARN << LC << "Failed to materialize resource " << res->uri()->full() << "\n";
-         }
-      }
-
-      if (modelNode.valid())
-      {
-         modelNode->setName(INSTANCE_MODEL);
-
-         // remove any transforms since these will screw up instancing.
-         osgUtil::Optimizer optimizer;
-         optimizer.optimize(
-            modelNode.get(),
-            //optimizer.INDEX_MESH |
-            optimizer.STATIC_OBJECT_DETECTION | optimizer.FLATTEN_STATIC_TRANSFORMS);
-
-         osg::Group* modelGroup = new osg::Group();
-         modelGroup->setName(INSTANCE_MODEL_GROUP);
-
-         // Build a normal scene graph based on MatrixTransforms, and then convert it 
-         // over to use instancing if it's available.
-         const InstanceVector& instanceVector = i->second;
-         for (InstanceVector::const_iterator m = instanceVector.begin(); m != instanceVector.end(); ++m)
-         {
-            osg::MatrixTransform* modelxform = new osg::MatrixTransform(m->first);
-            modelxform->addChild(modelNode.get());
-            if (_index && m->second.valid())
+        // look up or create the node corresponding to this instance:
+        osg::ref_ptr<osg::Node>& modelNode = modelNodes[res];
+        if (!modelNode.valid())
+        {
+            // Instance models use the GLOBAL resource cache, so that an instance model gets
+            // loaded only once. Then it's cloned for each tile. That way the shader generator
+            // will never touch live data. (Note that texture images are memory-cached in the
+            // readOptions.)
+            //
+            // TODO: even though the images are shared, the texture object itself is not.
+            // So it would be great to post-process this node and consolidate its texture
+            // references with those in the global texture cache, thereby reducing the GPU
+            // memory footprint.
+            if (!session->getResourceCache()->cloneOrCreateInstanceNode(res, modelNode, readOptions))
             {
-                _index->tagNode(modelxform, m->second.get());
+                OE_WARN << LC << "Failed to materialize resource " << res->uri()->full() << "\n";
             }
+        }
 
-            if (_metadata && m->second.valid())
+        if (modelNode.valid())
+        {
+            modelNode->setName(INSTANCE_MODEL);
+
+            // remove any transforms since these will screw up instancing.
+            osgUtil::Optimizer optimizer;
+            optimizer.optimize(
+                modelNode.get(),
+                optimizer.STATIC_OBJECT_DETECTION | optimizer.FLATTEN_STATIC_TRANSFORMS);
+
+            osg::Group* modelGroup = new osg::Group();
+            modelGroup->setName(INSTANCE_MODEL_GROUP);
+
+            // Build a normal scene graph based on MatrixTransforms, and then convert it 
+            // over to use instancing if it's available.
+            const InstanceVector& instanceVector = modelInstances.second;
+
+            for(auto& m : instanceVector)
             {
-                auto id = _metadata->add(m->second.get(), true);
-                _metadata->tagNode(modelxform, id);
+                osg::MatrixTransform* modelxform = new osg::MatrixTransform(m.first);
+                modelxform->addChild(modelNode.get());
+                if (_index && m.second.valid())
+                {
+                    _index->tagNode(modelxform, m.second.get());
+                }
+
+                if (_metadata && m.second.valid())
+                {
+                    auto id = _metadata->add(m.second.get(), true);
+                    _metadata->tagNode(modelxform, id);
+                }
+                modelGroup->addChild(modelxform);
             }
-            modelGroup->addChild(modelxform);
-         }
 
 #ifdef USE_LODS
-         // check for a display bin for this model resource:
-         const CompilerSettings::LODBin* bin = settings.getLODBin(res->tags());
-         float lodScale = bin ? bin->lodScale : 1.0f;
+            // check for a display bin for this model resource:
+            const CompilerSettings::LODBin* bin = settings.getLODBin(res->tags());
+            float lodScale = bin ? bin->lodScale : 1.0f;
 
-         float maxRange = _range*lodScale;
+            float maxRange = _range * lodScale;
 
-         // find the LOD range to add it to, or create a new one if neccesary:
-         bool added = false;
-         for (unsigned i = 0; i < instances->getNumChildren() && !added; ++i)
-         {
-            if (instances->getMaxRange(i) == maxRange)
+            // find the LOD range to add it to, or create a new one if neccesary:
+            bool added = false;
+            for (unsigned i = 0; i < instances->getNumChildren() && !added; ++i)
             {
-               instances->getChild(i)->asGroup()->addChild(modelGroup);
-               added = true;
+                if (instances->getMaxRange(i) == maxRange)
+                {
+                    instances->getChild(i)->asGroup()->addChild(modelGroup);
+                    added = true;
+                }
             }
-         }
 
-         if (!added)
-         {
-            osg::Group* parent = new osg::Group();
-            instances->addChild(parent, 0.0, maxRange);
-            parent->addChild(modelGroup);
-         }
+            if (!added)
+            {
+                osg::Group* parent = new osg::Group();
+                instances->addChild(parent, 0.0, maxRange);
+                parent->addChild(modelGroup);
+            }
 #else
-         instances->addChild(modelGroup);
+            instances->addChild(modelGroup);
 #endif
-      }
-   }
+        }
+    }
 
-   // finally add all the instance groups.
-   root->addChild(instances);
+    // finally add all the instance groups.
+    root->addChild(instances);
 }
+
 void CompilerOutput::addInstancesZeroWorkCallbackBased(osg::MatrixTransform* root, Session* session, const CompilerSettings& settings, const osgDB::Options* readOptions, ProgressCallback* progress) const
 {
-   osg::Group* instances = new osg::Group();
-   instances->setName(INSTANCES_ROOT);
+    osg::Group* instances = new osg::Group();
+    instances->setName(INSTANCES_ROOT);
 
-   InstancedModelNode* instancedModelNode = new InstancedModelNode();
-   instances->addChild(instancedModelNode);
-   //instances->setUserData(instancedModelNode);
+    InstancedModelNode* instancedModelNode = new InstancedModelNode();
+    instances->addChild(instancedModelNode);
 
-   for (InstanceMap::const_iterator it = _instances.begin(); it != _instances.end(); ++it)
-   {
-      const ModelResource* res = it->first;
-      const CompilerSettings::LODBin* bin = settings.getLODBin(res->tags());
-      float lodScale = bin ? bin->lodScale : 1.0f;
-      float maxRange = _range*lodScale;
+    // calculate space:
+    for (auto& instancedModel : _instances)
+    {
+        auto& modelInstances = instancedModelNode->_mapModelToInstances[instancedModel.first->uri().value().full()];
+        modelInstances.totalCount += modelInstances.matrices.size();
+    }
 
-      const URI& uri = res->uri().value().full();
-      const InstanceVector& srcMatricees = it->second;
+    // preallocate:
+    for (auto& modelInstances : instancedModelNode->_mapModelToInstances)
+    {
+        modelInstances.second.matrices.reserve(modelInstances.second.totalCount);
 
-      InstancedModelNode::Instances& dstInstances = instancedModelNode->_mapModelToInstances[uri.full()];
-      InstancedModelNode::MatrixdVector& dstMatrices = dstInstances.matrices;
-      InstancedModelNode::ObjectIdVector& dstObjectIds = dstInstances.objectIds;
+        if (_metadata)
+            modelInstances.second.objectIds.reserve(modelInstances.second.totalCount);
+    }
 
-      dstInstances.minRange = 0.0f;
-      dstInstances.maxRange = maxRange;
+    // populate
+    for (auto& instancedModel : _instances)
+    {
+        const ModelResource* res = instancedModel.first;
+        const CompilerSettings::LODBin* bin = settings.getLODBin(res->tags());
+        float lodScale = bin ? bin->lodScale : 1.0f;
+        float maxRange = _range * lodScale;
 
-      for (int matrixIndex = 0; matrixIndex < srcMatricees.size(); ++matrixIndex)
-      {
-         dstMatrices.push_back(srcMatricees[matrixIndex].first);
+        const URI& uri = res->uri().value().full();
+        const InstanceVector& srcMatrices = instancedModel.second;
 
-         if (_metadata)
-         {
-            osg::ref_ptr< Feature > feature = srcMatricees[matrixIndex].second;
-            ObjectID id = feature.valid() ? _metadata->add(feature.get(), true) : ObjectID(0);
-            dstObjectIds.push_back(id);
-         }
-      }
-   }
+        auto& dstInstances = instancedModelNode->_mapModelToInstances[uri.full()];
+        auto& dstMatrices = dstInstances.matrices;
+        auto& dstObjectIds = dstInstances.objectIds;
 
-   // finally add all the instance groups.
-   root->addChild(instances);
+        dstInstances.minRange = 0.0f;
+        dstInstances.maxRange = maxRange;
+
+        for (auto& m : srcMatrices)
+        {
+            dstMatrices.push_back(m.first);
+
+            if (_metadata)
+            {
+                auto feature = m.second;
+                ObjectID id = feature.valid() ? _metadata->add(feature.get(), true) : ObjectID(0);
+                dstObjectIds.push_back(id);
+            }
+        }
+    }
+
+    // finally add all the instance groups.
+    root->addChild(instances);
 }
 
 void CompilerOutput::addInstances(osg::MatrixTransform* root, Session* session, const CompilerSettings& settings, const osgDB::Options* readOptions, ProgressCallback* progress) const
 {
-   // install the model instances, creating one instance group for each model.
+    // install the model instances, creating one instance group for each model.
 
-   if (_instances.empty())
-   {
-      return;
-   }
+    if (_instances.empty())
+    {
+        return;
+    }
 
-   if (_filterUsage==FILTER_USAGE_NORMAL)
-   {
-      addInstancesNormal(root, session, settings, readOptions, progress);
-   }
-   else
-   {
-      addInstancesZeroWorkCallbackBased(root, session, settings, readOptions, progress);
-   }
+    if (_filterUsage == FILTER_USAGE_NORMAL)
+    {
+        addInstancesNormal(root, session, settings, readOptions, progress);
+    }
+    else
+    {
+        addInstancesZeroWorkCallbackBased(root, session, settings, readOptions, progress);
+    }
 }
+
 osg::Node*
 CompilerOutput::createSceneGraph(
     Session* session,
@@ -444,21 +473,21 @@ CompilerOutput::createSceneGraphUnifiedNV(
     // across tiles in the pager.
     ResidentData::Ptr rd = _residentData;
     auto get_or_create = [rd](osg::Texture* osgTex, bool& isNew)
-    {
-        std::lock_guard<std::mutex> lock(rd->_m);
-
-        Texture::WeakPtr& weak = rd->_textures[osgTex];
-        Texture::Ptr arena_tex = weak.lock();
-        isNew = (arena_tex == nullptr);
-        if (isNew)
         {
-            arena_tex = Texture::create(osgTex);
-            weak = arena_tex;
-        }
-        return arena_tex;
-    };
+            std::lock_guard<std::mutex> lock(rd->_m);
+
+            Texture::WeakPtr& weak = rd->_textures[osgTex];
+            Texture::Ptr arena_tex = weak.lock();
+            isNew = (arena_tex == nullptr);
+            if (isNew)
+            {
+                arena_tex = Texture::create(osgTex);
+                weak = arena_tex;
+            }
+            return arena_tex;
+        };
     factory.setGetOrCreateFunction(get_or_create);
-    
+
     // Parametric geometry:
 #if 0
     // per-building. This works nicely but renders slowly.
@@ -491,7 +520,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
             if (bin->lodScale > 0.0f)
                 far_pixel_scale = far_pixel_scale / bin->lodScale;
         }
-        
+
         Chonk::Ptr c = Chonk::create();
         c->add(group.get(), far_pixel_scale, FLT_MAX, factory);
         drawable->add(c);
@@ -511,7 +540,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
     }
 
     // Instanced models
-    for (auto iter : _instances)
+    for (auto& iter : _instances)
     {
         auto& resource = iter.first;
         auto& matrices = iter.second;
@@ -550,7 +579,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
     if (drawable.valid())
     {
         osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform(getLocalToWorld());
-        
+
         root->setName("oe.BuildingLayer.root");
 
 #if 1
@@ -561,7 +590,7 @@ CompilerOutput::createSceneGraphUnifiedNV(
 
         osg::BoundingBox box = drawable->getBoundingBox();
         auto verts = new osg::Vec3Array();
-        for(int i=0; i<8; ++i)
+        for (int i = 0; i < 8; ++i)
             verts->push_back(box.corner(i));
         geom->setVertexArray(verts);
 
@@ -593,14 +622,20 @@ CompilerOutput::createSceneGraphUnifiedNV(
 
 osg::Node*
 CompilerOutput::createSceneGraphLegacy(
-    Session*                session,
+    Session* session,
     const CompilerSettings& settings,
-    const osgDB::Options*   readOptions,
-    ProgressCallback*       progress) const
+    const osgDB::Options* readOptions,
+    ProgressCallback* progress) const
 {
     // install the master matrix for this graph:
-    osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform( getLocalToWorld() );
+    osg::ref_ptr<osg::MatrixTransform> root = new osg::MatrixTransform(getLocalToWorld());
     root->setName("BuildingSceneGraphNode");
+
+    // configure a geometry merger. The target number here is quite arbitrary.
+    // using ~0 (the max) results in lower frame rates. Not sure where the sweet
+    // spot is, but we landed on this number after trial and error.
+    osgUtil::Optimizer::MergeGeometryVisitor mergeGeometry;
+    mergeGeometry.setTargetMaximumNumberOfVertices(250000u);
 
     if (_geodes.empty() == false)
     {
@@ -610,15 +645,20 @@ CompilerOutput::createSceneGraphLegacy(
 
         const GeoCircle bc = _key.getExtent().computeBoundingGeoCircle();
 
-        for (TaggedGeodes::const_iterator g = _geodes.begin(); g != _geodes.end(); ++g)
+        // preallocate space:
+        GroupEx::cast(elevationsLod)->reserve(_geodes.size());
+
+        for(auto& taggedGeode : _geodes)
         {
-            const std::string& tag = g->first;
+            const std::string& tag = taggedGeode.first;
             const CompilerSettings::LODBin* bin = settings.getLODBin(tag);
             float minRange = bin && bin->minLodScale > 0.0f ? bc.getRadius() + _range * bin->minLodScale : 0.0f;
             float maxRange = bin ? bc.getRadius() + _range * bin->lodScale : FLT_MAX;
-            elevationsLod->addChild(g->second.get(), minRange, maxRange);
+            elevationsLod->addChild(taggedGeode.second.get(), minRange, maxRange);
         }
 
+        elevationsLod->accept(mergeGeometry);
+        
         if (_filterUsage == FILTER_USAGE_NORMAL)
         {
             // normal usage: just add the data directly.
@@ -628,12 +668,6 @@ CompilerOutput::createSceneGraphLegacy(
         {
             // Indirect prep: Instead of adding the geometry directly to the scene graph,
             // put in in a container node that the VRV indirect engine can find and process.
-
-            // because the default merge limit is 10000 and there's no other way to change it
-            osgUtil::Optimizer::MergeGeometryVisitor mergeGeometry;
-            mergeGeometry.setTargetMaximumNumberOfVertices(250000u);
-            elevationsLod->accept(mergeGeometry);
-
             ElevationsLodNode* elevationsLodNode = new ElevationsLodNode();
             elevationsLodNode->setName("BuildingElevationsNode");
             elevationsLodNode->elevationsLOD = elevationsLod;
@@ -643,18 +677,10 @@ CompilerOutput::createSceneGraphLegacy(
         }
     }
 
-    if ( _externalModelsGroup->getNumChildren() > 0 )
+    if (_externalModelsGroup->getNumChildren() > 0)
     {
-        root->addChild( _externalModelsGroup.get() );
-    }
-    
-    // Run an optimization pass before adding any debug data or models
-    // NOTE: be careful; don't mess with state during optimization.
-    {
-        // because the default merge limit is 10000 and there's no other way to change it
-        osgUtil::Optimizer::MergeGeometryVisitor mergeGeometry;
-        mergeGeometry.setTargetMaximumNumberOfVertices( 250000u );
-        root->accept( mergeGeometry );
+        _externalModelsGroup->accept(mergeGeometry);
+        root->addChild(_externalModelsGroup.get());
     }
 
     addInstances(root, session, settings, readOptions, progress);
@@ -665,7 +691,7 @@ CompilerOutput::createSceneGraphLegacy(
 namespace
 {
     /**
-     * Performs all the shader component installation on the scene graph. 
+     * Performs all the shader component installation on the scene graph.
      * Once this is done the model is ready to render.
      */
     struct PostProcessNodeVisitor : public osg::NodeVisitor
@@ -718,9 +744,9 @@ namespace
             {
                 _instanceGroups++;
                 DrawInstanced::convertGraphToUseDrawInstanced(node.asGroup());
-                traverse(node);   
+                traverse(node);
             }
-            
+
             else if (node.getName() == INSTANCE_MODEL && _useDrawInstanced)
             {
                 _models++;
@@ -733,6 +759,7 @@ namespace
                 // Clustering:
                 osg::Group* group = node.asGroup();
 
+#ifdef USE_MESH_FLATTENER
                 if (group)
                 {
 #ifdef USE_LODS
@@ -753,6 +780,7 @@ namespace
                     osgEarth::MeshFlattener::run(group);
 #endif
                 }
+#endif // USE_MESH_FLATTENER
 
                 // Generate shaders afterwards.
                 Registry::instance()->shaderGenerator().run(&node, "Instances Root", _sscache.get());
