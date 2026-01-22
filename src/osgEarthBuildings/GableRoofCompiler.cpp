@@ -75,20 +75,19 @@ _session( session )
 
 bool
 GableRoofCompiler::compile(CompilerOutput&       output,
-                           const Building*       building,
-                           const Elevation*      elevation,
+                           const Building&       building,
+                           const Elevation&      elevation,
                            const osg::Matrix&    world2local,
                            const osgDB::Options* readOptions) const
 {
     if ( !building ) return false;
-    if ( !elevation ) return false;
-    if ( !elevation->getRoof() ) return false;
+    if ( !elevation.getRoof() ) return false;
 
-    const Roof* roof = elevation->getRoof();
+    const Roof* roof = elevation.getRoof();
 
     // precalculate the frame transformation; combining these will
     // prevent any precision loss during the transform.
-    osg::Matrix frame = building->getReferenceFrame() * world2local;
+    osg::Matrix frame = building.getReferenceFrame() * world2local;
     
     // find a texture:
     SkinResource* skin = roof->getSkinResource();
@@ -121,11 +120,11 @@ GableRoofCompiler::compile(CompilerOutput&       output,
     geom->setNormalBinding( geom->BIND_PER_VERTEX );
 
     // highest point (this data is guaranteed to exist)
-    float roofZ = elevation->getUppermostZ();
+    float roofZ = elevation.getUppermostZ();
 
     // the AABB gives us the information to scale+bias the unit template 
     // to the proper size and shape:
-    const osg::BoundingBox& aabb = elevation->getAxisAlignedBoundingBox();
+    const osg::BoundingBox& aabb = elevation.getAxisAlignedBoundingBox();
     osg::Vec3f scale(aabb.xMax()-aabb.xMin(), aabb.yMax()-aabb.yMin(), 1.0f);
     osg::Vec3f bias (aabb.xMin(), aabb.yMin(), roofZ);
 
@@ -139,7 +138,7 @@ GableRoofCompiler::compile(CompilerOutput&       output,
     {
         osg::Vec3f& v = (*verts)[i];
         v = osg::componentMultiply(v, scale) + bias;
-        elevation->unrotate( v );
+        elevation.unrotate( v );
         v = v * frame;
 
         if ( texCoords )

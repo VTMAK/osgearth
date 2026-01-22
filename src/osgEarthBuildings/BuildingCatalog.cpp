@@ -17,15 +17,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 #include "BuildingCatalog"
-#include "Parapet"
 #include "Roof"
-#include "BuildingSymbol"
-#include "BuildingVisitor"
 #include "BuildContext"
-
 #include <osgEarth/XmlUtils>
 #include <osgEarth/Containers>
-#include <osgEarth/Style>
 
 using namespace osgEarth;
 using namespace osgEarth::Buildings;
@@ -84,9 +79,9 @@ BuildingCatalog::createBuildings(Feature*              feature,
                 float area = area2d(polygon->getBounds());
 
                 // A footprint is the minumum info required to make a building.
-                osg::ref_ptr<Building> building = cloneBuildingTemplate(feature, tags, height, area);
+                auto building = cloneBuildingTemplate(feature, tags, height, area);
 
-                if ( building.valid() )
+                if ( building.has_value() )
                 {
                     // Install the reference frame of the footprint geometry:
                     building->setReferenceFrame( local2world );
@@ -103,7 +98,7 @@ BuildingCatalog::createBuildings(Feature*              feature,
                     // Build the internal structures:
                     if ( building->build(polygon, context, progress) )
                     {
-                        output.push_back( building.get() );
+                        output.emplace_back( std::move(*building) );
                     }
                     else
                     {
@@ -115,7 +110,7 @@ BuildingCatalog::createBuildings(Feature*              feature,
                 {
                     progress->message() += Stringify()
                         << "Feature " << feature->getFID() << " part " << partNum << " failed to match a template; "
-                        << "tags=\"" << Taggable<std::string>::tagString(tags) << "\" "
+                        << "tags=\"" << Building::tagString(tags) << "\" "
                         << "height=" << height << " "
                         << "area=" << area << "\n";
                 }
@@ -172,7 +167,7 @@ BuildingCatalog::cleanPolygon(Polygon* fp) const
     // TODO: remove colinear points? for skeleton?
 }
 
-Building*
+std::optional<Building>
 BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
                                        const TagVector&   tags,
                                        float              height,
@@ -184,34 +179,34 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
 
         for(unsigned i=0; i<_buildingsTemplates.size(); ++i)
         {
-            const Building* bt = _buildingsTemplates.at(i).get();
+            const Building& bt = _buildingsTemplates[i];
 
-            bool heightOK = (height >= bt->getMinHeight() && height <= bt->getMaxHeight());
+            bool heightOK = (height >= bt.getMinHeight() && height <= bt.getMaxHeight());
             if ( !heightOK )
                 continue;
 
-            bool areaOK = (area == 0.0f) || (area >= bt->getMinArea() && area <= bt->getMaxArea());
+            bool areaOK = (area == 0.0f) || (area >= bt.getMinArea() && area <= bt.getMaxArea());
             if ( !areaOK )
                 continue;
 
-            bool tagsOK = tags.empty() || (bt->containsTags(tags));
+            bool tagsOK = tags.empty() || (bt.containsTags(tags));
             if ( !tagsOK )
                 continue;
 
-            candidates.push_back(i);
+            candidates.emplace_back(i);
         }
 
         if ( !candidates.empty() )
         {
             UID uid = feature->getFID() + 1u;
             unsigned index = Random((unsigned)area).next(candidates.size());
-            Building* copy = osg::clone( _buildingsTemplates.at( candidates[index] ).get() );
-            copy->setUID( uid );
+            Building copy = _buildingsTemplates[candidates[index]].clone();
+            copy.setUID( uid );
             return copy;
         }
     }
 
-    return 0L;
+    return std::nullopt;
 }
 
 bool
@@ -241,38 +236,38 @@ BuildingCatalog::parseBuildings(const Config& conf, ProgressCallback* progress)
         if ( b->empty() )
             continue;
 
-        Building* building = new Building();
+        Building building;
 
         if ( b->hasValue("tags") )
         {
-            building->addTags( b->value("tags") );
+            building.addTags( b->value("tags") );
         }
 
-        building->setMinHeight( b->value("min_height", 0.0f) );
-        building->setMaxHeight( b->value("max_height", FLT_MAX) );
+        building.setMinHeight( b->value("min_height", 0.0f) );
+        building.setMaxHeight( b->value("max_height", FLT_MAX) );
 
-        building->setMinArea( b->value("min_area", 0.0f) );
-        building->setMaxArea( b->value("max_area", FLT_MAX) );
+        building.setMinArea( b->value("min_area", 0.0f) );
+        building.setMaxArea( b->value("max_area", FLT_MAX) );
 
-        building->setInstanced(b->value("instanced", false));
+        building.setInstanced(b->value("instanced", false));
 
-        if (building->getInstanced())
+        if (building.getInstanced())
         {
             ModelSymbol* ms = new ModelSymbol();
             ms->addTags( "instanced" );
 //            ms->addTags( "building instanced" );
             if ( b->hasValue("tags") )
                 ms->addTags( b->value("tags") );
-            building->setInstancedModelSymbol( ms );
+            building.setInstancedModelSymbol( ms );
         }
 
         const Config* elevations = b->child_ptr("elevations");
         if ( elevations )
         {
-            parseElevations( *elevations, building, 0L, building->getElevations(), 0L, progress );
+            parseElevations( *elevations, &building, nullptr, building.getElevations(), nullptr, progress );
         }
 
-        _buildingsTemplates.push_back( building );
+        _buildingsTemplates.emplace_back( std::move(building) );
     }
 
     OE_INFO << LC << "Read " << _buildingsTemplates.size() << " building templates\n";
@@ -281,135 +276,129 @@ BuildingCatalog::parseBuildings(const Config& conf, ProgressCallback* progress)
 }
 
 bool
-BuildingCatalog::parseElevations(const Config&     conf, 
+BuildingCatalog::parseElevations(const Config&     conf,
                                  Building*         building,
-                                 Elevation*        parent, 
+                                 Elevation*        parent,
                                  ElevationVector&  output,
                                  SkinSymbol*       parentSkinSymbol,
                                  ProgressCallback* progress)
-{            
+{
     for(ConfigSet::const_iterator e = conf.children().begin();
         e != conf.children().end();
         ++e)
     {
-        Elevation* elevation = 0L;        
+        Elevation elevation;
 
         if ( e->value("type") == "parapet" )
         {
-            Parapet* parapet = new Parapet();
-            parapet->setWidth( e->value("width", parapet->getWidth()) );
-            elevation = parapet;
-        }
-        else
-        {
-            elevation = new Elevation();
+            elevation.setParapet(true);
+            elevation.setParapetWidth( e->value("width", 0.0f) );
         }
 
         if ( parent )
         {
-            elevation->setParent( parent );
+            elevation.setParent( parent );
         }
-        
+
         // resolve the skin symbol for this Elevation.
         SkinSymbol* skinSymbol = parseSkinSymbol( &(*e) );
         if ( skinSymbol )
         {
             // set and use as new parent
-            elevation->setSkinSymbol( skinSymbol );
+            elevation.setSkinSymbol( skinSymbol );
         }
         else
         {
             // use this parent as new parent for sub-elevations
             skinSymbol = parentSkinSymbol;
-            if ( parent == 0L )
-                elevation->setSkinSymbol( parentSkinSymbol );
+            if ( parent == nullptr )
+                elevation.setSkinSymbol( parentSkinSymbol );
         }
 
         if (e->hasValue("tag"))
-            elevation->setTag(e->value("tag"));
+            elevation.setTag(e->value("tag"));
         else if (e->hasValue("tags"))
-            elevation->setTag(e->value("tags"));
+            elevation.setTag(e->value("tags"));
         else if (parent)
-            elevation->setTag(parent->getTag());            
+            elevation.setTag(parent->getTag());
 
         // resolve the height properties:
         optional<float> hp;
         if ( e->get( "height_percentage", hp) )
-            elevation->setHeightPercentage( hp.get()*0.01f );
+            elevation.setHeightPercentage( hp.get()*0.01f );
 
         if ( e->hasValue( "height" ) )
-            elevation->setAbsoluteHeight( e->value("height", 15.0f) );
+            elevation.setAbsoluteHeight( e->value("height", 15.0f) );
 
         if ( e->hasValue( "bottom" ) )
-            elevation->setBottom( e->value("bottom", 0.0f) );
+            elevation.setBottom( e->value("bottom", 0.0f) );
 
-        elevation->setInset( e->value("inset", 0.0f) );
-        elevation->setXOffset( e->value("xoffset", 0.0f) );
-        elevation->setYOffset( e->value("yoffset", 0.0f) );
+        elevation.setInset( e->value("inset", 0.0f) );
+        elevation.setXOffset( e->value("xoffset", 0.0f) );
+        elevation.setYOffset( e->value("yoffset", 0.0f) );
 
         // color:
         if ( e->hasValue("color") )
-            elevation->setColor( Color(e->value("color")) );
+            elevation.setColor( Color(e->value("color")) );
 
         if ( e->value("simplify", false) == true )
-            elevation->setRenderAsBox( true );
+            elevation.setRenderAsBox( true );
 
         if ( e->hasChild("roof") )
         {
-            Roof* roof = parseRoof( e->child_ptr("roof"), progress );
-            if ( roof )
+            Roof roof = parseRoof( e->child_ptr("roof"), progress );
+            if (roof.getTag().empty())
             {
-                elevation->setRoof( roof );
-                if (roof->getTag().empty())
-                {
-                    roof->setTag(elevation->getTag());
-                }
+                roof.setTag(elevation.getTag());
             }
+            elevation.setRoof( std::move(roof) );
         }
 
-        output.push_back( elevation );
+        output.emplace_back( std::move(elevation) );
 
+        // Get pointer to the newly added elevation for child parsing
+        Elevation* addedElevation = &output.back();
         const Config* children = e->child_ptr("elevations");
         if ( children )
         {
-            parseElevations( *children, building, elevation, elevation->getElevations(), skinSymbol, progress );
+            parseElevations( *children, building, addedElevation, addedElevation->getElevations(), skinSymbol, progress );
         }
     }
 
     return true;
 }
 
-Roof*
+Roof
 BuildingCatalog::parseRoof(const Config* r, ProgressCallback* progress) const
 {
-    Roof* roof = new Roof();
+    Roof roof;
 
     if ( r->value("type") == "gable" )
-        roof->setType( Roof::TYPE_GABLE );
+        roof.setType( Roof::TYPE_GABLE );
     else if ( r->value("type") == "instanced" )
-        roof->setType( Roof::TYPE_INSTANCED );
+        roof.setType( Roof::TYPE_INSTANCED );
     else
-        roof->setType( Roof::TYPE_FLAT );
+        roof.setType( Roof::TYPE_FLAT );
 
     SkinSymbol* skinSymbol = parseSkinSymbol( r );
     if ( skinSymbol )
     {
-        roof->setSkinSymbol( skinSymbol );
+        roof.setSkinSymbol( skinSymbol );
     }
 
     if ( r->hasValue("color") )
-        roof->setColor( Color(r->value("color")) );
+        roof.setColor( Color(r->value("color")) );
 
     ModelSymbol* modelSymbol = parseModelSymbol( r );
     if ( modelSymbol )
     {
-        roof->setModelSymbol( modelSymbol );
+        roof.setModelSymbol( modelSymbol );
     }
 
     if (r->hasValue("tag"))
-        roof->setTag(r->value("tag"));
+        roof.setTag(r->value("tag"));
     else if (r->hasValue("tags"))
-        roof->setTag(r->value("tags"));
+        roof.setTag(r->value("tags"));
 
     return roof;
 }

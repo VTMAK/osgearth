@@ -23,7 +23,6 @@
 #include "FilterUsage"
 #include <osgEarth/TiledModelLayer>
 #include <osgEarth/FeatureSource>
-#include <osgEarth/FeatureModelSource>
 #include <osgEarth/StyleSheet>
 #include <osgEarth/LayerReference>
 

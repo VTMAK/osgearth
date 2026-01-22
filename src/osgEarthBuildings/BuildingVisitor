@@ -16,8 +16,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_BUILDING_VISITOR_H
-#define OSGEARTH_BUILDINGS_BUILDING_VISITOR_H
+#pragma once
 
 #include "Common"
 #include "Building"
@@ -40,5 +39,3 @@ namespace osgEarth { namespace Buildings
     };
 
 } } // namespace
-
-#endif // OSGEARTH_BUILDINGS_BUILDING_VISITOR_H

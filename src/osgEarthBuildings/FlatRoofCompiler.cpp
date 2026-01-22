@@ -81,20 +81,19 @@ FlatRoofCompiler::setUsage(FilterUsage filterUsage)
 
 bool
 FlatRoofCompiler::compile(CompilerOutput&       output,
-                          const Building*       building,
-                          const Elevation*      elevation,
+                          const Building&       building,
+                          const Elevation&      elevation,
                           const osg::Matrix&    world2local,
                           const osgDB::Options* readOptions) const
 {
     if ( !building ) return false;
-    if ( !elevation ) return false;
 
     // Could be null, and that's OK.
-    const Roof* roof = elevation->getRoof();
+    const Roof* roof = elevation.getRoof();
 
     // precalculate the frame transformation; combining these will
     // prevent any precision loss during the transform.
-    osg::Matrix frame = building->getReferenceFrame() * world2local;
+    osg::Matrix frame = building.getReferenceFrame() * world2local;
 
     bool genColors = true; //false;   // TODO
 
@@ -154,8 +153,8 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
 
     // Create a series of line loops that the tessellator can reorganize into polygons.
     unsigned vertptr = 0;
-    for(Elevation::Walls::const_iterator wall = elevation->getWalls().begin();
-        wall != elevation->getWalls().end();
+    for(Elevation::Walls::const_iterator wall = elevation.getWalls().begin();
+        wall != elevation.getWalls().end();
         ++wall)
     {
         unsigned elevptr = vertptr;
@@ -243,7 +242,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
     for(osg::Vec3Array::iterator v = verts->begin(); v != verts->end(); ++v)
         (*v) = (*v) * frame;
 
-    output.addDrawable(geom.get(), roof ? roof->getTag() : elevation->getTag());
+    output.addDrawable(geom.get(), roof ? roof->getTag() : elevation.getTag());
     
     // Load models:
     if (roof)
@@ -273,7 +272,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
             if (modelWidth < spaceWidth && modelHeight < spaceHeight)
             {
                 // generate a pseudo-random position inside the model box:
-                Random prng(building->getUID());
+                Random prng(building.getUID());
                 float x = prng.next();
                 float y = prng.next();
 
@@ -297,7 +296,7 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
                 else
                 {
                     osg::Matrix placement(roof->getParent()->getRotation() * osg::Matrix::translate(p));
-                    output.addInstance(model, placement * building->getReferenceFrame());
+                    output.addInstance(model, placement * building.getReferenceFrame());
                 }
             }
 

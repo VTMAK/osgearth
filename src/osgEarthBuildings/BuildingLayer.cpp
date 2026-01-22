@@ -18,12 +18,11 @@
  */
 #include "BuildingLayer"
 #include "BuildingCatalog"
-#include "BuildingFactory"
-#include "BuildingCompiler"
 #include "BuildingPager"
 
 #include <osgEarth/Registry>
 #include <osgEarth/FeatureSourceIndexNode>
+#include <osgEarth/NodeUtils>
 
 #include <cstdlib>
 
@@ -75,7 +74,7 @@ BuildingLayer::setFeatureSource(FeatureSource* source)
 Layer::Stats
 BuildingLayer::reportStats() const
 {    
-    auto pager = findTopMostNodeOfType<BuildingPager>(_root);
+    auto pager = Util::findTopMostNodeOfType<BuildingPager>(_root);
     if (pager)
     {
         Stats report;

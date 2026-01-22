@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 #include "BuildingPager"
-#include "Analyzer"
+
 #include <osgEarth/Registry>
 #include <osgEarth/CullingUtils>
 #include <osgEarth/Query>
@@ -26,19 +26,10 @@
 #include <osgEarth/Utils>
 #include <osgEarth/NodeUtils>
 #include <osgEarth/Chonk>
-#include <osgEarth/Capabilities>
 #include <osgEarth/NetworkMonitor>
 
-#include <osgUtil/Optimizer>
-#include <osgUtil/Statistics>
-#include <osg/Version>
 #include <osg/CullFace>
-#include <osg/Geometry>
 #include <osg/MatrixTransform>
-#include <osgUtil/RenderBin>
-
-#include <osgDB/WriteFile>
-
 #include <osg/ConcurrencyViewerMacros>
 
 #define LC "[BuildingPager] "
@@ -470,7 +461,7 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
                 {
                     if (output.getLocalToWorld().isIdentity())
                     {
-                        output.setLocalToWorld(buildings.front()->getReferenceFrame());
+                        output.setLocalToWorld(buildings.front().getReferenceFrame());
                     }
 
                     // for indexing, if enabled:

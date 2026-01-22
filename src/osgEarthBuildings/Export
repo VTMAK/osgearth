@@ -17,12 +17,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
-/* -*-c++-*- 
+/* -*-c++-*-
  * Derived from osg/Export
  */
 
-#ifndef OSGEARTH_BUILDINGS_EXPORT_H
-#define OSGEARTH_BUILDINGS_EXPORT_H 1
+#pragma once
 
 // define USE_DEPRECATED_API is used to include in API which is being fazed out
 // if you can compile your apps with this turned off you are
@@ -80,6 +79,4 @@
 /**
 \namespace osgEarth::Buildings
 */
-
-#endif // OSGEARTH_BUILDINGS_EXPORT_H
 

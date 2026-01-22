@@ -28,7 +28,6 @@ set(HEADERS
     Export
     FlatRoofCompiler
     GableRoofCompiler
-    Parapet
     Roof
     Zoning
 	ExternalModelNode
@@ -57,7 +56,6 @@ set(SOURCES
     FeaturePlugin.cpp
     FlatRoofCompiler.cpp
     GableRoofCompiler.cpp
-    Parapet.cpp
     Roof.cpp
     ExternalModelNode.cpp
     InstancedModelNode.cpp

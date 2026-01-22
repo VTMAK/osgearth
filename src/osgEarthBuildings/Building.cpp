@@ -20,6 +20,7 @@
 #include "BuildingVisitor"
 #include "BuildContext"
 #include <osgEarth/Progress>
+#include <sstream>
 
 #define LC "[Building] "
 
@@ -27,7 +28,6 @@ using namespace osgEarth;
 using namespace osgEarth::Buildings;
 
 Building::Building() :
-Taggable<osg::Object>(),
 _zoning    ( Zoning::ZONING_UNKNOWN ),
 _minHeight ( 0.0f ),
 _maxHeight ( FLT_MAX ),
@@ -39,9 +39,11 @@ _uid(0)
     //nop
 }
 
-Building::Building(const Building& rhs, const osg::CopyOp& copy) :
-Taggable<osg::Object>( rhs, copy ),
+Building::Building(const Building& rhs) :
+_tags      ( rhs._tags ),
+_uid       ( rhs._uid ),
 _zoning    ( rhs._zoning ),
+_local2world( rhs._local2world ),
 _minHeight ( rhs._minHeight ),
 _maxHeight ( rhs._maxHeight ),
 _minArea   ( rhs._minArea ),
@@ -51,16 +53,162 @@ _externalModelURI      ( rhs._externalModelURI ),
 _instancedModelSymbol  ( rhs._instancedModelSymbol),
 _instancedModelResource( rhs._instancedModelResource)
 {
-    for(ElevationVector::const_iterator e = rhs.getElevations().begin(); e != rhs.getElevations().end(); ++e)
-        _elevations.push_back( e->get()->clone() );
+    for (const auto& e : rhs._elevations)
+        _elevations.emplace_back(e);
+}
+
+Building::Building(Building&& rhs) noexcept :
+_tags      ( std::move(rhs._tags) ),
+_uid       ( rhs._uid ),
+_zoning    ( rhs._zoning ),
+_local2world( rhs._local2world ),
+_minHeight ( rhs._minHeight ),
+_maxHeight ( rhs._maxHeight ),
+_minArea   ( rhs._minArea ),
+_maxArea   ( rhs._maxArea ),
+_instanced ( rhs._instanced ),
+_externalModelURI      ( std::move(rhs._externalModelURI) ),
+_instancedModelSymbol  ( std::move(rhs._instancedModelSymbol) ),
+_instancedModelResource( std::move(rhs._instancedModelResource) ),
+_elevations( std::move(rhs._elevations) )
+{
+}
+
+Building& Building::operator=(const Building& rhs)
+{
+    if (this != &rhs)
+    {
+        _tags = rhs._tags;
+        _uid = rhs._uid;
+        _zoning = rhs._zoning;
+        _local2world = rhs._local2world;
+        _minHeight = rhs._minHeight;
+        _maxHeight = rhs._maxHeight;
+        _minArea = rhs._minArea;
+        _maxArea = rhs._maxArea;
+        _instanced = rhs._instanced;
+        _externalModelURI = rhs._externalModelURI;
+        _instancedModelSymbol = rhs._instancedModelSymbol;
+        _instancedModelResource = rhs._instancedModelResource;
+        _elevations.clear();
+        for (const auto& e : rhs._elevations)
+            _elevations.push_back(e);
+    }
+    return *this;
+}
+
+Building& Building::operator=(Building&& rhs) noexcept
+{
+    if (this != &rhs)
+    {
+        _tags = std::move(rhs._tags);
+        _uid = rhs._uid;
+        _zoning = rhs._zoning;
+        _local2world = rhs._local2world;
+        _minHeight = rhs._minHeight;
+        _maxHeight = rhs._maxHeight;
+        _minArea = rhs._minArea;
+        _maxArea = rhs._maxArea;
+        _instanced = rhs._instanced;
+        _externalModelURI = std::move(rhs._externalModelURI);
+        _instancedModelSymbol = std::move(rhs._instancedModelSymbol);
+        _instancedModelResource = std::move(rhs._instancedModelResource);
+        _elevations = std::move(rhs._elevations);
+    }
+    return *this;
+}
+
+Building Building::clone() const
+{
+    return Building(*this);
+}
+
+void Building::addTag(const std::string& tag)
+{
+    _tags.insert(normalize(tag));
+}
+
+void Building::addTags(const TagVector& tags)
+{
+    for (const auto& tag : tags)
+        _tags.insert(normalize(tag));
+}
+
+void Building::addTags(const std::string& tagString)
+{
+    auto tags = StringTokenizer()
+        .delim(" ")
+        .standardQuotes()
+        .keepEmpties(false)
+        .tokenize(tagString);
+    addTags(tags);
+}
+
+void Building::removeTag(const std::string& tag)
+{
+    _tags.erase(normalize(tag));
+}
+
+bool Building::containsTag(const std::string& tag) const
+{
+    return _tags.find(normalize(tag)) != _tags.end();
+}
+
+bool Building::containsTags(const TagSet& tags) const
+{
+    for (const auto& tag : tags)
+    {
+        if (_tags.find(normalize(tag)) == _tags.end())
+            return false;
+    }
+    return true;
+}
+
+bool Building::containsTags(const TagVector& tags) const
+{
+    for (const auto& tag : tags)
+    {
+        if (_tags.find(normalize(tag)) == _tags.end())
+            return false;
+    }
+    return true;
+}
+
+std::string Building::tagString() const
+{
+    std::stringstream buf;
+    for (auto i = _tags.begin(); i != _tags.end(); ++i)
+        buf << (i != _tags.begin() ? " " : "") << *i;
+    return buf.str();
+}
+
+std::string Building::tagString(const TagSet& tags)
+{
+    std::stringstream buf;
+    for (auto i = tags.begin(); i != tags.end(); ++i)
+        buf << (i != tags.begin() ? " " : "") << *i;
+    return buf.str();
+}
+
+std::string Building::tagString(const TagVector& tags)
+{
+    std::stringstream buf;
+    for (auto i = tags.begin(); i != tags.end(); ++i)
+        buf << (i != tags.begin() ? " " : "") << *i;
+    return buf.str();
+}
+
+std::string Building::normalize(const std::string& input) const
+{
+    return osgEarth::toLower(input);
 }
 
 void
 Building::setHeight(float height)
 {
-    for(ElevationVector::iterator e = _elevations.begin(); e != _elevations.end(); ++e)
+    for (auto& e : _elevations)
     {
-        e->get()->setHeight( height );
+        e.setHeight(height);
     }
 }
 
@@ -72,20 +220,20 @@ Building::build(const Polygon* footprint, BuildContext& bc, ProgressCallback* pr
 
     // Resolve an instanced building model if available.
     resolveInstancedModel(bc, progress);
-    
+
     // In the absence of an instanced model, build parametric data.
     if ( getInstancedModelResource() == nullptr )
     {
-        for(ElevationVector::iterator e = _elevations.begin(); e != _elevations.end(); ++e)
+        for (auto& e : _elevations)
         {
-            e->get()->build( footprint, bc );
+            e.build(footprint, bc);
         }
     }
 
     // if we are using an instanced model, we still need the rotation/AABB from the first elevation:
-    else if ( _elevations.size() > 0 )
+    else if ( !_elevations.empty() )
     {
-        _elevations.front()->calculateRotations(footprint);
+        _elevations.front().calculateRotations(footprint);
     }
 
     return true;
@@ -134,8 +282,8 @@ Building::getConfig() const
     if ( !getElevations().empty() )
     {
         Config evec("elevations");
-        for(ElevationVector::const_iterator e = getElevations().begin(); e != getElevations().end(); ++e)
-            evec.add("elevation", e->get()->getConfig());
+        for (const auto& e : getElevations())
+            evec.add("elevation", e.getConfig());
         conf.set(evec);
     }
     return conf;

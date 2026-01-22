@@ -16,14 +16,12 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
-#ifndef OSGEARTH_BUILDINGS_LAYER_H
-#define OSGEARTH_BUILDINGS_LAYER_H
+#pragma once
 
 #include "Common"
 #include "BuildingLayerOptions"
 #include "BuildingCatalog"
 #include <osgEarth/TiledModelLayer>
-#include <osgEarth/SimplePager>
 #include <osgEarth/FeatureSource>
 #include <osgEarth/Session>
 
@@ -97,5 +95,3 @@ namespace osgEarth { namespace Buildings
         virtual ~BuildingLayer();
     };
 } }
-
-#endif // OSGEARTH_BUILDINGS_EXTENSION_H
