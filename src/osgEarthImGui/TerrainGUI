@@ -13,7 +13,6 @@
 #include <osgEarth/SelectExtentTool>
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/GeoMath>
-#include <algorithm>
 
 namespace osgEarth
 {
@@ -54,7 +53,9 @@ namespace osgEarth
             if (!findNodeOrHide(_mapNode, ri)) return;
 
             if (!_installed)
+            {
                 install(ri);
+            }
 
             ImGui::Begin(name(), visible());
             {
@@ -137,28 +138,28 @@ namespace osgEarth
                     // Expiration options
                     ImGui::Separator();
                     unsigned int minExpiryFrames = options.getMinExpiryFrames();
-                    if (ImGuiLTable::InputScalar("Min Expiry Frames", ImGuiDataType_U32, &minExpiryFrames, &u32_one, nullptr, "%u"))
+                    if (ImGuiLTable::InputScalar("Min expiry frames", ImGuiDataType_U32, &minExpiryFrames, &u32_one, nullptr, "%u"))
                     {
                         options.setMinExpiryFrames(minExpiryFrames);
                         engine->dirtyTerrainOptions();
                     }
 
                     float minExpiryTime = options.getMinExpiryTime();
-                    if (ImGuiLTable::InputFloat("Min Expiry Time", &minExpiryTime))
+                    if (ImGuiLTable::InputFloat("Min expiry time (s)", &minExpiryTime))
                     {
                         options.setMinExpiryTime(minExpiryTime);
                         engine->dirtyTerrainOptions();
                     }
 
                     float minExpiryRange = options.getMinExpiryRange();
-                    if (ImGuiLTable::InputFloat("Min Expiry Range", &minExpiryRange))
+                    if (ImGuiLTable::InputFloat("Min expiry range (m)", &minExpiryRange))
                     {
                         options.setMinExpiryRange(minExpiryRange);
                         engine->dirtyTerrainOptions();
                     }
 
                     unsigned int maxTilesToUnloadPerFrame = options.getMaxTilesToUnloadPerFrame();
-                    if (ImGuiLTable::InputScalar("Max Tiles to Unload", ImGuiDataType_U32, &maxTilesToUnloadPerFrame, &u32_one, nullptr, "%u"))
+                    if (ImGuiLTable::InputScalar("Max unloads per frame", ImGuiDataType_U32, &maxTilesToUnloadPerFrame, &u32_one, nullptr, "%u"))
                     {
                         options.setMaxTilesToUnloadPerFrame(maxTilesToUnloadPerFrame);
                         engine->dirtyTerrainOptions();
@@ -190,17 +191,24 @@ namespace osgEarth
                         ImGui::Separator();
                         ImGuiLTable::Section("Tessellation");
 
-                        float level = options.getTessellationLevel();
-                        if (ImGuiLTable::SliderFloat("Level", &level, 1.0f, 12.0f))
+                        auto tessRes = options.getTessellationResolution();
+                        if (ImGuiLTable::SliderFloat("Resolution (m)", &tessRes, 2000.0f, 0.0f, "%.0f", ImGuiSliderFlags_Logarithmic))
                         {
-                            options.setTessellationLevel(level);
+                            options.setTessellationResolution(tessRes);
                             engine->dirtyTerrainOptions();
                         }
 
-                        float range = options.getTessellationRange();
-                        if (ImGuiLTable::SliderFloat("Range", &range, 0.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic))
+                        float minLevel = options.getTessellationMinLevel();
+                        if (ImGuiLTable::SliderFloat("Min tess level", &minLevel, 0.1f, 4.0f, "%.0f", 0))
                         {
-                            options.setTessellationRange(range);
+                            options.setTessellationMinLevel(minLevel);
+                            engine->dirtyTerrainOptions();
+                        }
+
+                        float maxLevel = options.getTessellationMaxLevel();
+                        if (ImGuiLTable::SliderFloat("Max tess level", &maxLevel, 0.0f, 16.0f, "%.0f", 0))
+                        {
+                            options.setTessellationMaxLevel(maxLevel);
                             engine->dirtyTerrainOptions();
                         }
 
@@ -214,72 +222,74 @@ namespace osgEarth
                 if (_mapNode->getGeoPointUnderMouse(view(ri), _x, _y, mp))
                 {
                     ImGui::Separator();
-                    if (mp.getSRS()->isGeographic())
+                    if (ImGuiLTable::Begin("terraincoords"))
                     {
-                        osg::Vec3d world;
-                        mp.toWorld(world);
-
-                        ImGui::Text("Lat %.5f  Lon %.5f  Z %.3f", mp.y(), mp.x(), mp.z());
-                        ImGui::Text("X %d  Y %d  Z %d", (int)world.x(), (int)world.y(), (int)world.z());
-                    }
-                    else
-                    {
-                        GeoPoint LL = mp.transform(mp.getSRS()->getGeographicSRS());
-                        ImGui::Text("Lat %.3f  Lon %.3f  Z %.3f", LL.y(), LL.x(), LL.z());
-                        ImGui::Text("X %d  Y %d  Z %d", (int)mp.x(), (int)mp.y(), (int)mp.z());
-                    }
-
-                    osg::Vec3d world, eye, center, up;
-                    mp.toWorld(world);
-                    view(ri)->getCamera()->getViewMatrixAsLookAt(eye, center, up);
-                    double dist = (eye - world).length();
-                    ImGui::Text("Distance from camera: %.1lf m", dist);
-                    ImGui::Text("Camera radius: %.1lf m", eye.length());
-
-                    if (_sample.available())
-                    {
-                        if (_sample->elevation().getValue() == NO_DATA_VALUE)
+                        if (mp.getSRS()->isGeographic())
                         {
-                            ImGui::Text("Elevation: 0.0m");
-                            ImGui::Text("Resolution: n/a (NO DATA)");
+                            osg::Vec3d world;
+                            mp.toWorld(world);
+
+                            ImGuiLTable::Text("Geodetic:", "Lat %.5f Lon %.5f Z %.3f", mp.y(), mp.x(), mp.z());
+                            ImGuiLTable::Text("Geocentric:", "%d %d %d", (int)world.x(), (int)world.y(), (int)world.z());
                         }
                         else
                         {
-                            Distance cartRes = mp.transformResolution(_sample.value().resolution(), Units::METERS);
-                            const VerticalDatum* egm96 = VerticalDatum::get("egm96");
-                            if (egm96)
-                            {
-                                double egm96z = _sample.value().elevation().getValue();
-                                VerticalDatum::transform(
-                                    mp.getSRS()->getVerticalDatum(),
-                                    egm96,
-                                    mp.y(), mp.x(),
-                                    egm96z);
-                                Distance elevEGM96(egm96z, _sample.value().elevation().getUnits());
+                            GeoPoint LL = mp.transform(mp.getSRS()->getGeographicSRS());
+                            ImGuiLTable::Text("Geodetic:", "Lat %.3f Lon %.3f Z %.3f", LL.y(), LL.x(), LL.z());
+                            ImGuiLTable::Text("Geocentric:", "%d %d %d", (int)mp.x(), (int)mp.y(), (int)mp.z());
+                        }
 
-                                ImGui::Text("Elevation: %s MSL / %s HAE",
-                                    elevEGM96.asParseableString().c_str(),
-                                    _sample.value().elevation().asParseableString().c_str());
+                        osg::Vec3d world, eye, center, up;
+                        mp.toWorld(world);
+                        view(ri)->getCamera()->getViewMatrixAsLookAt(eye, center, up);
+                        double dist = (eye - world).length();
+                        ImGuiLTable::Text("Range:", "%.1lf m", dist);
+
+                        if (_sample.available())
+                        {
+                            if (_sample->elevation().getValue() == NO_DATA_VALUE)
+                            {
+                                ImGuiLTable::Text("Elevation:", "0.0m");
+                                ImGuiLTable::Text("Resolution:", "n/a (NO DATA)");
                             }
                             else
                             {
-                                ImGui::Text("Elevation: %s HAE",
-                                    _sample.value().elevation().asParseableString().c_str());
-                            }
+                                Distance cartRes = mp.transformResolution(_sample.value().resolution(), Units::METERS);
+                                const VerticalDatum* egm96 = VerticalDatum::get("egm96");
+                                if (egm96)
+                                {
+                                    double egm96z = _sample.value().elevation().getValue();
+                                    VerticalDatum::transform(
+                                        mp.getSRS()->getVerticalDatum(),
+                                        egm96,
+                                        mp.y(), mp.x(),
+                                        egm96z);
+                                    Distance elevEGM96(egm96z, _sample.value().elevation().getUnits());
 
-                            ImGui::Text("Resolution: %s",
-                                cartRes.asParseableString().c_str());
+                                    ImGuiLTable::Text("Elevation:", "%s MSL / %s HAE",
+                                        elevEGM96.asParseableString().c_str(),
+                                        _sample.value().elevation().asParseableString().c_str());
+                                }
+                                else
+                                {
+                                    ImGuiLTable::Text("Elevation:", "%s HAE",
+                                        _sample.value().elevation().asParseableString().c_str());
+                                }
+
+                                ImGuiLTable::Text("Resolution:", "%s", cartRes.asParseableString().c_str());
+                            }
                         }
-                    }
-                    else
-                    {
-                        ImGui::Text("Elevation: ...");
-                        ImGui::Text("Resolution: ...");
-                    }
-                    if (fabs(_ax - _x) > 5 || fabs(_ay - _y) > 5)
-                    {
-                        _sample = _sampler->getSample(mp);
-                        _ax = _x, _ay = _y;
+                        else
+                        {
+                            ImGuiLTable::Text("Elevation:", "...");
+                            ImGuiLTable::Text("Resolution:", "...");
+                        }
+                        if (fabs(_ax - _x) > 5 || fabs(_ay - _y) > 5)
+                        {
+                            _sample = _sampler->getSample(mp);
+                            _ax = _x, _ay = _y;
+                        }
+                        ImGuiLTable::End();
                     }
                 }                
 
@@ -323,7 +333,7 @@ namespace osgEarth
                             dist_m += (vec[i] - vec[i - 1]).length();
                     }
                     char buf[64];
-                    sprintf(buf, "%.1f m", dist_m);
+                    snprintf(buf, sizeof(buf), "%.1f m", dist_m);
                     _measureLabel->setText(buf);
                     GeoPoint labelPos = _measureFeature->getExtent().getCentroid();
                     labelPos.altitudeMode() = ALTMODE_RELATIVE;
