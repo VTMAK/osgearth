@@ -54,6 +54,7 @@ namespace osgEarth
             Future<LandCoverSample> _landcoverUnderMouse;
             //Future<osg::Vec4> _lifemapUnderMouse;
             bool _first;
+            TileKey _keyUnderMouse;
 
             LifeMapLayerGUI() : ImGuiPanel("Life Map"),
                 _first(true),
@@ -199,18 +200,25 @@ namespace osgEarth
                     }
                 }
 
+                ImGui::Text("Last tile under mouse:");
+                ImGui::SameLine();
+                if (_keyUnderMouse.valid())
+                    ImGui::Text("%s", _keyUnderMouse.str().c_str());
+                else
+                    ImGui::Text("%s", "not found");
+
                 ImGui::End();
             }
 
             bool getKeyUnderMouse(osg::View* view, float x, float y, TileKey& key, GeoPoint& point)
             {
-                TerrainTile* tile = _mapNode->getTerrain()->getTerrainTileUnderMouse(view, x, y);
+                auto* tile = _mapNode->getTerrain()->getTerrainTileUnderMouse(view, x, y);
                 if (tile)
                 {
                     point = _mapNode->getGeoPointUnderMouse(view, x, y);
-                    key = _mapNode->getMap()->getProfile()->createTileKey(point.x(), point.y(), tile->getKey().getLOD());
+                    key = _keyUnderMouse = _mapNode->getMap()->getProfile()->createTileKey(point.x(), point.y(), tile->getKey().getLOD());
                 }
-                return key.valid();
+                return _keyUnderMouse.valid();
             }
 
             void onMove(osg::View* view, float x, float y)
@@ -230,11 +238,16 @@ namespace osgEarth
                             {
                                 osg::Vec4 result(0, 0, 0, 1);
                                 osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(&c);
-                                auto g = _lifemap->createImage(key, prog.get());
-                                if (g.valid())
+
+                                for (auto k = key; k.valid(); k.makeParent())
                                 {
-                                    g.getReader().setBilinear(false);
-                                    g.read(result, pointUnderMouse);
+                                    auto g = _lifemap->createImage(k, prog.get());
+                                    if (g.valid())
+                                    {
+                                        g.getReader().setBilinear(false);
+                                        g.read(result, pointUnderMouse);
+                                        break;
+                                    }
                                 }
                                 return result;
                             };
@@ -260,10 +273,14 @@ namespace osgEarth
                                 LandCoverSample result;
                                 osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(&c);
                                 auto factory = LandCoverSample::Factory::create(_lifemap->getLandCoverLayer());
-                                auto g = factory->createCoverage(key, prog.get());
-                                if (g.valid())
+                                for (auto k = key; k.valid(); k.makeParent())
                                 {
-                                    g.readAtCoords(result, pointUnderMouse.x(), pointUnderMouse.y());
+                                    auto g = factory->createCoverage(k, prog.get());
+                                    if (g.valid())
+                                    {
+                                        g.readAtCoords(result, pointUnderMouse.x(), pointUnderMouse.y());
+                                        break;
+                                    }
                                 }
                                 return result;
                             };
