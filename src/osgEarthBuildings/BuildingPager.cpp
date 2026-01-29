@@ -178,7 +178,9 @@ BuildingPager::BuildingPager(const Map* map, const Profile* profile, bool useNVG
     _index(nullptr),
     _filterUsage(FILTER_USAGE_NORMAL),
     _verboseWarnings(false),
-    _residentTiles(std::make_shared<std::atomic_int>(0))
+    _residentTiles(std::make_shared<std::atomic_int>(0)),
+    _clutter(true),
+    _parapets(true)
 {
     _profile = ::getenv("OSGEARTH_BUILDINGS_PROFILE") != nullptr;
 
@@ -229,6 +231,8 @@ BuildingPager::setSession(Session* session)
         _compiler = new BuildingCompiler(session);
 
         _compiler->setUsage(_filterUsage);
+        _compiler->setClutter(_clutter);
+        _compiler->setParapets(_parapets);
 
         // Analyze the styles to determine the min and max LODs.
         // Styles are named by LOD.
@@ -306,6 +310,24 @@ void BuildingPager::setFilterUsage(FilterUsage usage)
 void BuildingPager::setVerboseWarnings(bool value)
 {
     _verboseWarnings = value;
+}
+
+void BuildingPager::setClutter(bool value)
+{
+    _clutter = value;
+    if (_compiler)
+    {
+        _compiler->setClutter(_clutter);
+    }
+}
+
+void BuildingPager::setParapets(bool value)
+{
+    _parapets = value;
+    if (_compiler)
+    {
+        _compiler->setParapets(_parapets);
+    }
 }
 
 void BuildingPager::resetRenderLeafTracking()
