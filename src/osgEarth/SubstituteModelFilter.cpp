@@ -288,34 +288,15 @@ SubstituteModelFilter::process(const FeatureList&           features,
     // keep track of failed URIs so we don't waste time or warning messages on them
     std::set< URI > missing;
 
-    StringExpression  uriEx = *symbol->url();
-    NumericExpression scaleEx = *symbol->scale();
-
     const ModelSymbol* modelSymbol = dynamic_cast<const ModelSymbol*>(symbol);
     const IconSymbol*  iconSymbol = dynamic_cast<const IconSymbol*> (symbol);
 
-    NumericExpression headingEx;
-    NumericExpression scaleXEx;
-    NumericExpression scaleYEx;
-    NumericExpression scaleZEx;
-
-    if (modelSymbol)
+    for(auto& input : features)
     {
-        headingEx = *modelSymbol->heading();
-        scaleXEx = *modelSymbol->scaleX();
-        scaleYEx = *modelSymbol->scaleY();
-        scaleZEx = *modelSymbol->scaleZ();
-    }
-
-    for (FeatureList::const_iterator f = features.begin(); f != features.end(); ++f)
-    {
-        Feature* input = f->get();
-
         // Run a feature pre-processing script.
         if (symbol->script().isSet())
         {
-            StringExpression scriptExpr(symbol->script().get());
-            input->eval(scriptExpr, &context);
+            symbol->script()->eval(input, context);
         }
 
         // calculate the orientation of each element of the feature
@@ -329,7 +310,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
         std::string resourceKey;
         if (symbol->url().isSet())
         {
-            resourceKey = input->eval(uriEx, &context);
+            resourceKey = symbol->url()->eval(input, context).full();
         }
         else if (modelSymbol && modelSymbol->getModel())
         {
@@ -346,7 +327,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
             instanceURI = uriCache[resourceKey];
             if (instanceURI.empty()) // Create a map, to reuse URI's, since they take a long time to create
             {
-                instanceURI = URI(resourceKey, uriEx.uriContext());
+                instanceURI = URI(resourceKey, symbol->url()->referrer());
             }
         }
 
@@ -361,22 +342,22 @@ SubstituteModelFilter::process(const FeatureList&           features,
         osg::Matrixd scaleMatrix;
         if (symbol->scale().isSet())
         {
-            scale = input->eval(scaleEx, &context);
+            scale = symbol->scale()->eval(input, context);
             scaleVec.set(scale, scale, scale);
         }
         if (modelSymbol)
         {
             if (modelSymbol->scaleX().isSet())
             {
-                scaleVec.x() *= input->eval(scaleXEx, &context);
+                scaleVec.x() *= modelSymbol->scaleX()->eval(input, context);
             }
             if (modelSymbol->scaleY().isSet())
             {
-                scaleVec.y() *= input->eval(scaleYEx, &context);
+                scaleVec.y() *= modelSymbol->scaleY()->eval(input, context);
             }
             if (modelSymbol->scaleZ().isSet())
             {
-                scaleVec.z() *= input->eval(scaleZEx, &context);
+                scaleVec.z() *= modelSymbol->scaleZ()->eval(input, context);
             }
         }
 
@@ -408,7 +389,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
             }
             else if ( modelSymbol->heading().isSet() )
             {
-                float heading = input->eval(headingEx, &context);
+                float heading = modelSymbol->heading()->eval(input, context);
                 headingRotation.makeRotate( osg::Quat(osg::DegreesToRadians(heading), osg::Vec3(0,0,1)) );
             }
         }
@@ -475,22 +456,22 @@ SubstituteModelFilter::process(const FeatureList&           features,
                     osg::Matrixd scaleMatrix;
                     if (symbol->scale().isSet())
                     {
-                        scale = input->eval(scaleEx, &context);
+                        scale = symbol->scale()->eval(input, context);
                         scaleVec.set(scale, scale, scale);
                     }
                     if (modelSymbol)
                     {
                         if (modelSymbol->scaleX().isSet())
                         {
-                            scaleVec.x() *= input->eval(scaleXEx, &context);
+                            scaleVec.x() *= modelSymbol->scaleX()->eval(input, context);
                         }
                         if (modelSymbol->scaleY().isSet())
                         {
-                            scaleVec.y() *= input->eval(scaleYEx, &context);
+                            scaleVec.y() *= modelSymbol->scaleY()->eval(input, context);
                         }
                         if (modelSymbol->scaleZ().isSet())
                         {
-                            scaleVec.z() *= input->eval(scaleZEx, &context);
+                            scaleVec.z() *= modelSymbol->scaleZ()->eval(input, context);
                         }
                     }
 
@@ -539,9 +520,9 @@ SubstituteModelFilter::process(const FeatureList&           features,
                         }
 
                         // name the feature if necessary
-                        if (!_featureNameExpr.empty())
+                        if (_featureNameExpr)
                         {
-                            const std::string& name = input->eval(_featureNameExpr, &context);
+                            auto name = _featureNameExpr.eval(input, context);
                             if (!name.empty())
                                 xform->setName(name);
                         }
@@ -554,6 +535,7 @@ SubstituteModelFilter::process(const FeatureList&           features,
                         SubstituteModelFilterNode::ModelSymbol& symbol = substituteModelFilterNode->modelSymbolList().back();
                         symbol.instanceURI = instanceURI;
                         symbol.xform = mat;
+
                     }
                 }
             }

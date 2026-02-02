@@ -622,7 +622,7 @@ AerodromeRenderer::apply(TerminalNode& node)
 
         // Extrude the shapes into 3D buildings.
         ExtrusionSymbol* extrusion = buildingStyle.getOrCreate<ExtrusionSymbol>();
-        extrusion->height() = 25.0;
+        extrusion->height() = Distance(25.0, Units::METERS);
         extrusion->flatten() = true;
         extrusion->wallStyleName() = "building-wall";
         extrusion->roofStyleName() = "building-roof";
@@ -639,7 +639,7 @@ AerodromeRenderer::apply(TerminalNode& node)
         else
         {
             alt->clamping() = AltitudeSymbol::CLAMP_NONE;
-            alt->verticalOffset() = _elevation;
+            alt->verticalOffset() = Distance(_elevation, Units::METERS);
         }
 
         // a style for the wall textures:
@@ -1043,7 +1043,7 @@ AerodromeRenderer::featureModelRenderer(osgEarth::Feature* feature, const ModelO
     }
     else {
         alt->clamping() = alt->CLAMP_NONE;
-        alt->verticalOffset() = _elevation;
+        alt->verticalOffset() = Distance(_elevation, Units::METERS);
     }
 
     return defaultFeatureRenderer(feature, style);
@@ -1083,7 +1083,7 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Colo
 
     if (height > 0.0)
     {
-        style.getOrCreate<ExtrusionSymbol>()->height() = height;
+        style.getOrCreate<ExtrusionSymbol>()->height() = Distance(height, Units::METERS);
     }
 
     auto alt = style.getOrCreate<AltitudeSymbol>();
@@ -1092,7 +1092,7 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Colo
     }
     else {
         alt->clamping() = alt->CLAMP_NONE;
-        alt->verticalOffset() = _elevation;
+        alt->verticalOffset() = Distance(_elevation, Units::METERS);
     }
 
     return defaultFeatureRenderer(feature, style);
