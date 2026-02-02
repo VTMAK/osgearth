@@ -635,7 +635,7 @@ namespace
         {
             if (skin->name().isSet())
             {
-                buf << "name=" << skin->name()->expr() << " ";
+                buf << "name=" << skin->name()->literal() << " ";
             }
             if (!skin->tags().empty())
             {

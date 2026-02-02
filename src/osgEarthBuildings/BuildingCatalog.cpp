@@ -411,7 +411,7 @@ BuildingCatalog::parseSkinSymbol(const Config* c) const
     if ( c->hasValue("skin_name") )
     {
         skinSymbol = new SkinSymbol();
-        skinSymbol->name() = c->value("skin_name");
+        skinSymbol->name()->setLiteral(c->value("skin_name"));
     }
     else if ( c->hasValue("skin_tags") )
     {
@@ -430,7 +430,7 @@ BuildingCatalog::parseModelSymbol(const Config* c) const
     if ( c->hasValue("model_name") )
     {
         symbol = new ModelSymbol();
-        symbol->name() = c->value("model_name");
+        symbol->name()->setLiteral(c->value("model_name"));
     }
     else if ( c->hasValue("model_tags") )
     {

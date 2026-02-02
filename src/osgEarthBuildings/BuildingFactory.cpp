@@ -87,8 +87,7 @@ BuildingFactory::create(Feature*               feature,
     ResourceLibrary* reslib = 0L;
     if (buildingSymbol && buildingSymbol->library().isSet())
     {
-        optional<StringExpression>  librayExpr = buildingSymbol->library();
-        std::string library = feature->eval(librayExpr.mutable_value(), _session.get());
+        auto library = buildingSymbol->library()->eval(feature, FilterContext(_session.get()));
         reslib = _session->styles()->getResourceLibrary(library);
     }
     if ( !reslib )
@@ -104,18 +103,6 @@ BuildingFactory::create(Feature*               feature,
     // URI context for external models
     URIContext uriContext( readOptions );
 
-    // Set up mutable expression instances:
-    optional<StringExpression>  modelExpr;
-    optional<NumericExpression> heightExpr;
-    optional<StringExpression>  tagsExpr;
-
-    if ( buildingSymbol )
-    {
-        modelExpr  = buildingSymbol->modelURI();
-        heightExpr = buildingSymbol->height();
-        tagsExpr   = buildingSymbol->tags();
-    }
-
     if ( progress && progress->isCanceled() )
     {
         progress->message() = "in BuildingFactory::create";
@@ -128,12 +115,15 @@ BuildingFactory::create(Feature*               feature,
     unsigned      numFloors = 0u;
     TagVector     tags;
 
+    FilterContext cx(_session.get());
+
     if ( buildingSymbol )
     {
         // see if we are referencing an external model.
-        if ( modelExpr.isSet() )
+        if ( buildingSymbol->modelURI().isSet())
         {
-            std::string modelStr = feature->eval(modelExpr.mutable_value(), _session.get());
+            std::string modelStr = buildingSymbol->modelURI()->eval(feature, cx);
+
             //VRV_PATCH
             //Sometimes the ductape engine returns undefined for the modelStr.
             // lets set the modelStr to "" and ignore those cases as well
@@ -150,16 +140,16 @@ BuildingFactory::create(Feature*               feature,
 
         // calculate height from expression. We do this first because
         // a height of zero will cause us to skip the feature altogether.
-        if ( !externalModelURI.isSet() && heightExpr.isSet() )
+        if ( !externalModelURI.isSet() && buildingSymbol->height().isSet())
         {
-            height = (float)feature->eval(heightExpr.mutable_value(), _session.get());
+            height = (float)buildingSymbol->height()->eval(feature, cx);
         
             if ( height > 0.0f )
             {
                 // calculate tags from expression:
-                if ( tagsExpr.isSet() )
+                if ( buildingSymbol->tags().isSet())
                 {
-                    std::string tagString = trim(feature->eval(tagsExpr.mutable_value(), _session.get()));
+                    std::string tagString = trim(buildingSymbol->tags()->eval(feature, cx));
                     if (!tagString.empty())
                     {
                         tags = StringTokenizer()
@@ -414,10 +404,10 @@ BuildingFactory::createSampleBuilding(const Feature* feature)
         const BuildingSymbol* sym = _session->styles()->getDefaultStyle()->get<BuildingSymbol>();
         if ( sym )
         {
+            FilterContext cx(_session.get());
             if ( feature )
             {
-                NumericExpression heightExpr = sym->height().get();
-                height = const_cast<Feature*>(feature)->eval( heightExpr, _session.get() );
+                height = sym->height()->eval(const_cast<Feature*>(feature), cx);
             }
 
             // calculate the number of floors

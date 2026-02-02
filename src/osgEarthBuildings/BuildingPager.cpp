@@ -599,7 +599,7 @@ BuildingPager::applyRenderSymbology(osg::Node* node, const Style& style) const
         if ( render->order().isSet() || render->renderBin().isSet() )
         {
             osg::StateSet* ss = node->getOrCreateStateSet();
-            int binNumber = render->order().isSet() ? (int)render->order()->eval() : ss->getBinNumber();
+            int binNumber = render->order().isSet() ? (int)render->order()->literal() : ss->getBinNumber();
             std::string binName =
                 render->renderBin().isSet() ? render->renderBin().get() :
                 ss->useRenderBinDetails() ? ss->getBinName() : "DepthSortedBin";

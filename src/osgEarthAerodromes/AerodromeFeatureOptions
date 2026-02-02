@@ -88,9 +88,7 @@ namespace osgEarth { namespace Aerodrome
         {
             if (_imageURI.isSet())
             {
-                StringExpression expr = *_imageURI;
-                URI textureURI(feature->eval(expr, session), expr.uriContext());
-                return textureURI;
+                return _imageURI->eval(feature, session);
             }
             return URI();
         }
