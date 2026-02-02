@@ -340,6 +340,11 @@ Elevation::buildImpl(const Polygon* footprint, BuildContext& bc)
         return false;
     }
 
+    if (isParapet() && !bc.getParapets())
+    {
+        return false;
+    }
+
     // Handle parapet geometry by creating inner hole
     osg::ref_ptr<Polygon> parapetCopy;
     if (_isParapet && getParapetWidth() > 0.0f)

@@ -443,6 +443,8 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
            osg::CVSpan UpdateTick(series, 4, "buildFromScratch");
            
            osg::ref_ptr<BuildingFactory> factory = new BuildingFactory();
+           factory->setParapets(_parapets);
+           factory->setClutter(_clutter);
 
             factory->setSession(_session.get());
             factory->setCatalog(_catalog.get());

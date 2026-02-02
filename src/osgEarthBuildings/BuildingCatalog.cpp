@@ -35,7 +35,7 @@ BuildingCatalog::BuildingCatalog()
 
 bool
 BuildingCatalog::createBuildings(Feature*              feature,
-                                 const TagVector&      tags,
+                                 const TagSet&      tags,
                                  float                 height,
                                  BuildContext&         context,
                                  BuildingVector&       output,
@@ -169,7 +169,7 @@ BuildingCatalog::cleanPolygon(Polygon* fp) const
 
 std::optional<Building>
 BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
-                                       const TagVector&   tags,
+                                       const TagSet&   tags,
                                        float              height,
                                        float              area) const
 {

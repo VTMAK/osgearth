@@ -118,8 +118,11 @@ Roof::build(const Polygon* footprint, BuildContext& bc)
 
     if ( getType() == TYPE_FLAT )
     {
-        // resolve the model symbol into a resource:
-        resolveClutterModel( footprint, bc );
+        if (bc.getClutter())
+        {
+            // resolve the model symbol into a resource:
+            resolveClutterModel(footprint, bc);
+        }
     }
 
     if ( getType() == TYPE_INSTANCED )

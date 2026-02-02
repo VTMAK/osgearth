@@ -60,6 +60,18 @@ namespace osgEarth { namespace Buildings
          */
         void setOutputSRS(const SpatialReference* srs) { _outSRS = srs; }
         const SpatialReference* getOutputSRS() const   { return _outSRS.get(); }
+
+        /**
+         * Whether to generate rooftop clutter.
+         */
+        void setClutter(bool enabled) { _clutter = enabled; }
+        bool getClutter() const { return _clutter; }
+
+        /**
+         * Whether to generate parapets on buildings.
+         */
+        void setParapets(bool enabled) { _parapets = enabled; }
+        bool getParapets() const { return _parapets; }
         
         /**
          * Given a single feature, produce a correspond set of Building objects.
@@ -106,6 +118,8 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<Session>                _session;
         osg::ref_ptr<BuildingCatalog>        _catalog;
         osg::ref_ptr<const SpatialReference> _outSRS;
+        bool                                 _clutter;
+        bool                                 _parapets;
     };
 
 } } // namespace
