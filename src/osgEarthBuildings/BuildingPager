@@ -73,6 +73,12 @@ namespace osgEarth { namespace Buildings
         //! Whether to dump warning messages for failed features
         void setVerboseWarnings(bool value);
 
+        //! Whether to build rooftop clutter
+        void setClutter(bool value);
+
+        //! Whether to build parapets
+        void setParapets(bool value);
+
         //! reset the render leaves tracking to prevent release of
         //! gl objects when switch rendermodes in sfx
         void resetRenderLeafTracking();
@@ -120,6 +126,8 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<TextureArena> _textures;
         ResidentData::Ptr _residentData;
         std::shared_ptr<std::atomic_int> _residentTiles;
+        bool _clutter;
+        bool _parapets;
 
         bool cacheReadsEnabled(const osgDB::Options*) const;
         bool cacheWritesEnabled(const osgDB::Options*) const;

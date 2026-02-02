@@ -46,7 +46,8 @@ namespace osgEarth { namespace Buildings
         virtual bool compile(
             CompilerOutput&       output,
             const Building&       building,
-            const Elevation&      elevation,            
+            const Elevation&      elevation,    
+            bool                  clutter,
             const osg::Matrix&    world2local,
             const osgDB::Options* readOptions) const;
 

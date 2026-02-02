@@ -33,7 +33,9 @@ using namespace osgEarth::Buildings;
 
 BuildingCompiler::BuildingCompiler(Session* session) :
   _session( session )
-  , _filterUsage(FILTER_USAGE_NORMAL)
+  , _filterUsage(FILTER_USAGE_NORMAL),
+    _clutter(true),
+    _parapets(true)
 {
     _elevationCompiler = new ElevationCompiler( session );
     _flatRoofCompiler = new FlatRoofCompiler( session );
@@ -46,6 +48,16 @@ void BuildingCompiler::setUsage(FilterUsage usage)
 {
    _filterUsage = usage;
    _flatRoofCompiler->setUsage(_filterUsage);
+}
+
+void BuildingCompiler::setClutter(bool value)
+{
+    _clutter = value;
+}
+
+void BuildingCompiler::setParapets(bool value)
+{
+    _parapets = value;
 }
 
 bool
@@ -157,6 +169,12 @@ BuildingCompiler::addElevations(CompilerOutput&        output,
    // Iterator over each Elevation in this building:
    for (const auto& elevation : elevations)
    {
+       // Skip parapets if they are disabled
+       if (elevation.isParapet() && !_parapets)
+       {
+           continue;
+       }
+
       _elevationCompiler->compile(output, building, elevation, world2local, readOptions);
 
       if (elevation.getRoof())
@@ -205,7 +223,7 @@ BuildingCompiler::addRoof(
     }
     else // flat roof.
     {
-        return _flatRoofCompiler->compile(output, building, elevation, world2local, readOptions);
+        return _flatRoofCompiler->compile(output, building, elevation, _clutter, world2local, readOptions);
     }
 
     return false;

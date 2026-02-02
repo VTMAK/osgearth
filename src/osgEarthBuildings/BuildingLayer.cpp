@@ -191,6 +191,8 @@ BuildingLayer::createSceneGraph()
     pager->setPriorityScale(options().priorityScale().get());
     pager->setClusterCullingEnabled(options().clusterCulling().get());
     pager->setSceneGraphCallbacks(getSceneGraphCallbacks());
+    pager->setClutter(options().clutter().get());
+    pager->setParapets(options().parapets().get());
 
     if (options().verboseWarnings().isSetTo(true) ||
         ::getenv("OSGEARTH_BUILDINGS_VERBOSE_WARNINGS") != nullptr)

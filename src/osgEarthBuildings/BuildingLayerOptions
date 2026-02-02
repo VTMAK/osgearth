@@ -72,6 +72,9 @@ namespace osgEarth { namespace Buildings
         optional<bool>& verboseWarnings() { return _verboseWarnings; }
         const optional<bool>& verboseWarnings() const { return _verboseWarnings; }
 
+        optional<bool> parapets() { return _parapets; }
+        optional<bool> clutter() { return _clutter; }
+
         //! Use the NVGL implementation if available
         OE_OPTION(bool, useNVGL);
 
@@ -90,6 +93,8 @@ namespace osgEarth { namespace Buildings
             _enableCancelation.init(true);
             _verboseWarnings.init(false);
             _clusterCulling.init(false);
+            _clutter.init(true);
+            _parapets.init(true);
             useNVGL().setDefault(false);
 
             fromConfig( _conf );
@@ -108,6 +113,8 @@ namespace osgEarth { namespace Buildings
             conf.set("enable_cancelation", _enableCancelation);
             conf.set("verbose_warnings", _verboseWarnings);
             conf.set("cluster_culling", _clusterCulling);
+            conf.set("parapets", _parapets);
+            conf.set("clutter", _clutter);
             styleSheet().set(conf, "styles");
             featureSource().set(conf, "features");
             conf.set("nvgl", useNVGL());
@@ -142,6 +149,8 @@ namespace osgEarth { namespace Buildings
             conf.get("enable_cancelation", _enableCancelation);
             conf.get("verbose_warnings", _verboseWarnings);
             conf.get("cluster_culling", _clusterCulling);
+            conf.get("parapets", _parapets);
+            conf.get("clutter", _clutter);
             styleSheet().get(conf, "styles");
             featureSource().get(conf, "features");
             conf.get("nvgl", useNVGL());
@@ -162,6 +171,8 @@ namespace osgEarth { namespace Buildings
         optional<FilterUsage> _filterUsage;
         optional<bool> _verboseWarnings;
         optional<bool> _clusterCulling;
+        optional<bool> _parapets;
+        optional<bool> _clutter;
     };
 } }
 

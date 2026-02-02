@@ -56,10 +56,11 @@ namespace osgEarth { namespace Buildings
             ProgressCallback*     progress =0L);
 
         void setUsage(FilterUsage filterUsage);
+        void setClutter(bool value);
+        void setParapets(bool value);
+
     protected:
         virtual ~BuildingCompiler() { }
-
-        const Style& getStyle() const;
 
         virtual bool addExternalModel(CompilerOutput&, const Building&, const osg::Matrix&, const osgDB::Options* readOptions, ProgressCallback*) const;
 
@@ -76,6 +77,8 @@ namespace osgEarth { namespace Buildings
         osg::ref_ptr<GableRoofCompiler>         _gableRoofCompiler;
         osg::ref_ptr<InstancedRoofCompiler>     _instancedRoofCompiler;
         FilterUsage _filterUsage;
+        bool _clutter;
+        bool _parapets;
     };
 
 } } // namespace

@@ -83,6 +83,7 @@ bool
 FlatRoofCompiler::compile(CompilerOutput&       output,
                           const Building&       building,
                           const Elevation&      elevation,
+                          bool                  clutter,
                           const osg::Matrix&    world2local,
                           const osgDB::Options* readOptions) const
 {
@@ -243,9 +244,9 @@ FlatRoofCompiler::compile(CompilerOutput&       output,
         (*v) = (*v) * frame;
 
     output.addDrawable(geom.get(), roof ? roof->getTag() : elevation.getTag());
-    
+
     // Load models:
-    if (roof)
+    if (roof && clutter)
     {
         ModelResource* model = roof->getModelResource();
         if (model && roof->hasModelBox())
