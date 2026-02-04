@@ -229,7 +229,7 @@ AerodromeRenderer::apply(PavementNode& node)
 
     osg::ref_ptr<osg::Node> geom;
 
-    if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
+    if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
     {
         URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
         geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
@@ -283,7 +283,7 @@ AerodromeRenderer::apply(RunwayNode& node)
 
         osg::Vec4Array* colors = new osg::Vec4Array;
 
-        if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
+        if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
         {
             URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
             osg::Image* tex = url.getImage(_dbOptions.get());
@@ -434,7 +434,7 @@ AerodromeRenderer::apply(StopwayNode& node)
 
         osg::Vec4Array* colors = new osg::Vec4Array;
 
-        if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
+        if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
         {
             URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
             osg::Image* tex = url.getImage(_dbOptions.get());
@@ -565,7 +565,7 @@ AerodromeRenderer::apply(TaxiwayNode& node)
 
     osg::ref_ptr<osg::Node> geom;
 
-    if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->url().isSet())
+    if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
     {
         URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
         geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
