@@ -232,7 +232,10 @@ AerodromeRenderer::apply(PavementNode& node)
     if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
     {
         URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
-        geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
+        float length = 10.0f;
+        if (node.getOptions().textureOptions()->length().isSet())
+            length = node.getOptions().textureOptions()->length()->eval(feature.get(), _session.get());
+        geom = featureSingleTextureRenderer(feature.get(), url.full(), length);
     }
     else
     {
@@ -568,7 +571,10 @@ AerodromeRenderer::apply(TaxiwayNode& node)
     if (node.getOptions().textureOptions().isSet() && node.getOptions().textureOptions()->imageURI().isSet())
     {
         URI url = node.getOptions().textureOptions()->getURI(feature.get(), _session.get());
-        geom = featureSingleTextureRenderer(feature.get(), url.full(), node.getOptions().textureOptions()->length().isSet() ? node.getOptions().textureOptions()->length().value() : 10.0);
+        float length = 10.0f;
+        if (node.getOptions().textureOptions()->length().isSet())
+            length = node.getOptions().textureOptions()->length()->eval(feature.get(), _session.get());
+        geom = featureSingleTextureRenderer(feature.get(), url.full(), length);
     }
     else
     {
