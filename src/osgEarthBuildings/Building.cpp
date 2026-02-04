@@ -156,12 +156,7 @@ bool Building::containsTag(const std::string& tag) const
 
 bool Building::containsTags(const TagSet& tags) const
 {
-    for (const auto& tag : tags)
-    {
-        if (_tags.find(normalize(tag)) == _tags.end())
-            return false;
-    }
-    return true;
+    return std::includes(_tags.begin(), _tags.end(), tags.begin(), tags.end());
 }
 
 bool Building::containsTags(const TagVector& tags) const

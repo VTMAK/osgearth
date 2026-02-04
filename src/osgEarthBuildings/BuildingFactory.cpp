@@ -33,7 +33,9 @@ using namespace osgEarth::Buildings;
 
 #define LC "[BuildingFactory] "
 
-BuildingFactory::BuildingFactory()
+BuildingFactory::BuildingFactory():
+    _parapets(true),
+    _clutter(true)
 {
     setSession( new Session(0L) );
 }
@@ -99,6 +101,8 @@ BuildingFactory::create(Feature*               feature,
     BuildContext context;
     context.setDBOptions( readOptions );
     context.setResourceLibrary( reslib );
+    context.setClutter(_clutter);
+    context.setParapets(_parapets);
 
     // URI context for external models
     URIContext uriContext( readOptions );
@@ -113,7 +117,7 @@ BuildingFactory::create(Feature*               feature,
     optional<URI> externalModelURI;
     float         height    = 0.0f;
     unsigned      numFloors = 0u;
-    TagVector     tags;
+    TagSet     tags;
 
     FilterContext cx(_session.get());
 
@@ -152,18 +156,22 @@ BuildingFactory::create(Feature*               feature,
                     std::string tagString = trim(buildingSymbol->tags()->eval(feature, cx));
                     if (!tagString.empty())
                     {
-                        tags = StringTokenizer()
+                        StringVector tagVector = StringTokenizer()
                             .whitespaceDelims()
                             .standardQuotes()
                             .keepEmpties(false)
                             .tokenize(tagString);
+                        for (auto &i : tagVector)
+                        {
+                            tags.insert(osgEarth::toLower(i));
+                        }
                     }
                 }
 
                 else
                 {
                     // If there's no tag expression, the default is "building".
-                    tags.emplace_back("building");
+                    tags.insert("building");
                 }
             }
         }
@@ -320,6 +328,8 @@ BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
 
         BuildContext context;
         context.setSeed( feature->getFID() );
+        context.setParapets(_parapets);
+        context.setClutter(_clutter);
 
         // Next, iterate over the polygons and set up the Building object.
         GeometryIterator iter2( geometry, false );
