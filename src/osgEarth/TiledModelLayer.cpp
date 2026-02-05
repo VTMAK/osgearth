@@ -78,7 +78,7 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
 
     // check the L2 cache
     {
-        ScopedReadLock lock(_localcacheMutex);
+        std::lock_guard<std::mutex> lock(_localcacheMutex);
         L2Cache::Record r;
         if (_localcache.get(key, r))
         {
@@ -187,7 +187,7 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
 
     if (result.valid())
     {
-        ScopedWriteLock lock(_localcacheMutex);
+        std::lock_guard<std::mutex> lock(_localcacheMutex);
         _localcache.insert(key, result);
     }
 
@@ -283,7 +283,7 @@ void TiledModelLayer::init()
 Status TiledModelLayer::closeImplementation()
 {
     {
-        ScopedWriteLock lock(_localcacheMutex);
+        std::lock_guard<std::mutex> lock(_localcacheMutex);
         _localcache.clear();
     }
 

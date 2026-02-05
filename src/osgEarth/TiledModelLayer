@@ -10,6 +10,7 @@
 #include <osgEarth/StateSetCache>
 #include <osgEarth/Chonk>
 #include <osg/Node>
+#include <mutex>
 
 namespace osgEarth
 {
@@ -107,7 +108,7 @@ namespace osgEarth
 
         using L2Cache = LRUCache<TileKey, osg::ref_ptr<osg::Node>>;
         mutable L2Cache _localcache;
-        mutable ReadWriteMutex _localcacheMutex;
+        mutable std::mutex _localcacheMutex;
         mutable Gate<TileKey> _gate;
     };
 }
