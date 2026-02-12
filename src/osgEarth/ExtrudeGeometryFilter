@@ -188,6 +188,7 @@ namespace osgEarth { namespace Util
             FilterContext&   context );
         
         bool buildStructure(const Geometry*         input,
+                            const SpatialReference* inputSRS,
                             double                  height,
                             double                  heightOffset,
                             bool                    flatten,
