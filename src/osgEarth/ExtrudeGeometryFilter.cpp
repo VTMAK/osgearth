@@ -59,14 +59,13 @@ namespace
 //------------------------------------------------------------------------
 
 ExtrudeGeometryFilter::ExtrudeGeometryFilter() :
-_mergeGeometry         ( true ),
-_wallAngleThresh_deg   ( 60.0 ),
-_styleDirty            ( true ),
-_makeStencilVolume     ( false ),
-_gpuClamping           ( false ),
-_filterUsage           ( FILTER_USAGE_NORMAL )
+    _mergeGeometry(true),
+    _wallAngleThresh_deg(60.0),
+    _styleDirty(true),
+    _makeStencilVolume(false),
+    _gpuClamping(false)
 {
-    _cosWallAngleThresh = cos( _wallAngleThresh_deg );
+    _cosWallAngleThresh = cos(_wallAngleThresh_deg);
 }
 
 void

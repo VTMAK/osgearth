@@ -45,6 +45,8 @@ namespace osgEarth { namespace Util
         void setFeatureNameExpr( const StringExpression& expr ) { _featureNameExpr = expr; }
         const StringExpression& getFeatureNameExpr() const { return _featureNameExpr; }
 
+        //! In PARAMETRIC mode, tells the filter to generate separate node data and matrices for input, instead of
+        //! creating a fully optimized renderable output.
         void setFilterUsage(FilterUsage usage) { _filterUsage = usage; }
         FilterUsage getFilterUsage(void) const{ return _filterUsage; }
 

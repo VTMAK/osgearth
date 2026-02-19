@@ -13,7 +13,6 @@
 #include <osgEarth/SubstituteModelFilter>
 #include <osgEarth/TessellateOperator>
 #include <osgEarth/Session>
-#include <osgEarth/OEAssert>
 #include <osgEarth/Utils>
 #include <osgEarth/Registry>
 #include <osgEarth/Capabilities>
@@ -27,8 +26,6 @@
 
 using namespace osgEarth;
 
-//#define PROFILING 1
-
 //-----------------------------------------------------------------------
 
 GeometryCompilerOptions GeometryCompilerOptions::s_defaults(true);
@@ -41,21 +38,21 @@ GeometryCompilerOptions::setDefaults(const GeometryCompilerOptions& defaults)
 
 // defaults.
 GeometryCompilerOptions::GeometryCompilerOptions(bool stockDefaults) :
-_maxGranularity_deg    ( 10.0 ),
-_mergeGeometry         ( true ),
-_clustering            ( false ),
-_instancing            ( true ),
-_ignoreAlt             ( false ),
-_shaderPolicy          ( SHADERPOLICY_GENERATE ),
-_geoInterp             ( GEOINTERP_GREAT_CIRCLE ),
-_optimizeStateSharing  ( true ),
-_optimize              ( false ),
-_optimizeVertexOrdering( true ),
-_validate              ( false ),
-_maxPolyTilingAngle    ( 45.0f ),
-_useOSGTessellator     ( false ),
-_buildKDTrees          ( true ),
-_filterUsage(FILTER_USAGE_NORMAL)
+    _maxGranularity_deg(10.0),
+    _mergeGeometry(true),
+    _clustering(false),
+    _instancing(true),
+    _ignoreAlt(false),
+    _shaderPolicy(SHADERPOLICY_GENERATE),
+    _geoInterp(GEOINTERP_GREAT_CIRCLE),
+    _optimizeStateSharing(true),
+    _optimize(false),
+    _optimizeVertexOrdering(true),
+    _validate(false),
+    _maxPolyTilingAngle(45.0f),
+    _useOSGTessellator(false),
+    _buildKDTrees(true),
+    _filterUsage(FILTER_USAGE_NORMAL)
 {
     if (stockDefaults)
     {
@@ -66,21 +63,21 @@ _filterUsage(FILTER_USAGE_NORMAL)
 //-----------------------------------------------------------------------
 
 GeometryCompilerOptions::GeometryCompilerOptions(const ConfigOptions& conf) :
-_maxGranularity_deg    ( s_defaults.maxGranularity().value() ),
-_mergeGeometry         ( s_defaults.mergeGeometry().value() ),
-_clustering            ( s_defaults.clustering().value() ),
-_instancing            ( s_defaults.instancing().value() ),
-_ignoreAlt             ( s_defaults.ignoreAltitudeSymbol().value() ),
-_shaderPolicy          ( s_defaults.shaderPolicy().value() ),
-_geoInterp             ( s_defaults.geoInterp().value() ),
-_optimizeStateSharing  ( s_defaults.optimizeStateSharing().value() ),
-_optimize              ( s_defaults.optimize().value() ),
-_optimizeVertexOrdering( s_defaults.optimizeVertexOrdering().value() ),
-_validate              ( s_defaults.validate().value() ),
-_maxPolyTilingAngle    ( s_defaults.maxPolygonTilingAngle().value() ),
-_useOSGTessellator     (s_defaults.useOSGTessellator().value()),
-_buildKDTrees          ( s_defaults.buildKDTrees().value() ),
-_filterUsage           (s_defaults.filterUsage().value())
+    _maxGranularity_deg(s_defaults.maxGranularity().value()),
+    _mergeGeometry(s_defaults.mergeGeometry().value()),
+    _clustering(s_defaults.clustering().value()),
+    _instancing(s_defaults.instancing().value()),
+    _ignoreAlt(s_defaults.ignoreAltitudeSymbol().value()),
+    _shaderPolicy(s_defaults.shaderPolicy().value()),
+    _geoInterp(s_defaults.geoInterp().value()),
+    _optimizeStateSharing(s_defaults.optimizeStateSharing().value()),
+    _optimize(s_defaults.optimize().value()),
+    _optimizeVertexOrdering(s_defaults.optimizeVertexOrdering().value()),
+    _validate(s_defaults.validate().value()),
+    _maxPolyTilingAngle(s_defaults.maxPolygonTilingAngle().value()),
+    _useOSGTessellator(s_defaults.useOSGTessellator().value()),
+    _buildKDTrees(s_defaults.buildKDTrees().value()),
+    _filterUsage(s_defaults.filterUsage().value())
 {
     fromConfig(conf.getConfig());
 }
@@ -108,8 +105,8 @@ GeometryCompilerOptions::fromConfig( const Config& conf )
     conf.get( "shader_policy", "inherit",  _shaderPolicy, SHADERPOLICY_INHERIT );
     conf.get( "shader_policy", "generate", _shaderPolicy, SHADERPOLICY_GENERATE );
 
-    conf.get( "filter_usage", "filter_usage_normal", _filterUsage, FILTER_USAGE_NORMAL );
-    conf.get( "filter_usage", "filter_usage_zero_work_callback_based", _filterUsage, FILTER_USAGE_ZERO_WORK_CALLBACK_BASED );
+    conf.get("filter_usage", "normal", filterUsage(), FILTER_USAGE_NORMAL);
+    conf.get("filter_usage", "parametric", filterUsage(), FILTER_USAGE_PARAMETRIC);
 }
 
 Config
@@ -136,8 +133,13 @@ GeometryCompilerOptions::getConfig() const
     conf.set( "shader_policy", "inherit",  _shaderPolicy, SHADERPOLICY_INHERIT );
     conf.set( "shader_policy", "generate", _shaderPolicy, SHADERPOLICY_GENERATE );
 
-    conf.set( "filter_usage", "filter_usage_normal", _filterUsage, FILTER_USAGE_NORMAL );
-    conf.set( "filter_usage", "filter_usage_zero_work_callback_based", _filterUsage, FILTER_USAGE_ZERO_WORK_CALLBACK_BASED );
+    conf.set("filter_usage", "normal", filterUsage(), FILTER_USAGE_NORMAL);
+    conf.set("filter_usage", "parametric", filterUsage(), FILTER_USAGE_PARAMETRIC);
+
+    // compatibility
+    conf.set("filter_usage", "filter_usage_normal", filterUsage(), FILTER_USAGE_NORMAL);
+    conf.set("filter_usage", "filter_usage_parametric", filterUsage(), FILTER_USAGE_PARAMETRIC);
+    conf.set("filter_usage", "filter_usage_zero_work_callback_based", filterUsage(), FILTER_USAGE_ZERO_WORK_CALLBACK_BASED );
 
     return conf;
 }
@@ -415,8 +417,8 @@ GeometryCompiler::compile(FeatureList&          workingSet,
         //    extrude.setMergeGeometry(false);
             
 
-        if ( _options.filterUsage().isSet() )
-            extrude.setFilterUsage(*_options.filterUsage());
+        //if ( _options.filterUsage().isSet() )
+        //    extrude.setFilterUsage(*_options.filterUsage());
 
         osg::Node* node = extrude.push( workingSet, sharedCX );
         if ( node )
@@ -425,7 +427,7 @@ GeometryCompiler::compile(FeatureList&          workingSet,
             resultGroup->addChild( node );
 
             extrusionGroup = dynamic_cast<osg::Group*>(node);
-            ASSERT_PREDICATE(extrusionGroup.get());
+            OE_SOFT_ASSERT(extrusionGroup.get());
         }
     }
 

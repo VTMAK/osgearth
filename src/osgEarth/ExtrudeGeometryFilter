@@ -9,7 +9,6 @@
 #include <osgEarth/FilterUsage>
 #include <osgEarth/Expression>
 #include <osgEarth/Style>
-#include <osg/Geode>
 #include <vector>
 #include <list>
 
