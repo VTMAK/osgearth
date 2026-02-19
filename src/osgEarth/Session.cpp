@@ -133,13 +133,15 @@ Session::getMapProfile() const
 const SpatialReference*
 Session::getMapSRS() const
 {
-    return _mapProfile.valid() ? _mapProfile->getSRS() : nullptr;
+    osg::ref_ptr<const Map> map = getMap();
+    return map.valid() && map->getProfile()? map->getProfile()->getSRS() : NULL;
 }
 
 bool
 Session::isMapGeocentric() const
 {
-    return _mapProfile.valid() ? _mapProfile->getSRS()->isGeographic() : true;
+    osg::ref_ptr<const Map> map = getMap();
+    return map.valid() && map->getProfile()? map->getProfile()->getSRS()->isGeographic() : true;
 }
 
 StateSetCache*
@@ -176,7 +178,7 @@ Session::initScriptEngine()
         {
             // If the stylesheet has no script set, create a default JS engine
             // This enables the use of "inline" scripting in Expression values
-            _styleScriptEngine = ScriptEngineFactory::create("javascript", "", true);
+            _styleScriptEngine = ScriptEngineFactory::create("javascript");
         }
     }
 }

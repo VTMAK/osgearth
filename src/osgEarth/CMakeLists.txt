@@ -927,7 +927,14 @@ endif()
 if(SuperluminalAPI_FOUND)
     message(STATUS "Found SuperLuminalAPI.")
     set(OSGEARTH_HAVE_SUPERLUMINALAPI ON)
-    target_link_libraries(${LIB_NAME} PRIVATE SuperluminalAPI)    
+endif()
+
+if(aws-cpp-sdk-core_FOUND)
+    message(STATUS "Found AWS SDK.")
+    set(OSGEARTH_HAVE_AWS_SDK_CORE ON)
+    target_include_directories(${LIB_NAME} PRIVATE ${AWSSDK_INCLUDE_DIRS})
+    target_link_libraries(${LIB_NAME} PRIVATE ${AWSSDK_LIBRARIES})
+
 endif()
 
 if(aws-cpp-sdk-core_FOUND)
