@@ -7,7 +7,6 @@
 #include <osgEarth/Common>
 #include <osgEarth/Feature>
 #include <osgEarth/Filter>
-#include <osgEarth/FilterUsage>
 #include <osgEarth/Style>
 #include <osgEarth/Containers>
 

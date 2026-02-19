@@ -6,7 +6,6 @@
 
 #include <osgEarth/Common>
 #include <osgEarth/Filter>
-#include <osgEarth/FilterUsage>
 #include <osgEarth/Expression>
 #include <osgEarth/Style>
 #include <vector>

@@ -8,7 +8,6 @@
 #include <osgEarth/Feature>
 #include <osgEarth/FeatureCursor>
 #include <osgEarth/ResampleFilter>
-#include <osgEarth/FilterUsage>
 #include <osgEarth/Style>
 #include <osgEarth/ShaderUtils>
 
