@@ -171,15 +171,9 @@ Feature::set(const std::string& name, double value)
 }
 
 void
-Feature::set(const std::string& name, long long value)
+Feature::set(const std::string& name, std::int64_t value)
 {
-    _attrs[toLower(name)].emplace<long long>(value);
-}
-
-void
-Feature::set(const std::string& name, int value)
-{
-    _attrs[toLower(name)].emplace<long long>(static_cast<long long>(value));
+    _attrs[toLower(name)].emplace<std::int64_t>(value);
 }
 
 void
@@ -226,8 +220,8 @@ Feature::getDouble( const std::string& name, double defaultValue ) const
     return i != _attrs.end()? i->second.getAsDouble(defaultValue) : defaultValue;
 }
 
-long long
-Feature::getInt( const std::string& name, long long defaultValue ) const
+std::int64_t
+Feature::getInt( const std::string& name, std::int64_t defaultValue ) const
 {
     auto i = _attrs.find(toLower(name));
     return i != _attrs.end()? i->second.getAsInt(defaultValue) : defaultValue;
@@ -379,8 +373,8 @@ Feature::getGeoJSON(bool includeNulls) const
             props[attr.first] = value.get<std::string>();
         else if (value.is<double>())
             props[attr.first] = value.get<double>();
-        else if (value.is<long long>())
-            props[attr.first] = static_cast<int>(value.get<long long>());
+        else if (value.is<std::int64_t>())
+            props[attr.first] = static_cast<int>(value.get<std::int64_t>());
         else if (value.is<bool>())
             props[attr.first] = value.get<bool>();
         else if (includeNulls)
@@ -474,7 +468,11 @@ osgEarth::evaluateExpression(const std::string& expr, Feature* feature, const Fi
         }
     }
 
-    OE_SOFT_ASSERT_AND_RETURN(context.session(), {});
+    if (!context.session())
+    {
+        OE_WARN << LC << "An expression could not be resolved to its intended type: " << expr << std::endl;
+        return {};
+    }
 
     auto* engine = context.session()->getScriptEngine();
     OE_SOFT_ASSERT_AND_RETURN(engine, {});
@@ -483,8 +481,6 @@ osgEarth::evaluateExpression(const std::string& expr, Feature* feature, const Fi
 
     if (result.success())
         return result.asString();
-
-    //OE_WARN << LC << "Feature Script error on '" << expr << "': " << result.message() << std::endl;
 
     return {};
 }
