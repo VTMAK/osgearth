@@ -1,5 +1,6 @@
 add_subdirectory(bumpmap)
 add_subdirectory(cache_filesystem)
+add_subdirectory(cache_sqlite3)
 add_subdirectory(colorramp)
 add_subdirectory(detail)
 add_subdirectory(earth)
