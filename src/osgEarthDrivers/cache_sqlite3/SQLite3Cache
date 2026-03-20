@@ -1,0 +1,58 @@
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
+ */
+#ifndef OSGEARTH_DRIVER_CACHE_SQLITE3
+#define OSGEARTH_DRIVER_CACHE_SQLITE3 1
+
+#include <osgEarth/Common>
+#include <osgEarth/Cache>
+
+namespace osgEarth { namespace Drivers
+{
+    using namespace osgEarth;
+
+    /**
+     * Serializable options for the SQLite3Cache.
+     */
+    class SQLite3CacheOptions : public CacheOptions
+    {
+    public:
+        SQLite3CacheOptions( const ConfigOptions& options =ConfigOptions() )
+            : CacheOptions( options )
+        {
+            setDriver( "sqlite3" );
+            fromConfig( _conf );
+        }
+
+        virtual ~SQLite3CacheOptions() { }
+
+    public:
+        OE_OPTION(std::string, rootPath);
+        OE_OPTION(unsigned, threads, 2u);
+        OE_OPTION(unsigned, busyTimeout, 5000u);
+
+    public:
+        virtual Config getConfig() const {
+            Config conf = ConfigOptions::getConfig();
+            conf.set("path", rootPath() );
+            conf.set("threads", threads() );
+            conf.set("busy_timeout", busyTimeout() );
+            return conf;
+        }
+        virtual void mergeConfig( const Config& conf ) {
+            ConfigOptions::mergeConfig( conf );
+            fromConfig( conf );
+        }
+
+    private:
+        void fromConfig( const Config& conf ) {
+            conf.get("path", rootPath() );
+            conf.get("threads", threads() );
+            conf.get("busy_timeout", busyTimeout() );
+        }
+    };
+
+} } // namespace osgEarth::Drivers
+
+#endif // OSGEARTH_DRIVER_CACHE_SQLITE3
