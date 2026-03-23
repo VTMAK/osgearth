@@ -31,6 +31,7 @@ namespace osgEarth { namespace Drivers
         OE_OPTION(std::string, rootPath);
         OE_OPTION(unsigned, threads, 2u);
         OE_OPTION(unsigned, busyTimeout, 5000u);
+        OE_OPTION(bool, separateBins, false);
 
     public:
         virtual Config getConfig() const {
@@ -38,6 +39,7 @@ namespace osgEarth { namespace Drivers
             conf.set("path", rootPath() );
             conf.set("threads", threads() );
             conf.set("busy_timeout", busyTimeout() );
+            conf.set("separate_bins", separateBins() );
             return conf;
         }
         virtual void mergeConfig( const Config& conf ) {
@@ -50,6 +52,7 @@ namespace osgEarth { namespace Drivers
             conf.get("path", rootPath() );
             conf.get("threads", threads() );
             conf.get("busy_timeout", busyTimeout() );
+            conf.get("separate_bins", separateBins() );
         }
     };
 

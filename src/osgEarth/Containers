@@ -725,6 +725,14 @@ namespace osgEarth { namespace Util
             }
         }
 
+        template<typename FUNC>
+        void forEach(FUNC&& func)
+        {
+            osgEarth::Threading::ScopedReadLock lock(_mutex);
+            for (auto& entry : _data)
+                func(entry.first, entry.second);
+        }
+
     private:
         std::unordered_map<KEY,osg::ref_ptr<DATA>> _data;
         osgEarth::Threading::ReadWriteMutex _mutex;
