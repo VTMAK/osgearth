@@ -28,9 +28,17 @@ namespace osgEarth { namespace Drivers
         virtual ~SQLite3CacheOptions() { }
 
     public:
+        //! Location of the cache files
         OE_OPTION(std::string, rootPath);
+
+        //! Number of threads to devote to background cache writing
         OE_OPTION(unsigned, threads, 2u);
+
+        //! Tiemout (milliseconds) when trying to local a db
         OE_OPTION(unsigned, busyTimeout, 5000u);
+
+        //! Whether to use a separate .db for each CacheBin
+        OE_OPTION(bool, separateBins, true);
 
     public:
         virtual Config getConfig() const {
@@ -38,6 +46,7 @@ namespace osgEarth { namespace Drivers
             conf.set("path", rootPath() );
             conf.set("threads", threads() );
             conf.set("busy_timeout", busyTimeout() );
+            conf.set("separate_bins", separateBins() );
             return conf;
         }
         virtual void mergeConfig( const Config& conf ) {
@@ -50,6 +59,7 @@ namespace osgEarth { namespace Drivers
             conf.get("path", rootPath() );
             conf.get("threads", threads() );
             conf.get("busy_timeout", busyTimeout() );
+            conf.get("separate_bins", separateBins() );
         }
     };
 
