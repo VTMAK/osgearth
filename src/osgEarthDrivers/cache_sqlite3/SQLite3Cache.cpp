@@ -294,6 +294,9 @@ namespace
 
     SQLite3Cache::~SQLite3Cache()
     {
+        // Wait for all jobs to finish
+        _pool->finish_work();
+
         if (_db)
         {
             sqlite3_close_v2(_db);
