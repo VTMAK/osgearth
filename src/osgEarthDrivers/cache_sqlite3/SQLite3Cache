@@ -32,7 +32,7 @@ namespace osgEarth { namespace Drivers
         OE_OPTION(std::string, rootPath);
 
         //! Number of threads to devote to background cache writing
-        OE_OPTION(unsigned, threads, 2u);
+        OE_OPTION(unsigned, threads, 1u);
 
         //! Tiemout (milliseconds) when trying to local a db
         OE_OPTION(unsigned, busyTimeout, 5000u);

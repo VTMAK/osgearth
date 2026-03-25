@@ -145,7 +145,7 @@ namespace
         void initReaderWriter();
         void prepareStatements(StmtSet& stmts);
         ReadResult read(const std::string& key, const osgDB::Options* dbo, bool isImage);
-        void flush();
+        void flush(StmtSet* localStmts = nullptr);
         void scheduleFlush();
 
         sqlite3*& db() { return _ownDb ? _ownDb : _db; }
@@ -581,14 +581,16 @@ namespace
         // tearing down the database connection.
         _flushGroup->join();
 
-        // Flush any remaining queued writes synchronously
-        flush();
-
-        // Clean up this thread's cached statements for this bin.
-        // Statements on other threads will be cleaned up by
-        // sqlite3_close_v2 deferring the actual close until all
-        // statements are finalized (at thread exit).
-        t_stmtCache.erase(this);
+        // Flush any remaining queued writes synchronously.
+        // Use a stack-local StmtSet because the thread_local map
+        // may already be destroyed during static shutdown.
+        StmtSet localStmts;
+        if (db())
+        {
+            prepareStatements(localStmts);
+            localStmts.preparedFor = db();
+        }
+        flush(&localStmts);
 
         if (_ownDb)
         {
@@ -609,7 +611,7 @@ namespace
     }
 
     void
-    SQLite3CacheBin::flush()
+    SQLite3CacheBin::flush(StmtSet* localStmts)
     {
         // Grab all pending entries
         std::deque<WriteQueueEntry> batch;
@@ -617,6 +619,7 @@ namespace
             ScopedWriteLock lock(_writeQueueRWM);
             batch.swap(_writeQueue);
             _writeIndex.clear();
+            //OE_INFO << "Flushing " << batch.size() << " entries to bin [" << getID() << "]" << std::endl;
         }
 
         if (batch.empty())
@@ -627,7 +630,9 @@ namespace
 
         OE_PROFILING_ZONE_NAMED("OE SQLite3 Cache Flush");
 
-        StmtSet& stmts = threadStatements();
+        // Use caller-provided statements (destructor path) or
+        // thread-local statements (normal async path).
+        StmtSet& stmts = localStmts ? *localStmts : threadStatements();
         std::string binID = getID();
 
         // Begin a transaction to batch all writes
@@ -639,8 +644,8 @@ namespace
 
         if (rc != SQLITE_OK)
         {
-            OE_WARN << LC << "Failed to begin transaction in bin ["
-                << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
+            OE_WARN << LC << "Failed to begin transaction in bin [" << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
+            _flushScheduled.store(false);
             return;
         }
 
