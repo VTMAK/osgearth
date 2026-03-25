@@ -179,10 +179,11 @@ namespace
         std::unordered_map<std::string, size_t> _writeIndex;
         ReadWriteMutex _writeQueueRWM;
         std::atomic_bool _flushScheduled{false};
+        std::shared_ptr<jobs::jobgroup> _flushGroup;
 
         std::mutex _compactMutex; // only for VACUUM
 
-        bool _ok;
+        std::atomic_bool _ok;
     };
 
     // ---------------------------------------------------------------
@@ -495,7 +496,8 @@ namespace
         _separate(false),
         _pool(pool),
         _options(options),
-        _ok(true)
+        _ok(true),
+        _flushGroup(jobs::jobgroup::create())
     {
         initReaderWriter();
     }
@@ -513,7 +515,8 @@ namespace
         _separate(true),
         _pool(pool),
         _options(options),
-        _ok(true)
+        _ok(true),
+        _flushGroup(jobs::jobgroup::create())
     {
         initReaderWriter();
         if (!_ok) return;
@@ -574,7 +577,11 @@ namespace
     {
         _ok = false;
 
-        // Flush remaining queued writes before closing
+        // Wait for any in-flight flush job to complete before
+        // tearing down the database connection.
+        _flushGroup->join();
+
+        // Flush any remaining queued writes synchronously
         flush();
 
         // Clean up this thread's cached statements for this bin.
@@ -593,11 +600,11 @@ namespace
     void
     SQLite3CacheBin::scheduleFlush()
     {
-        if (_pool && !_flushScheduled.exchange(true))
+        if (_ok && _pool && !_flushScheduled.exchange(true))
         {
             jobs::dispatch(
                 [this]() { flush(); },
-                jobs::context{ "cache_flush", _pool });
+                jobs::context{ "cache_flush", _pool, {}, _flushGroup });
         }
     }
 
