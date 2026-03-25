@@ -7,7 +7,6 @@
 #include <osgEarth/StringUtils>
 #include <osgEarth/Threading>
 #include <osgEarth/URI>
-#include <osgEarth/FileUtils>
 #include <osgEarth/Registry>
 #include <osgEarth/NetworkMonitor>
 #include <osgEarth/Metrics>
@@ -15,6 +14,9 @@
 #include <osgDB/FileNameUtils>
 #include <sqlite3.h>
 #include <sstream>
+#include <deque>
+
+//#define USE_NETWORK_MONITOR
 
 using namespace osgEarth;
 using namespace osgEarth::Drivers;
@@ -26,11 +28,48 @@ using namespace osgEarth::Drivers;
 
 namespace
 {
-    struct WriteCacheRecord {
-        Config meta;
-        osg::ref_ptr<const osg::Object> object;
+    // A queued write entry holding both the serialized data (for DB insert)
+    // and the live object (for read-back before the flush completes).
+    struct WriteQueueEntry {
+        std::string key;
+        std::string data;        // serialized blob
+        std::string metaJSON;    // serialized metadata
+        Config meta;             // for read-back
+        osg::ref_ptr<const osg::Object> object; // for read-back
     };
-    typedef std::unordered_map<std::string, WriteCacheRecord> WriteCache;
+
+    class SQLite3CacheBin; // forward
+
+    // Per-thread set of prepared statements for a single cache bin.
+    // Each thread lazily prepares its own statements so that no
+    // application-level mutex is needed — SQLITE_OPEN_FULLMUTEX
+    // handles connection-level thread safety internally.
+    struct StmtSet {
+        sqlite3_stmt* selectStmt = nullptr;
+        sqlite3_stmt* insertStmt = nullptr;
+        sqlite3_stmt* deleteStmt = nullptr;
+        sqlite3_stmt* touchStmt = nullptr;
+        sqlite3_stmt* existsStmt = nullptr;
+        sqlite3_stmt* clearStmt = nullptr;
+        sqlite3_stmt* sizeStmt = nullptr;
+        sqlite3* preparedFor = nullptr;
+
+        ~StmtSet() { finalize(); }
+
+        void finalize() {
+            if (selectStmt) { sqlite3_finalize(selectStmt); selectStmt = nullptr; }
+            if (insertStmt) { sqlite3_finalize(insertStmt); insertStmt = nullptr; }
+            if (deleteStmt) { sqlite3_finalize(deleteStmt); deleteStmt = nullptr; }
+            if (touchStmt)  { sqlite3_finalize(touchStmt);  touchStmt = nullptr; }
+            if (existsStmt) { sqlite3_finalize(existsStmt); existsStmt = nullptr; }
+            if (clearStmt)  { sqlite3_finalize(clearStmt);  clearStmt = nullptr; }
+            if (sizeStmt)   { sqlite3_finalize(sizeStmt);   sizeStmt = nullptr; }
+            preparedFor = nullptr;
+        }
+    };
+
+    // thread_local cache of prepared statements, keyed by bin pointer.
+    static thread_local std::unordered_map<const SQLite3CacheBin*, StmtSet> t_stmtCache;
 
     // ---------------------------------------------------------------
     // SQLite3Cache
@@ -58,7 +97,7 @@ namespace
         SQLite3CacheOptions _options;
         jobs::jobpool* _pool = nullptr;
         sqlite3* _db;             // shared db (null when separateBins is true)
-        std::mutex _dbMutex;      // shared mutex (unused when separateBins is true)
+        std::mutex _compactMutex; // only used for VACUUM on shared db
     };
 
     // ---------------------------------------------------------------
@@ -72,7 +111,6 @@ namespace
         SQLite3CacheBin(
             const std::string& binID,
             sqlite3* db,
-            std::mutex& dbMutex,
             const SQLite3CacheOptions& options,
             jobs::jobpool* pool);
 
@@ -105,16 +143,26 @@ namespace
 
     private:
         void initReaderWriter();
-        void prepareStatements();
+        void prepareStatements(StmtSet& stmts);
         ReadResult read(const std::string& key, const osgDB::Options* dbo, bool isImage);
+        void flush();
+        void scheduleFlush();
 
         sqlite3*& db() { return _ownDb ? _ownDb : _db; }
-        std::mutex& mutex() { return _ownDb ? *_ownDbMutex : _dbMutex; }
+
+        // Get (or lazily create) the calling thread's prepared statements.
+        StmtSet& threadStatements() {
+            StmtSet& s = t_stmtCache[this];
+            if (s.preparedFor != db()) {
+                s.finalize();
+                prepareStatements(s);
+                s.preparedFor = db();
+            }
+            return s;
+        }
 
         sqlite3* _db;               // shared db (non-owning)
-        std::mutex& _dbMutex;       // shared mutex ref
         sqlite3* _ownDb;            // per-bin db (owning, null in shared mode)
-        std::unique_ptr<std::mutex> _ownDbMutex; // per-bin mutex
 
         bool _separate;             // true when using per-bin database
         jobs::jobpool* _pool;
@@ -124,17 +172,15 @@ namespace
         osg::ref_ptr<osgDB::Options> _rwOptions;
         std::string _compressorName;
 
-        WriteCache _writeCache;
-        ReadWriteMutex _writeCacheRWM;
-        Gate<std::string> _keyGate;
+        // Write queue: entries waiting to be flushed to the database.
+        // The deque holds serialized data; the index maps key -> position
+        // for O(1) read-back lookups.
+        std::deque<WriteQueueEntry> _writeQueue;
+        std::unordered_map<std::string, size_t> _writeIndex;
+        ReadWriteMutex _writeQueueRWM;
+        std::atomic_bool _flushScheduled{false};
 
-        sqlite3_stmt* _selectStmt;
-        sqlite3_stmt* _insertStmt;
-        sqlite3_stmt* _deleteStmt;
-        sqlite3_stmt* _touchStmt;
-        sqlite3_stmt* _existsStmt;
-        sqlite3_stmt* _clearStmt;
-        sqlite3_stmt* _sizeStmt;
+        std::mutex _compactMutex; // only for VACUUM
 
         bool _ok;
     };
@@ -201,9 +247,14 @@ namespace
 
         char* errMsg = nullptr;
 
+        // page_size must be set before creating tables. On an existing
+        // database it takes effect after the next VACUUM.
+        // Larger pages reduce B-tree overhead for large blobs.
         std::string pragmas =
+            "PRAGMA page_size=8192;"
             "PRAGMA journal_mode=WAL;"
-            "PRAGMA synchronous=NORMAL;";
+            "PRAGMA synchronous=NORMAL;"
+            "PRAGMA cache_size=-65536;"; // 64 MB
 
         rc = sqlite3_exec(_db, pragmas.c_str(), nullptr, nullptr, &errMsg);
         if (rc != SQLITE_OK)
@@ -244,7 +295,7 @@ namespace
     {
         if (_db)
         {
-            sqlite3_close(_db);
+            sqlite3_close_v2(_db);
             _db = nullptr;
         }
     }
@@ -279,7 +330,7 @@ namespace
         {
             if (!_db) return nullptr;
             return _bins.getOrCreate(name,
-                new SQLite3CacheBin(name, _db, _dbMutex, _options, _pool));
+                new SQLite3CacheBin(name, _db, _options, _pool));
         }
     }
 
@@ -298,7 +349,7 @@ namespace
                 if (_options.separateBins() == true)
                     _defaultBin = new SQLite3CacheBin("__default", _rootPath, _options, _pool);
                 else if (_db)
-                    _defaultBin = new SQLite3CacheBin("__default", _db, _dbMutex, _options, _pool);
+                    _defaultBin = new SQLite3CacheBin("__default", _db, _options, _pool);
             }
         }
         return _defaultBin.get();
@@ -318,7 +369,7 @@ namespace
         }
 
         if (!_db) return false;
-        std::lock_guard<std::mutex> lock(_dbMutex);
+        std::lock_guard<std::mutex> lock(_compactMutex);
         char* errMsg = nullptr;
         int rc = sqlite3_exec(_db, "PRAGMA optimize; VACUUM;", nullptr, nullptr, &errMsg);
         if (rc != SQLITE_OK)
@@ -333,9 +384,6 @@ namespace
     // ---------------------------------------------------------------
     // SQLite3CacheBin implementation
     // ---------------------------------------------------------------
-
-    // Dummy mutex used as reference target for the per-bin constructor
-    static std::mutex s_unusedMutex;
 
     void
     SQLite3CacheBin::initReaderWriter()
@@ -366,73 +414,71 @@ namespace
     }
 
     void
-    SQLite3CacheBin::prepareStatements()
+    SQLite3CacheBin::prepareStatements(StmtSet& stmts)
     {
-        std::lock_guard<std::mutex> lock(mutex());
-
         if (_separate)
         {
             // Per-bin database: no bin_id column
             sqlite3_prepare_v2(db(),
                 "SELECT data, metadata, timestamp FROM cache WHERE key=?",
-                -1, &_selectStmt, nullptr);
+                -1, &stmts.selectStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "INSERT OR REPLACE INTO cache (key, data, metadata, timestamp) "
                 "VALUES (?, ?, ?, strftime('%s','now'))",
-                -1, &_insertStmt, nullptr);
+                -1, &stmts.insertStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "DELETE FROM cache WHERE key=?",
-                -1, &_deleteStmt, nullptr);
+                -1, &stmts.deleteStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "UPDATE cache SET timestamp=strftime('%s','now') WHERE key=?",
-                -1, &_touchStmt, nullptr);
+                -1, &stmts.touchStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "SELECT 1 FROM cache WHERE key=?",
-                -1, &_existsStmt, nullptr);
+                -1, &stmts.existsStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "DELETE FROM cache",
-                -1, &_clearStmt, nullptr);
+                -1, &stmts.clearStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "SELECT SUM(LENGTH(data)) FROM cache",
-                -1, &_sizeStmt, nullptr);
+                -1, &stmts.sizeStmt, nullptr);
         }
         else
         {
             // Shared database: filter by bin_id
             sqlite3_prepare_v2(db(),
                 "SELECT data, metadata, timestamp FROM cache WHERE bin_id=? AND key=?",
-                -1, &_selectStmt, nullptr);
+                -1, &stmts.selectStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "INSERT OR REPLACE INTO cache (bin_id, key, data, metadata, timestamp) "
                 "VALUES (?, ?, ?, ?, strftime('%s','now'))",
-                -1, &_insertStmt, nullptr);
+                -1, &stmts.insertStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "DELETE FROM cache WHERE bin_id=? AND key=?",
-                -1, &_deleteStmt, nullptr);
+                -1, &stmts.deleteStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "UPDATE cache SET timestamp=strftime('%s','now') WHERE bin_id=? AND key=?",
-                -1, &_touchStmt, nullptr);
+                -1, &stmts.touchStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "SELECT 1 FROM cache WHERE bin_id=? AND key=?",
-                -1, &_existsStmt, nullptr);
+                -1, &stmts.existsStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "DELETE FROM cache WHERE bin_id=?",
-                -1, &_clearStmt, nullptr);
+                -1, &stmts.clearStmt, nullptr);
 
             sqlite3_prepare_v2(db(),
                 "SELECT SUM(LENGTH(data)) FROM cache WHERE bin_id=?",
-                -1, &_sizeStmt, nullptr);
+                -1, &stmts.sizeStmt, nullptr);
         }
     }
 
@@ -440,28 +486,18 @@ namespace
     SQLite3CacheBin::SQLite3CacheBin(
         const std::string& binID,
         sqlite3* db,
-        std::mutex& dbMutex,
         const SQLite3CacheOptions& options,
         jobs::jobpool* pool) :
 
         CacheBin(binID, options.enableNodeCaching().get()),
         _db(db),
-        _dbMutex(dbMutex),
         _ownDb(nullptr),
         _separate(false),
         _pool(pool),
         _options(options),
-        _ok(true),
-        _selectStmt(nullptr),
-        _insertStmt(nullptr),
-        _deleteStmt(nullptr),
-        _touchStmt(nullptr),
-        _existsStmt(nullptr),
-        _clearStmt(nullptr),
-        _sizeStmt(nullptr)
+        _ok(true)
     {
         initReaderWriter();
-        if (_ok) prepareStatements();
     }
 
     // Per-bin database constructor
@@ -473,20 +509,11 @@ namespace
 
         CacheBin(binID, options.enableNodeCaching().get()),
         _db(nullptr),
-        _dbMutex(s_unusedMutex),
         _ownDb(nullptr),
-        _ownDbMutex(new std::mutex),
         _separate(true),
         _pool(pool),
         _options(options),
-        _ok(true),
-        _selectStmt(nullptr),
-        _insertStmt(nullptr),
-        _deleteStmt(nullptr),
-        _touchStmt(nullptr),
-        _existsStmt(nullptr),
-        _clearStmt(nullptr),
-        _sizeStmt(nullptr)
+        _ok(true)
     {
         initReaderWriter();
         if (!_ok) return;
@@ -508,8 +535,10 @@ namespace
 
         char* errMsg = nullptr;
         std::string pragmas =
+            "PRAGMA page_size=8192;"
             "PRAGMA journal_mode=WAL;"
-            "PRAGMA synchronous=NORMAL;";
+            "PRAGMA synchronous=NORMAL;"
+            "PRAGMA cache_size=-65536;"; // 64 MB
 
         rc = sqlite3_exec(_ownDb, pragmas.c_str(), nullptr, nullptr, &errMsg);
         if (rc != SQLITE_OK)
@@ -539,24 +568,118 @@ namespace
         }
 
         OE_INFO << LC << "Opened per-bin database at \"" << dbPath << "\"" << std::endl;
-
-        prepareStatements();
     }
 
     SQLite3CacheBin::~SQLite3CacheBin()
     {
-        if (_selectStmt) sqlite3_finalize(_selectStmt);
-        if (_insertStmt) sqlite3_finalize(_insertStmt);
-        if (_deleteStmt) sqlite3_finalize(_deleteStmt);
-        if (_touchStmt)  sqlite3_finalize(_touchStmt);
-        if (_existsStmt) sqlite3_finalize(_existsStmt);
-        if (_clearStmt)  sqlite3_finalize(_clearStmt);
-        if (_sizeStmt)   sqlite3_finalize(_sizeStmt);
+        _ok = false;
+
+        // Flush remaining queued writes before closing
+        flush();
+
+        // Clean up this thread's cached statements for this bin.
+        // Statements on other threads will be cleaned up by
+        // sqlite3_close_v2 deferring the actual close until all
+        // statements are finalized (at thread exit).
+        t_stmtCache.erase(this);
 
         if (_ownDb)
         {
-            sqlite3_close(_ownDb);
+            sqlite3_close_v2(_ownDb);
             _ownDb = nullptr;
+        }
+    }
+
+    void
+    SQLite3CacheBin::scheduleFlush()
+    {
+        if (_pool && !_flushScheduled.exchange(true))
+        {
+            jobs::dispatch(
+                [this]() { flush(); },
+                jobs::context{ "cache_flush", _pool });
+        }
+    }
+
+    void
+    SQLite3CacheBin::flush()
+    {
+        // Grab all pending entries
+        std::deque<WriteQueueEntry> batch;
+        {
+            ScopedWriteLock lock(_writeQueueRWM);
+            batch.swap(_writeQueue);
+            _writeIndex.clear();
+        }
+
+        if (batch.empty())
+        {
+            _flushScheduled.store(false);
+            return;
+        }
+
+        OE_PROFILING_ZONE_NAMED("OE SQLite3 Cache Flush");
+
+        StmtSet& stmts = threadStatements();
+        std::string binID = getID();
+
+        // Begin a transaction to batch all writes
+        int rc;
+        int beginTries = 0;
+        do {
+            rc = sqlite3_exec(db(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+        } while (++beginTries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
+
+        if (rc != SQLITE_OK)
+        {
+            OE_WARN << LC << "Failed to begin transaction in bin ["
+                << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
+            return;
+        }
+
+        for (auto& entry : batch)
+        {
+            // Skip tombstoned entries (removed while queued)
+            if (entry.key.empty())
+                continue;
+
+            int tries = 0;
+            do {
+                sqlite3_reset(stmts.insertStmt);
+                if (_separate)
+                {
+                    sqlite3_bind_text(stmts.insertStmt, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_blob(stmts.insertStmt, 2, entry.data.data(), (int)entry.data.size(), SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 3, entry.metaJSON.c_str(), -1, SQLITE_TRANSIENT);
+                }
+                else
+                {
+                    sqlite3_bind_text(stmts.insertStmt, 1, binID.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 2, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_blob(stmts.insertStmt, 3, entry.data.data(), (int)entry.data.size(), SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 4, entry.metaJSON.c_str(), -1, SQLITE_TRANSIENT);
+                }
+                rc = sqlite3_step(stmts.insertStmt);
+                sqlite3_reset(stmts.insertStmt);
+            }
+            while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
+
+            if (rc != SQLITE_DONE)
+            {
+                OE_WARN << LC << "FAILED to write key \"" << entry.key << "\" to bin ["
+                    << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
+            }
+        }
+
+        sqlite3_exec(db(), "COMMIT", nullptr, nullptr, nullptr);
+
+        _flushScheduled.store(false);
+
+        // If more writes arrived during flush, schedule another
+        {
+            ScopedReadLock lock(_writeQueueRWM);
+            if (!_writeQueue.empty())
+                scheduleFlush();
         }
     }
 
@@ -566,29 +689,27 @@ namespace
         if (!_ok)
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
 
-        // Lock key to prevent concurrent read/write on same key
-        ScopedGate<std::string> lockKey(_keyGate, key);
-
-        // Check the async write cache first
+        // Check the write queue first for pending writes
         if (_pool)
         {
-            ScopedReadLock lock(_writeCacheRWM);
-            auto i = _writeCache.find(key);
-            if (i != _writeCache.end())
+            ScopedReadLock lock(_writeQueueRWM);
+            auto it = _writeIndex.find(key);
+            if (it != _writeIndex.end())
             {
+                auto& entry = _writeQueue[it->second];
                 if (isImage)
                 {
                     ReadResult rr(
-                        const_cast<osg::Image*>(dynamic_cast<const osg::Image*>(i->second.object.get())),
-                        i->second.meta);
+                        const_cast<osg::Image*>(dynamic_cast<const osg::Image*>(entry.object.get())),
+                        entry.meta);
                     rr.setLastModifiedTime(DateTime().asTimeStamp());
                     return rr;
                 }
                 else
                 {
                     ReadResult rr(
-                        const_cast<osg::Object*>(i->second.object.get()),
-                        i->second.meta);
+                        const_cast<osg::Object*>(entry.object.get()),
+                        entry.meta);
                     rr.setLastModifiedTime(DateTime().asTimeStamp());
                     return rr;
                 }
@@ -601,33 +722,33 @@ namespace
         TimeStamp timestamp = 0;
 
         {
-            std::lock_guard<std::mutex> lock(mutex());
-            sqlite3_reset(_selectStmt);
+            StmtSet& stmts = threadStatements();
+            sqlite3_reset(stmts.selectStmt);
             if (_separate)
             {
-                sqlite3_bind_text(_selectStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.selectStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
             }
             else
             {
-                sqlite3_bind_text(_selectStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(_selectStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.selectStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.selectStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
             }
 
-            int rc = sqlite3_step(_selectStmt);
+            int rc = sqlite3_step(stmts.selectStmt);
             if (rc == SQLITE_ROW)
             {
-                const void* blob = sqlite3_column_blob(_selectStmt, 0);
-                int blobSize = sqlite3_column_bytes(_selectStmt, 0);
+                const void* blob = sqlite3_column_blob(stmts.selectStmt, 0);
+                int blobSize = sqlite3_column_bytes(stmts.selectStmt, 0);
                 if (blob && blobSize > 0)
                     data.assign(static_cast<const char*>(blob), blobSize);
 
-                const char* meta = (const char*)sqlite3_column_text(_selectStmt, 1);
+                const char* meta = (const char*)sqlite3_column_text(stmts.selectStmt, 1);
                 if (meta)
                     metaJSON = meta;
 
-                timestamp = (TimeStamp)sqlite3_column_int64(_selectStmt, 2);
+                timestamp = (TimeStamp)sqlite3_column_int64(stmts.selectStmt, 2);
             }
-            sqlite3_reset(_selectStmt);
+            sqlite3_reset(stmts.selectStmt);
 
             if (rc != SQLITE_ROW)
             {
@@ -636,7 +757,9 @@ namespace
         }
 
         if (data.empty())
+        {
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
         // Deserialize the blob
         std::istringstream datastream(data);
@@ -660,25 +783,49 @@ namespace
 
         ReadResult rr(r.getObject(), meta);
         rr.setLastModifiedTime(timestamp);
+
         return rr;
     }
 
     ReadResult
     SQLite3CacheBin::readImage(const std::string& key, const osgDB::Options* dbo)
     {
+#ifdef USE_NETWORK_MONITOR
+        auto handle = NetworkMonitor::begin(key, "pending", "Cache");
+        auto r = read(key, dbo, true);
+        NetworkMonitor::end(handle, r.succeeded() ? "OK" : "failed");
+        return r;
+#else
         return read(key, dbo, true);
+#endif
     }
 
     ReadResult
     SQLite3CacheBin::readObject(const std::string& key, const osgDB::Options* dbo)
     {
+#ifdef USE_NETWORK_MONITOR
+        auto handle = NetworkMonitor::begin(key, "pending", "Cache");
+        auto r = read(key, dbo, false);
+        NetworkMonitor::end(handle, r.succeeded() ? "OK" : "failed");
+        return r;
+#else
         return read(key, dbo, false);
+#endif
     }
 
     ReadResult
     SQLite3CacheBin::readString(const std::string& key, const osgDB::Options* dbo)
     {
+#ifdef USE_NETWORK_MONITOR
+        auto handle = NetworkMonitor::begin(key, "pending", "Cache");
+#endif
+
         ReadResult r = readObject(key, dbo);
+
+#ifdef USE_NETWORK_MONITOR
+        NetworkMonitor::end(handle, r.succeeded() ? "OK" : "failed");
+#endif
+
         if (r.succeeded())
         {
             if (r.get<StringObject>())
@@ -703,104 +850,90 @@ namespace
         if (isNode && _options.enableNodeCaching() == false)
             return true;
 
-        osg::ref_ptr<const osg::Object> object(raw_object);
-        osg::ref_ptr<const osgDB::Options> writeOptions(_rwOptions);
-        Config metadata(meta);
-        std::string binID = getID();
+        // Serialize the object on the caller's thread
+        osgDB::ReaderWriter::WriteResult r;
+        std::stringstream datastream;
 
-        auto write_op = [=]()
+        if (dynamic_cast<const osg::Image*>(raw_object))
         {
-            OE_PROFILING_ZONE_NAMED("OE SQLite3 Cache Write");
-
-            ScopedGate<std::string> lockKey(_keyGate, key);
-
-            // Serialize the object to a stringstream
-            osgDB::ReaderWriter::WriteResult r;
-            std::stringstream datastream;
-
-            if (dynamic_cast<const osg::Image*>(object.get()))
-            {
-                r = _rw->writeImage(
-                    *static_cast<const osg::Image*>(object.get()),
-                    datastream, writeOptions.get());
-            }
-            else if (dynamic_cast<const osg::Node*>(object.get()))
-            {
-                r = _rw->writeNode(
-                    *static_cast<const osg::Node*>(object.get()),
-                    datastream, writeOptions.get());
-            }
-            else
-            {
-                r = _rw->writeObject(*object.get(), datastream, writeOptions.get());
-            }
-
-            if (!r.success())
-            {
-                OE_WARN << LC << "FAILED to serialize object for key \"" << key
-                    << "\" in bin [" << binID << "]: " << r.message() << std::endl;
-            }
-            else
-            {
-                std::string data = datastream.str();
-                std::string metaJSON = metadata.toJSON();
-
-                // Retry on SQLITE_BUSY/SQLITE_LOCKED, which can occur under
-                // multi-process contention even with a busy handler installed.
-                // Release _dbMutex between retries so other threads on this
-                // connection can complete their reads (closing implicit
-                // transactions that may block the other process's writes).
-                int rc;
-                int tries = 0;
-                do {
-                    std::lock_guard<std::mutex> lock(mutex());
-                    sqlite3_reset(_insertStmt);
-                    if (_separate)
-                    {
-                        sqlite3_bind_text(_insertStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_blob(_insertStmt, 2, data.data(), (int)data.size(), SQLITE_TRANSIENT);
-                        sqlite3_bind_text(_insertStmt, 3, metaJSON.c_str(), -1, SQLITE_TRANSIENT);
-                    }
-                    else
-                    {
-                        sqlite3_bind_text(_insertStmt, 1, binID.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_text(_insertStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
-                        sqlite3_bind_blob(_insertStmt, 3, data.data(), (int)data.size(), SQLITE_TRANSIENT);
-                        sqlite3_bind_text(_insertStmt, 4, metaJSON.c_str(), -1, SQLITE_TRANSIENT);
-                    }
-                    rc = sqlite3_step(_insertStmt);
-                    sqlite3_reset(_insertStmt);
-                }
-                while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
-
-                if (rc != SQLITE_DONE)
-                {
-                    OE_WARN << LC << "FAILED to write key \"" << key << "\" to bin ["
-                        << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
-                }
-            }
-
-            // Remove from write cache
-            {
-                ScopedWriteLock lock(_writeCacheRWM);
-                _writeCache.erase(key);
-            }
-        };
-
-        if (_pool != nullptr)
+            r = _rw->writeImage(
+                *static_cast<const osg::Image*>(raw_object),
+                datastream, _rwOptions.get());
+        }
+        else if (isNode)
         {
-            // Store in write cache for read-back before async write completes
-            _writeCacheRWM.lock();
-            WriteCacheRecord& record = _writeCache[key];
-            record.meta = meta;
-            record.object = object;
-            _writeCacheRWM.unlock();
-
-            jobs::dispatch(write_op, jobs::context{ key, _pool });
+            r = _rw->writeNode(
+                *static_cast<const osg::Node*>(raw_object),
+                datastream, _rwOptions.get());
         }
         else
         {
-            write_op();
+            r = _rw->writeObject(*raw_object, datastream, _rwOptions.get());
+        }
+
+        if (!r.success())
+        {
+            OE_WARN << LC << "FAILED to serialize object for key \"" << key
+                << "\" in bin [" << getID() << "]: " << r.message() << std::endl;
+            return false;
+        }
+
+        WriteQueueEntry entry;
+        entry.key = key;
+        entry.data = datastream.str();
+        entry.metaJSON = meta.toJSON();
+        entry.meta = meta;
+        entry.object = raw_object;
+
+        if (_pool != nullptr)
+        {
+            {
+                ScopedWriteLock lock(_writeQueueRWM);
+                auto it = _writeIndex.find(key);
+                if (it != _writeIndex.end())
+                {
+                    // Update existing queued entry in place
+                    _writeQueue[it->second] = std::move(entry);
+                }
+                else
+                {
+                    _writeIndex[key] = _writeQueue.size();
+                    _writeQueue.push_back(std::move(entry));
+                }
+            }
+            scheduleFlush();
+        }
+        else
+        {
+            // Synchronous write — insert directly
+            StmtSet& stmts = threadStatements();
+            std::string binID = getID();
+            int rc, tries = 0;
+            do {
+                sqlite3_reset(stmts.insertStmt);
+                if (_separate)
+                {
+                    sqlite3_bind_text(stmts.insertStmt, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_blob(stmts.insertStmt, 2, entry.data.data(), (int)entry.data.size(), SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 3, entry.metaJSON.c_str(), -1, SQLITE_TRANSIENT);
+                }
+                else
+                {
+                    sqlite3_bind_text(stmts.insertStmt, 1, binID.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 2, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_blob(stmts.insertStmt, 3, entry.data.data(), (int)entry.data.size(), SQLITE_TRANSIENT);
+                    sqlite3_bind_text(stmts.insertStmt, 4, entry.metaJSON.c_str(), -1, SQLITE_TRANSIENT);
+                }
+                rc = sqlite3_step(stmts.insertStmt);
+                sqlite3_reset(stmts.insertStmt);
+            }
+            while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
+
+            if (rc != SQLITE_DONE)
+            {
+                OE_WARN << LC << "FAILED to write key \"" << entry.key << "\" to bin ["
+                    << binID << "]: " << sqlite3_errmsg(db()) << std::endl;
+            }
         }
 
         return true;
@@ -811,28 +944,29 @@ namespace
     {
         if (!_ok) return STATUS_NOT_FOUND;
 
-        // Check write cache first
+        // Check write queue first
         if (_pool)
         {
-            ScopedReadLock lock(_writeCacheRWM);
-            if (_writeCache.find(key) != _writeCache.end())
+            ScopedReadLock lock(_writeQueueRWM);
+            auto it = _writeIndex.find(key);
+            if (it != _writeIndex.end() && !_writeQueue[it->second].key.empty())
                 return STATUS_OK;
         }
 
-        std::lock_guard<std::mutex> lock(mutex());
-        sqlite3_reset(_existsStmt);
+        StmtSet& stmts = threadStatements();
+        sqlite3_reset(stmts.existsStmt);
         if (_separate)
         {
-            sqlite3_bind_text(_existsStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmts.existsStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
         }
         else
         {
-            sqlite3_bind_text(_existsStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(_existsStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmts.existsStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmts.existsStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
         }
 
-        int rc = sqlite3_step(_existsStmt);
-        sqlite3_reset(_existsStmt);
+        int rc = sqlite3_step(stmts.existsStmt);
+        sqlite3_reset(stmts.existsStmt);
         return (rc == SQLITE_ROW) ? STATUS_OK : STATUS_NOT_FOUND;
     }
 
@@ -841,29 +975,32 @@ namespace
     {
         if (!_ok) return false;
 
-        // Remove from write cache
+        // Remove from write queue (tombstone the entry)
         {
-            ScopedWriteLock lock(_writeCacheRWM);
-            _writeCache.erase(key);
+            ScopedWriteLock lock(_writeQueueRWM);
+            auto it = _writeIndex.find(key);
+            if (it != _writeIndex.end())
+            {
+                _writeQueue[it->second].key.clear(); // tombstone
+                _writeIndex.erase(it);
+            }
         }
 
-        ScopedGate<std::string> lockKey(_keyGate, key);
-
+        StmtSet& stmts = threadStatements();
         int rc, tries = 0;
         do {
-            std::lock_guard<std::mutex> lock(mutex());
-            sqlite3_reset(_deleteStmt);
+            sqlite3_reset(stmts.deleteStmt);
             if (_separate)
             {
-                sqlite3_bind_text(_deleteStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.deleteStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
             }
             else
             {
-                sqlite3_bind_text(_deleteStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(_deleteStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.deleteStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.deleteStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
             }
-            rc = sqlite3_step(_deleteStmt);
-            sqlite3_reset(_deleteStmt);
+            rc = sqlite3_step(stmts.deleteStmt);
+            sqlite3_reset(stmts.deleteStmt);
         }
         while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
         return rc == SQLITE_DONE;
@@ -874,23 +1011,21 @@ namespace
     {
         if (!_ok) return false;
 
-        ScopedGate<std::string> lockKey(_keyGate, key);
-
+        StmtSet& stmts = threadStatements();
         int rc, tries = 0;
         do {
-            std::lock_guard<std::mutex> lock(mutex());
-            sqlite3_reset(_touchStmt);
+            sqlite3_reset(stmts.touchStmt);
             if (_separate)
             {
-                sqlite3_bind_text(_touchStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.touchStmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
             }
             else
             {
-                sqlite3_bind_text(_touchStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(_touchStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.touchStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.touchStmt, 2, key.c_str(), -1, SQLITE_TRANSIENT);
             }
-            rc = sqlite3_step(_touchStmt);
-            sqlite3_reset(_touchStmt);
+            rc = sqlite3_step(stmts.touchStmt);
+            sqlite3_reset(stmts.touchStmt);
         }
         while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
         return rc == SQLITE_DONE;
@@ -901,22 +1036,23 @@ namespace
     {
         if (!_ok) return false;
 
-        // Clear write cache
+        // Clear write queue
         {
-            ScopedWriteLock lock(_writeCacheRWM);
-            _writeCache.clear();
+            ScopedWriteLock lock(_writeQueueRWM);
+            _writeQueue.clear();
+            _writeIndex.clear();
         }
 
+        StmtSet& stmts = threadStatements();
         int rc, tries = 0;
         do {
-            std::lock_guard<std::mutex> lock(mutex());
-            sqlite3_reset(_clearStmt);
+            sqlite3_reset(stmts.clearStmt);
             if (!_separate)
             {
-                sqlite3_bind_text(_clearStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmts.clearStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
             }
-            rc = sqlite3_step(_clearStmt);
-            sqlite3_reset(_clearStmt);
+            rc = sqlite3_step(stmts.clearStmt);
+            sqlite3_reset(stmts.clearStmt);
         }
         while (++tries < 100 && (rc == SQLITE_BUSY || rc == SQLITE_LOCKED));
         return rc == SQLITE_DONE;
@@ -927,7 +1063,7 @@ namespace
     {
         if (!_ok) return false;
 
-        std::lock_guard<std::mutex> lock(mutex());
+        std::lock_guard<std::mutex> lock(_compactMutex);
         char* errMsg = nullptr;
         int rc = sqlite3_exec(db(), "PRAGMA optimize; VACUUM;", nullptr, nullptr, &errMsg);
         if (rc != SQLITE_OK)
@@ -944,18 +1080,18 @@ namespace
     {
         if (!_ok) return 0u;
 
-        std::lock_guard<std::mutex> lock(mutex());
-        sqlite3_reset(_sizeStmt);
+        StmtSet& stmts = threadStatements();
+        sqlite3_reset(stmts.sizeStmt);
         if (!_separate)
         {
-            sqlite3_bind_text(_sizeStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmts.sizeStmt, 1, getID().c_str(), -1, SQLITE_TRANSIENT);
         }
 
-        int rc = sqlite3_step(_sizeStmt);
+        int rc = sqlite3_step(stmts.sizeStmt);
         unsigned result = 0u;
         if (rc == SQLITE_ROW)
-            result = (unsigned)sqlite3_column_int64(_sizeStmt, 0);
-        sqlite3_reset(_sizeStmt);
+            result = (unsigned)sqlite3_column_int64(stmts.sizeStmt, 0);
+        sqlite3_reset(stmts.sizeStmt);
         return result;
     }
 
