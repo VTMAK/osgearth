@@ -294,9 +294,18 @@ namespace
 
     SQLite3Cache::~SQLite3Cache()
     {
+        // Wait for all jobs to finish
+        _pool->finish_work();
+        _pool->stop_threads();
+        _pool->join_threads();
+
         if (_db)
         {
-            sqlite3_close_v2(_db);
+            int rc = sqlite3_close(_db);
+            if (rc != SQLITE_OK)
+            {
+                OE_WARN << LC << "Error closing database: " << sqlite3_errmsg(_db) << std::endl;
+            }
             _db = nullptr;
         }
     }
@@ -584,17 +593,23 @@ namespace
         // Flush any remaining queued writes synchronously.
         // Use a stack-local StmtSet because the thread_local map
         // may already be destroyed during static shutdown.
-        StmtSet localStmts;
-        if (db())
         {
-            prepareStatements(localStmts);
-            localStmts.preparedFor = db();
+            StmtSet localStmts;
+            if (db())
+            {
+                prepareStatements(localStmts);
+                localStmts.preparedFor = db();
+            }
+            flush(&localStmts);
         }
-        flush(&localStmts);
 
         if (_ownDb)
         {
-            sqlite3_close_v2(_ownDb);
+            int rc = sqlite3_close(_ownDb);
+            if (rc != SQLITE_OK)
+            {
+                OE_WARN << LC << "Error closing per-bin database " << getID() << ": " << sqlite3_errmsg(_ownDb) << std::endl;
+            }
             _ownDb = nullptr;
         }
     }
