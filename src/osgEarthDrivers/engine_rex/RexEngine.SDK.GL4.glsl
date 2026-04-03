@@ -14,9 +14,17 @@ vec4 oe_tile_key;
 uniform vec2 oe_tile_elevTexelCoeff;
 
 // Gets the coordinate to use for elevation sampling.
-vec2 oe_terrain_getElevationCoord(in vec2 uv)
+vec2 oe_terrain_getElevationCoords(in vec2 uv)
 {
     return uv
+        * oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[0][0]     // scale
+        + oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[3].st     // bias
+        + oe_tile_elevTexelCoeff.y;
+}
+
+vec2 oe_terrain_getElevationCoords()
+{
+    return oe_layer_tilec.st
         * oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[0][0]     // scale
         + oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[3].st     // bias
         + oe_tile_elevTexelCoeff.y;
@@ -39,13 +47,30 @@ float oe_terrain_getElevation(in vec2 uv)
     int index = oe_tile[oe_tileID].elevIndex;
     if (index >= 0)
     {
-        vec2 uv_scaledBiased = oe_terrain_getElevationCoord(uv);
+        vec2 uv_scaledBiased = oe_terrain_getElevationCoords(uv);
         float encoded = texture(sampler2D(oe_terrain_tex[index]), uv_scaledBiased).r;
         float minh = oe_tile[oe_tileID].elevMin;
         float maxh = oe_tile[oe_tileID].elevMax;
         return minh > maxh ? encoded : mix(minh, maxh, encoded);
     }
     return 0.0;
+}
+
+vec3 oe_terrain_getPoint(in vec2 uv)
+{
+    float h = 0.0;
+    int index = oe_tile[oe_tileID].elevIndex;
+    if (index >= 0)
+    {
+        vec2 uv_scaledBiased = oe_terrain_getElevationCoords(uv);
+        uv_scaledBiased = clamp(uv_scaledBiased, vec2(0.0), vec2(1.0)); // avoid sampling outside the texture
+        float encoded = texture(sampler2D(oe_terrain_tex[index]), uv_scaledBiased).r;
+        float minh = oe_tile[oe_tileID].elevMin;
+        float maxh = oe_tile[oe_tileID].elevMax;
+        h = minh > maxh ? encoded : mix(minh, maxh, encoded);
+    }
+    float tileSpan = oe_tile[oe_tileID].tileSpan;
+    return vec3(uv.s * tileSpan, uv.t * tileSpan, h);
 }
 
 // Read the elevation at the build-in tile coordinates (convenience)
@@ -103,6 +128,23 @@ vec2 oe_terrain_getNormalCoords()
 }
 
 #endif // !VP_STAGE_FRAGMENT
+
+// Sample the elevation data at a UV tile coordinate.
+float oe_terrain_getElevation(in uint64_t handle, in vec2 uv)
+{
+    // Texel-level scale and bias allow us to sample the elevation texture
+    // on texel center instead of edge.
+    // If a min and max elev are set, we use them to decode the 16-bit elevation
+    // value. If not, assume a 32-bit single channel float value.
+    if (handle >= 0)
+    {
+        float encoded = texture(sampler2D(handle), uv).r;
+        float minh = oe_tile[oe_tileID].elevMin;
+        float maxh = oe_tile[oe_tileID].elevMax;
+        return minh > maxh ? encoded : mix(minh, maxh, encoded);
+    }
+    return 0.0;
+}
 
 vec4 oe_terrain_getNormalAndCurvature(in uint64_t handle, in vec2 uv)
 {
