@@ -277,6 +277,9 @@ struct CreateTileHandler : public osgGA::GUIEventHandler
         // disable skirts:
         myOptions.heightFieldSkirtRatio() = 0.0f;
 
+        // disable tessellation:
+        myOptions.gpuTessellation() = false;
+
         TerrainTileModelFactory factory(myOptions);
 
         osg::ref_ptr<TerrainTileModel> model =

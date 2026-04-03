@@ -192,6 +192,28 @@ ElevationTile::getNormal(double x, double y) const
         double v = (y - getExtent().yMin()) / getExtent().height();
         normal = NormalMapGenerator::unpack(_readNormal(u, v));
     }
+    else if (getHeightField())
+    {
+        auto& e = getExtent();
+        auto res = getHeightField()->getYInterval(); // assume square pixels
+
+        auto west = getElevation(std::max(x - res, e.xMin()), y);
+        auto east = getElevation(std::min(x + res, e.xMax()), y);
+        auto south = getElevation(x, std::max(y - res, e.yMin()));
+        auto north = getElevation(x, std::min(y + res, e.yMax()));
+
+        if (west.hasData() && east.hasData() && south.hasData() && north.hasData())
+        {
+            auto res_m = getExtent().getSRS()->transformDistance(Distance(res, e.getSRS()->getUnits()), Units::METERS, (e.yMin() + e.yMax()) / 2.0);
+            osg::Vec3 a[4];
+            a[0].set(-res, 0, west.elevation().as(Units::METERS));
+            a[1].set(res, 0, east.elevation().as(Units::METERS));
+            a[2].set(0, -res, south.elevation().as(Units::METERS));
+            a[3].set(0, res, north.elevation().as(Units::METERS));
+            normal = (a[1] - a[0]) ^ (a[3] - a[2]);
+            normal.normalize();
+        }
+    }
     return normal;
 }
 
