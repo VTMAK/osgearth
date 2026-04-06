@@ -200,4 +200,3 @@ vec4 oe_terrain_scaleCoordsAndTileKeyToRefLOD(in vec2 tc, in float refLOD)
 
     return vec4(result, a);
 }
-
