@@ -30,6 +30,13 @@ vec2 oe_terrain_getElevationCoords()
         + oe_tile_elevTexelCoeff.y;
 }
 
+// reverse the operation performed by oe_terrain_getElevationCoords(vec2)
+vec2 oe_terrain_unscaleElevationCoords(in vec2 uv)
+{
+    return (uv - oe_tile_elevTexelCoeff.y - oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[3].st)
+        / (oe_tile_elevTexelCoeff.x * oe_tile[oe_tileID].elevMat[0][0]);
+}
+
 // Gets the handle to use for elevation sampling
 uint64_t oe_terrain_getElevationHandle()
 {
@@ -60,6 +67,7 @@ vec3 oe_terrain_getPoint(in vec2 uv)
 {
     float h = 0.0;
     int index = oe_tile[oe_tileID].elevIndex;
+    vec2 clamped_uv = uv;
     if (index >= 0)
     {
         vec2 uv_scaledBiased = oe_terrain_getElevationCoords(uv);
@@ -68,9 +76,10 @@ vec3 oe_terrain_getPoint(in vec2 uv)
         float minh = oe_tile[oe_tileID].elevMin;
         float maxh = oe_tile[oe_tileID].elevMax;
         h = minh > maxh ? encoded : mix(minh, maxh, encoded);
+        clamped_uv = oe_terrain_unscaleElevationCoords(uv_scaledBiased);
     }
     float tileSpan = oe_tile[oe_tileID].tileSpan;
-    return vec3(uv.s * tileSpan, uv.t * tileSpan, h);
+    return vec3(clamped_uv.s * tileSpan, clamped_uv.t * tileSpan, h);
 }
 
 // Read the elevation at the build-in tile coordinates (convenience)
