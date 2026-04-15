@@ -638,7 +638,11 @@ SharedGeometry::makeOsgGeometry()
     geom->setNormalArray(getNormalArray());
     geom->setTexCoordArray(0, getTexCoordArray());
     if (getDrawElements())
+    {
+        if (getDrawElements()->getMode() == GL_PATCHES)
+            getDrawElements()->setMode(GL_TRIANGLES);
         geom->addPrimitiveSet(getDrawElements());
+    }
 
     return geom;
 }
