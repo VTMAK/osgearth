@@ -68,58 +68,49 @@ bool SimplePager::getUsePayloadBoundsForChildren() const
 void SimplePager::setRangeFactor(float value)
 {
     _rangeFactor = value;
-    _useRange = true;
-
-    forEachNodeOfType<PagedNode2>(this, [&](auto* node)
-        {
-            // trick to switch over to range mode
-            node->setMaxRange(node->getMaxRange());
-        });
 }
 
 void SimplePager::setMaxRange(float value)
 {
     _maxRange = value;
-    _useRange = true;
 
     forEachNodeOfType<PagedNode2>(this, [&](auto* node)
         {
-            node->setMaxRange(value);
+            node->setMaxRange(_maxRange);
         });
 }
 
 void SimplePager::setMinPixels(float value)
 {
     _minPixels = value;
-    _useRange = false;
 
     forEachNodeOfType<PagedNode2>(this, [&](auto* node)
         {
-            node->setMinPixels(value);
+            node->setMinPixels(_minPixels);
         });
 }
 
 void SimplePager::setMaxPixels(float value)
 {
     _maxPixels = value;
-    _useRange = false;
 
     forEachNodeOfType<PagedNode2>(this, [&](auto* node)
         {
-            node->setMaxPixels(value);
+            node->setMaxPixels(_maxPixels);
         });
 }
 
 void SimplePager::setLODMethod(const LODMethod& value)
 {
-    if (value == LODMethod::CAMERA_DISTANCE && !_useRange)
-    {
-        setRangeFactor(_rangeFactor);
-    }
-    else if (value == LODMethod::SCREEN_SPACE && _useRange)
-    {
-        setMaxPixels(_maxPixels);
-    }
+    _lodMethod = value;
+
+    forEachNodeOfType<PagedNode2>(this, [&](auto* node)
+        {
+            node->setLODMethod(_lodMethod);
+            node->setMaxRange(getMaxRange());
+            node->setMinPixels(getMinPixels());
+            node->setMaxPixels(getMaxPixels());
+        });
 }
 
 void SimplePager::setDone()
@@ -385,13 +376,10 @@ SimplePager::createChildNode(const TileKey& key, ProgressCallback* progress)
 
         pagedNode->setRefinePolicy(_additive ? REFINE_ADD : REFINE_REPLACE);
 
+        pagedNode->setLODMethod(_lodMethod);
+        pagedNode->setMinPixels(_minPixels);
+        pagedNode->setMaxPixels(_maxPixels);
         pagedNode->setMaxRange(std::min(loadRange, _maxRange));
-
-        if (!_useRange)
-        {
-            pagedNode->setMinPixels(_minPixels);
-            pagedNode->setMaxPixels(_maxPixels);
-        }
 
         result = pagedNode;
     }

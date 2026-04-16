@@ -1,5 +1,5 @@
 /* osgEarth
- * Copyright 2025 Pelican Mapping
+ * Copyright 2026 Pelican Mapping
  * MIT License
  */
 #include "PagedNode"
@@ -61,20 +61,20 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
         {
             bool inRange = false;
 
-            if (_useRange) // meters
+            if (_lodMethod == LODMethod::CAMERA_DISTANCE)
             {
                 float range = std::max(0.0f, nv.getDistanceToViewPoint(getBound().center(), true) - getBound().radius());
                 inRange = (range >= _minRange && range <= _maxRange);
                 _priority = -range * _priorityScale;
             }
-            else // pixels
+            else // if (_lodMethod == LODMethod::SCREEN_SPACE)
             {
                 osg::CullStack* cullStack = nv.asCullStack();
                 if (cullStack != nullptr && cullStack->getLODScale() > 0.0f)
                 {
-                    float sse = _pagingManager_weak.valid() ? _pagingManager_weak->sse() : 1.0f;
-                    float pixels = cullStack->clampedPixelSize(getBound()) / cullStack->getLODScale();
-                    inRange = (pixels >= _minPixels*sse && pixels <= _maxPixels*sse);
+                    float pixelError = _pagingManager_weak.valid() ? _pagingManager_weak->sse() : 0.0f;
+                    float pixels = Util::getPixelSize(cullStack, getBound().center(), getBound().radius()) / cullStack->getLODScale();
+                    inRange = (pixels >= _minPixels + pixelError) && (pixels <= _maxPixels + pixelError);
                     _priority = pixels * _priorityScale;
                 }
             }
@@ -383,15 +383,23 @@ PagingManager::traverse(osg::NodeVisitor& nv)
 
     if (nv.getVisitorType() == nv.CULL_VISITOR)
     {
-        // After culling is complete, update all of the ranges for all of the node
+        // After culling is complete, update all of the metrics for all of the nodes
         scoped_lock_if lock(_trackerMutex, _threadsafe);
 
         for (auto& entry : _tracker._list)
         {
             if (entry._data.valid())
-            {               
-                float range = std::max(0.0f, nv.getDistanceToViewPoint(entry._data->getBound().center(), true) - entry._data->getBound().radius());
-                entry._data->_lastRange = std::min(entry._data->_lastRange, range);
+            {         
+                if (entry._data->_lodMethod == LODMethod::CAMERA_DISTANCE)
+                {
+                    float range = std::max(0.0f, nv.getDistanceToViewPoint(entry._data->getBound().center(), true) - entry._data->getBound().radius());
+                    entry._data->_lastRange = std::min(entry._data->_lastRange, range);
+                }
+                else // LODMethod::SCREEN_SPACE
+                {
+                    float pixels = Util::getPixelSize(nv.asCullStack(), entry._data->getBound().center(), entry._data->getBound().radius()) / nv.asCullStack()->getLODScale();
+                    entry._data->_lastPixelSize = std::max(entry._data->_lastPixelSize, pixels);
+                }
             }
         }
     }
@@ -421,7 +429,13 @@ PagingManager::update()
                 }
 
                 // Don't expire nodes that are still within range even if they haven't passed cull.
-                if (node->_lastRange < node->getMaxRange())
+                if (node->getLODMethod() == LODMethod::CAMERA_DISTANCE && 
+                    node->_lastRange < node->getMaxRange())
+                {
+                    return false;
+                }
+                else if (node->getLODMethod() == LODMethod::SCREEN_SPACE && 
+                    node->_lastPixelSize >= node->getMinPixels() + _sse && node->_lastPixelSize < node->getMaxPixels() + _sse)
                 {
                     return false;
                 }
@@ -440,6 +454,7 @@ PagingManager::update()
             if (entry._data.valid())
             {
                 entry._data->_lastRange = FLT_MAX;
+                entry._data->_lastPixelSize = 0.0f;
             }
         }
     }
@@ -470,4 +485,39 @@ PagingManager::update()
         }
         _metrics->postprocessing--;
     }
+}
+
+namespace
+{
+    std::string buildName(osg::Node* node) {
+        std::string str;
+        while (node) {
+            if (!node->getName().empty())
+                str += node->getName() + " ";
+            node = node->getNumParents() > 0 ? node->getParent(0) : nullptr;
+        } 
+        return str;
+    }
+}
+
+
+std::vector<PagingManager::Stats>
+PagingManager::dumpStats()
+{
+    std::vector<Stats> result;
+    scoped_lock_if lock(_trackerMutex, _threadsafe);
+    result.reserve(_tracker.size());
+    for (auto& entry : _tracker._list)
+    {
+        if (entry._data.valid())
+        {
+            Stats stats;
+            stats.name = buildName(entry._data);
+            stats.maxRange = entry._data->_maxRange;
+            stats.lastRange = -entry._data->_priority;
+            result.emplace_back(stats);
+        }
+    }
+    std::sort(result.begin(), result.end(), [](const Stats& a, const Stats& b) { return a.lastRange < b.lastRange; });
+    return result;
 }

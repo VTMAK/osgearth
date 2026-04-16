@@ -11,6 +11,8 @@
 #include "TileRenderModel"
 
 #include <osgEarth/Ellipsoid>
+#include <osgEarth/Horizon>
+
 #include <osg/MatrixTransform>
 #include <osg/BoundingBox>
 #include <osg/Drawable>
@@ -60,13 +62,11 @@ namespace osgEarth { namespace REX
 
         //! Size of this node on the screen in pixels; used for culling decisions
         //! when using in SCREEN_SPACE lod method.
-        inline float getPixelSizeOnScreen(osg::CullStack* cull) const
+        inline float getPixelSize(osg::CullStack* cull) const
         {
-            // By using the width, the "apparent" pixel size will decrease as we near the poles.
-            // TODO: Consider using the Height in ortho mode instead.
-            bool ortho = ProjectionMatrix::isOrtho(*cull->getProjectionMatrix());
-            double R = (ortho ? _drawable->_bboxHalfHeight : _drawable->_bboxHalfWidth);
-            return cull->clampedPixelSize(getMatrix().getTrans(), R) / cull->getLODScale();
+            return Util::getPixelSize(
+                cull, getMatrix().getTrans(),
+                0.5 * (_drawable->_bboxHalfWidth + _drawable->_bboxHalfHeight));
         }
 
     protected:

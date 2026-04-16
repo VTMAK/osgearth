@@ -120,8 +120,15 @@ namespace osgEarth
 
                     if (options.getLODMethod() == LODMethod::SCREEN_SPACE)
                     {
+                        float sse = options.getScreenSpaceError();
+                        if (ImGuiLTable::SliderFloat("  Screen space error", &sse, 0.0f, 2048.0f))
+                        {
+                            options.setScreenSpaceError(sse);
+                            engine->dirtyTerrainOptions();
+                        }
+
                         float tileImagePixelSize = options.getTilePixelSize();
-                        if (ImGuiLTable::SliderFloat("  Tile image size", &tileImagePixelSize, 64.0f, 1024.0f))
+                        if (ImGuiLTable::SliderFloat("  Tile image size", &tileImagePixelSize, 256.0f, 1024.0f))
                         {
                             options.setTilePixelSize(tileImagePixelSize);
                             engine->dirtyTerrainOptions();

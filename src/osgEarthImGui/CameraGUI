@@ -51,6 +51,10 @@ namespace osgEarth
             if (!isVisible())
                 return;
 
+            osg::observer_ptr<MapNode> mapNode;
+            if (!findNodeOrHide<MapNode>(mapNode, ri))
+                return;
+
             auto* man = dynamic_cast<EarthManipulator*>(view(ri)->getCameraManipulator());
             if (man)
             {
@@ -115,7 +119,7 @@ namespace osgEarth
 
                     static float magnification_old = 1.0f, magnification_new = 1.0f;
                     static osg::Matrix ref_proj;
-                    if (ImGuiLTable::SliderFloat("Magnification", &magnification_new, 1.0f, 25.0f))
+                    if (ImGuiLTable::SliderFloat("Magnification", &magnification_new, 1.0f, 50.0f))
                     {
                         auto proj = camera(ri)->getProjectionMatrix();
                         if (magnification_old == 1.0f ||
@@ -151,7 +155,15 @@ namespace osgEarth
                         }
 
                         camera(ri)->setProjectionMatrix(new_proj);
-                        camera(ri)->setLODScale(rangeScale);
+
+                        // PagedNode2:
+                        // it works with this in BOTH camera_distance (expected) AND screen_space (UNexpected) modes.
+                        // it does NOT work WITHOUT this in screen_space mode (unexcpected).
+
+                        if (mapNode->getTerrainOptions().getLODMethod() == LODMethod::CAMERA_DISTANCE)
+                            camera(ri)->setLODScale(rangeScale);
+                        else
+                            camera(ri)->setLODScale(1.0f);
 
                         magnification_old = magnification_new;
                     }

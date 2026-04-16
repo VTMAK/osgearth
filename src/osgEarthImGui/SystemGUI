@@ -250,6 +250,42 @@ namespace osgEarth
                             [&](osg::GraphicsContext*) { return manualDPR; });
                     }
                 }
+
+                ImGui::Separator();
+                static bool s_showPagingManagerStats = false;
+                ImGui::Checkbox("Paging Manager Stats", &s_showPagingManagerStats);
+                if (s_showPagingManagerStats)
+                {
+                    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+                    ImGui::Begin("PagingManager Stats");
+                    auto pagingManager = findTopMostNodeOfType<PagingManager>(view(ri)->getSceneData());
+                    if (pagingManager)
+                    {
+                        auto stats = pagingManager->dumpStats();
+                        ImGui::Text("Total tracked nodes: %d", (int)stats.size());
+
+                        if (ImGui::BeginTable("pmstats", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Borders))
+                        {
+                            ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
+                            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_None);
+                            ImGui::TableSetupColumn("MaxRange", ImGuiTableColumnFlags_None);
+                            ImGui::TableSetupColumn("LastRange", ImGuiTableColumnFlags_None);
+                            ImGui::TableHeadersRow();
+
+                            for (auto& stat : stats)
+                            {
+                                ImGui::TableNextColumn();
+                                ImGui::TextUnformatted(stat.name.c_str());
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%.1f", stat.maxRange);
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%.1f", stat.lastRange);
+                            }
+                            ImGui::EndTable();
+                        }
+                    }
+                    ImGui::End();
+                }
 #endif
             }
             ImGui::End();

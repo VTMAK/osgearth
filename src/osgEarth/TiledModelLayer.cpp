@@ -361,11 +361,9 @@ void TiledModelLayer::create()
         pager->setAdditive(this->getAdditive());
         pager->setMinLevel(this->getMinLevel());
         pager->setMaxLevel(this->getMaxLevel());
-
-        if (options().lodMethod() == LODMethod::SCREEN_SPACE)
-            pager->setMinPixels(this->getMinPixels());
-        else
-            pager->setRangeFactor(this->getRangeFactor());
+        pager->setLODMethod(this->getLODMethod());
+        pager->setRangeFactor(this->getRangeFactor());
+        pager->setMinPixels(this->getMinPixels());
 
         pager->build();
 

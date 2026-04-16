@@ -637,7 +637,7 @@ MapNode::setScreenSpaceError(float value)
     options().screenSpaceError() = value;
 
     // update the corresponding terrain option:
-    getTerrainOptions().setScreenSpaceError(value);
+    //getTerrainOptions().setScreenSpaceError(value);
 
     // update the uniform:
     _sseU->set(value);

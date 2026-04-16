@@ -1,5 +1,5 @@
 /* osgEarth
-* Copyright 2025 Pelican Mapping
+* Copyright 2026 Pelican Mapping
 * MIT License
 */
 #pragma once
@@ -93,7 +93,7 @@ namespace osgEarth { namespace Util
         //! Sets the minimum distance from camera at which to load child data
         //! and activates range-based loading.
         void setMinRange(float value) {
-            _minRange = value, _useRange = true;
+            _minRange = value;
         }
 
         //! Minimum distance from camera at which to load child data
@@ -105,7 +105,7 @@ namespace osgEarth { namespace Util
         //! Sets the maximum distance from camera at which to load child data
         //! and activates range-based loading.
         void setMaxRange(float value) {
-            _maxRange = value, _useRange = true;
+            _maxRange = value;
         }
 
         //! Maximum distance from camera at which to load child data
@@ -117,7 +117,7 @@ namespace osgEarth { namespace Util
         //! Sets the minimum pixel extent at which to load child data
         //! and activates screen-space-based loading.
         void setMinPixels(float value) {
-            _minPixels = value, _useRange = false;
+            _minPixels = value;
         }
 
         //! Minimum pixel extent at which to load child data
@@ -129,7 +129,7 @@ namespace osgEarth { namespace Util
         //! Sets the maximum pixel extent at which to load child data
         //! and activates screen-size-based loading.
         void setMaxPixels(float value) {
-            _maxPixels = value, _useRange = false;
+            _maxPixels = value;
         }
 
         //! Maximum pixel extent at which to load child data
@@ -189,11 +189,11 @@ namespace osgEarth { namespace Util
         //! The LOD refinement mode (range versus SSE). Make sure you
         //! have set the appropriate min/max range or min/max pixels.
         void setLODMethod(const LODMethod& value) {
-            _useRange = (value == LODMethod::CAMERA_DISTANCE);
+            _lodMethod = value;
         }
 
         LODMethod getLODMethod() const {
-            return _useRange ? LODMethod::CAMERA_DISTANCE : LODMethod::SCREEN_SPACE;
+            return _lodMethod;
         }
 
         //! Mark the content as "in use" so that it will not
@@ -248,15 +248,16 @@ namespace osgEarth { namespace Util
         optional<osg::BoundingSphere> _userBS;
         float _minRange = 0.0f;
         float _maxRange = FLT_MAX;
-        float _minPixels = 0.0f;
+        float _minPixels = 256.0f;
         float _maxPixels = FLT_MAX;
-        bool _useRange = true;
+        LODMethod _lodMethod = LODMethod::CAMERA_DISTANCE;
         float _priorityScale = 1.0f;
         jobs::context _job;
         bool _preCompile = true;
         std::atomic_int _revision = { 0 };
         bool _autoUnload = true;
         float _lastRange = FLT_MAX;
+        float _lastPixelSize = 0.0f;
         mutable float _priority = 0.0f;
         RefinePolicy _refinePolicy = REFINE_REPLACE;
         std::string _jobpoolName;
@@ -309,6 +310,14 @@ namespace osgEarth { namespace Util
         float sse() const {
             return _sse;
         }
+
+        struct Stats {
+            std::string name;
+            float maxRange = -1.0f;
+            float lastRange = -1.0f;
+        };
+
+        std::vector<Stats> dumpStats();
 
     protected:
         virtual ~PagingManager();
