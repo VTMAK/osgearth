@@ -4,6 +4,7 @@
 #include <osgEarth/ModelSource>
 #include <osgEarth/ObjectIndex>
 #include <osgEarth/Containers>
+#include <osgEarth/CullingUtils>
 
 #include <string>
 #include <vector>
@@ -40,6 +41,8 @@ namespace osgEarth
             using MapModelToInstances = osgEarth::vector_map<std::string, Instances>;
 
             MapModelToInstances _mapModelToInstances;
+
+            LODMethod _lodMethod = LODMethod::CAMERA_DISTANCE;
         };
     }
 }

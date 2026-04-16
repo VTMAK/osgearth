@@ -20,6 +20,7 @@
 
 #include "Common"
 #include <osgEarth/Tags>
+#include <osgEarth/CullingUtils>
 
 namespace osgEarth { namespace Buildings
 {
@@ -81,11 +82,15 @@ namespace osgEarth { namespace Buildings
         optional<unsigned>& maxVertsPerCluster() { return _maxVertsPerCluster; }
         const optional<unsigned>& maxVertsPerCluster() const { return _maxVertsPerCluster; }
 
+        LODMethod& lodMethod() { return _lodMethod; }
+        const LODMethod& lodMethod() const { return _lodMethod; }
+
     public:
         CompilerSettings(const Config& conf);
         Config getConfig() const;
 
     protected:
+        LODMethod _lodMethod = LODMethod::CAMERA_DISTANCE;
         optional<float> _rangeFactor;
         optional<bool>  _useClustering;
         optional<unsigned> _maxVertsPerCluster;

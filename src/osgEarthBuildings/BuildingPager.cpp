@@ -512,7 +512,9 @@ BuildingPager::createNode(const TileKey& tileKey, ProgressCallback* progress)
 
                 // set the distance at which details become visible.
                 osg::BoundingSphered tileBound = getBounds(tileKey);
+
                 output.setRange(tileBound.radius() * getRangeFactor());
+                output.setMinPixels(getMinPixels());
 
                 node = output.createSceneGraph(_session.get(), _compilerSettings, readOptions.get(), progress);
 

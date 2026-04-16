@@ -8,6 +8,7 @@
 
 #include <osgEarth/Common>
 #include <osgEarth/SpatialReference>
+#include <osgEarth/CullingUtils>
 #include <osg/Group>
 
 namespace osgEarth
@@ -35,6 +36,9 @@ namespace osgEarth
 
         void setElevations( double minElevation, double maxElevation );
 
+        void setLODMethod(const LODMethod& method);
+        LODMethod getLODMethod() const;
+
         float getMinRange() const;
         void setMinRange(float minRange);
 
@@ -58,6 +62,7 @@ namespace osgEarth
         optional<double> _maxElevation;
         optional<float>  _minRange;
         optional<float>  _maxRange;
+        LODMethod _lodMethod = LODMethod::CAMERA_DISTANCE;
     };
 
     // AltitudeLOD is a better name.

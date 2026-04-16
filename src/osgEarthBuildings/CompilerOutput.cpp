@@ -332,24 +332,48 @@ void CompilerOutput::addInstancesNormal(osg::MatrixTransform* root, Session* ses
             const CompilerSettings::LODBin* bin = settings.getLODBin(res->tags());
             float lodScale = bin ? bin->lodScale : 1.0f;
 
-            float maxRange = _range * lodScale;
-
-            // find the LOD range to add it to, or create a new one if neccesary:
-            bool added = false;
-            for (unsigned i = 0; i < instances->getNumChildren() && !added; ++i)
+            if (settings.lodMethod() == LODMethod::CAMERA_DISTANCE)
             {
-                if (instances->getMaxRange(i) == maxRange)
+                float maxRange = _range * lodScale;
+
+                // find the LOD range to add it to, or create a new one if neccesary:
+                bool added = false;
+                for (unsigned i = 0; i < instances->getNumChildren() && !added; ++i)
                 {
-                    instances->getChild(i)->asGroup()->addChild(modelGroup);
-                    added = true;
+                    if (instances->getMaxRange(i) == maxRange)
+                    {
+                        instances->getChild(i)->asGroup()->addChild(modelGroup);
+                        added = true;
+                    }
+                }
+
+                if (!added)
+                {
+                    osg::Group* parent = new osg::Group();
+                    instances->addChild(parent, 0.0, maxRange);
+                    parent->addChild(modelGroup);
                 }
             }
-
-            if (!added)
+            else // LODMethod::SCREEN_SPACE
             {
-                osg::Group* parent = new osg::Group();
-                instances->addChild(parent, 0.0, maxRange);
-                parent->addChild(modelGroup);
+                float minPixels = _minPixels * lodScale;
+                bool added = false;
+                for (unsigned i = 0; i < instances->getNumChildren() && !added; ++i)
+                {
+                    if (instances->getMinRange(i) == minPixels)
+                    {
+                        instances->getChild(i)->asGroup()->addChild(modelGroup);
+                        added = true;
+                    }
+                }
+
+                if (!added)
+                {
+                    osg::Group* parent = new osg::Group();
+                    instances->setRangeMode(osg::LOD::PIXEL_SIZE_ON_SCREEN);
+                    instances->addChild(parent, minPixels, FLT_MAX);
+                    parent->addChild(modelGroup);
+                }
             }
 #else
             instances->addChild(modelGroup);
@@ -652,9 +676,17 @@ CompilerOutput::createSceneGraphLegacy(
         {
             const std::string& tag = taggedGeode.first;
             const CompilerSettings::LODBin* bin = settings.getLODBin(tag);
-            float minRange = bin && bin->minLodScale > 0.0f ? bc.getRadius() + _range * bin->minLodScale : 0.0f;
-            float maxRange = bin ? bc.getRadius() + _range * bin->lodScale : FLT_MAX;
-            elevationsLod->addChild(taggedGeode.second.get(), minRange, maxRange);
+            if (settings.lodMethod() == LODMethod::CAMERA_DISTANCE)
+            {
+                float minRange = bin && bin->minLodScale > 0.0f ? bc.getRadius() + _range * bin->minLodScale : 0.0f;
+                float maxRange = bin ? bc.getRadius() + _range * bin->lodScale : FLT_MAX;
+                elevationsLod->addChild(taggedGeode.second.get(), minRange, maxRange);                
+            }
+            else
+            {
+                elevationsLod->addChild(taggedGeode.second.get(), _minPixels, FLT_MAX);
+                elevationsLod->setRangeMode(osg::LOD::PIXEL_SIZE_ON_SCREEN);
+            }
         }
 
         elevationsLod->accept(mergeGeometry);

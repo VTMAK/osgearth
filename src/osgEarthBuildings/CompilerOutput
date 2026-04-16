@@ -186,6 +186,8 @@ namespace osgEarth { namespace Buildings
 
         void setRange(float value) { _range = value; }
         float getRange() const     { return _range; }
+
+        void setMinPixels(float value) { _minPixels = value; }
         
         /** Delocatization matrix to apply to the entire output. */
         void setLocalToWorld(const osg::Matrix& m);
@@ -257,7 +259,8 @@ namespace osgEarth { namespace Buildings
 
         Feature* _currentFeature;
 
-        float _range;
+        float _range; // for CAMERA_DISTANCE mode
+        float _minPixels; // for SCREEN_SPACE mode
 
         TileKey _key;
         std::string _name;

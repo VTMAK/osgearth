@@ -181,6 +181,9 @@ BuildingLayer::createSceneGraph()
     auto filters = FeatureFilterChain::create(options().filters(), getReadOptions());
 
     pager->setName(getName());
+    pager->setLODMethod(options().lodMethod().get());
+    pager->setMinPixels(options().minPixels().get());  
+    pager->setRangeFactor(options().rangeFactor().get());
     pager->setAdditive(options().additiveLODs().get());
     pager->setElevationPool(map->getElevationPool());
     pager->setSession(_session.get());
@@ -193,6 +196,11 @@ BuildingLayer::createSceneGraph()
     pager->setSceneGraphCallbacks(getSceneGraphCallbacks());
     pager->setClutter(options().clutter().get());
     pager->setParapets(options().parapets().get());
+    
+    // install the LOD Method
+    CompilerSettings copy = options().compilerSettings().get();
+    copy.lodMethod() = options().lodMethod().get();
+    pager->setCompilerSettings(copy);
 
     if (options().verboseWarnings().isSetTo(true) ||
         ::getenv("OSGEARTH_BUILDINGS_VERBOSE_WARNINGS") != nullptr)
