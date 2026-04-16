@@ -53,7 +53,7 @@ namespace osgEarth { namespace Util
         void setMinPixels(float value);
 
         void setLODMethod(const LODMethod& value);
-        LODMethod getLODMethod() const { return _useRange ? LODMethod::CAMERA_DISTANCE : LODMethod::SCREEN_SPACE; }
+        LODMethod getLODMethod() const { return _lodMethod; }
 
         float getPriorityScale() const { return _priorityScale; }
         void setPriorityScale(float value) { _priorityScale = value; }
@@ -119,10 +119,10 @@ namespace osgEarth { namespace Util
         osg::ref_ptr<osg::Node> createChildNode(const TileKey& key, ProgressCallback* progress);
 
         bool _additive = false;
-        bool _useRange = true;
-        double _rangeFactor = 6.0;
+        LODMethod _lodMethod = LODMethod::CAMERA_DISTANCE;
+        double _rangeFactor = 6.0; // ratio of range to tile size
         float _maxRange = FLT_MAX;
-        float _minPixels = 0.0f;
+        float _minPixels = 256.0f;
         float _maxPixels = FLT_MAX;
         unsigned int _minLevel = 0;
         unsigned int _maxLevel = 20;

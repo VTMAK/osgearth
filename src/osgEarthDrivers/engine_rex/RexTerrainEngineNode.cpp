@@ -750,12 +750,12 @@ RexTerrainEngineNode::cull_traverse(osg::NodeVisitor& nv)
 
     // Prepare the culler:
     TerrainCuller culler;
+    culler.reset(cv, pd, getEngineContext(), _cachedLayerExtents);
 
-    culler.reset(
-        cv,
-        pd,
-        getEngineContext(),
-        _cachedLayerExtents);
+    // install the SSE:
+    float global_sse = 0.0f;
+    nv.getUserValue("oe_sse", global_sse);
+    culler.setScreenSpaceError(global_sse);
 
     // Assemble the terrain drawables:
     _terrain->accept(culler);

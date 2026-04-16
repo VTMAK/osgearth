@@ -171,7 +171,6 @@ namespace osgEarth
 
 
     static bool hideEmptyPagedNodes = false;
-    static std::unordered_map<osg::Node*, bool> hasGeom;
 
     struct ArrayStats
     {
@@ -690,14 +689,10 @@ namespace osgEarth
                 {
                     auto pagedNode = dynamic_cast<osgEarth::PagedNode2*>(&node);
                     if (pagedNode) {
-                        auto i = hasGeom.emplace(&node, false);
-                        if (i.second) { // new
-                            osg::ComputeBoundsVisitor cb;
-                            node.accept(cb);
-                            osg::BoundingBox bb = cb.getBoundingBox();
-                            i.first->second = bb.valid();
-                        }
-                        if (!i.first->second) return;
+                        osg::ComputeBoundsVisitor cb;
+                        node.accept(cb);
+                        if (!cb.getBoundingBox().valid())
+                            return;
                     }
                 }
 
@@ -1115,8 +1110,29 @@ namespace osgEarth
             {
                 if (ImGui::TreeNode("PagedNode"))
                 {
-                    ImGui::Text("Min range %.3f", pagedNode2->getMinRange());
-                    ImGui::Text("Max range %.3f", pagedNode2->getMaxRange());
+                    if (pagedNode2->getLODMethod() == osgEarth::LODMethod::CAMERA_DISTANCE)
+                    {
+                        ImGui::Text("Min range %.3f", pagedNode2->getMinRange());
+                        ImGui::Text("Max range %.3f", pagedNode2->getMaxRange());
+                    }
+                    else
+                    {
+                        ImGui::Text("Min pixels %.0f", pagedNode2->getMinPixels());
+                        ImGui::Text("Max pixels %.0f", pagedNode2->getMaxPixels());
+                    }
+                    ImGui::Text("Last priority %.1f", pagedNode2->getPriority());
+                    ImGui::TreePop();
+                }
+            }
+
+            auto* lod = dynamic_cast<osg::LOD*>(node);
+            if (lod)
+            {
+                if (ImGui::TreeNode("osg::LOD"))
+                {
+                    ImGui::Text("Range mode: %s", lod->getRangeMode() == osg::LOD::DISTANCE_FROM_EYE_POINT ? "Distance from eye" : "Pixel size on screen");
+                    ImGui::Text("Min %.1f", lod->getRangeList().front().first);
+                    ImGui::Text("Max %.1f", lod->getRangeList().front().second);
                     ImGui::TreePop();
                 }
             }

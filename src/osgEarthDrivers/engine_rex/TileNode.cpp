@@ -12,6 +12,7 @@
 
 #include <osgEarth/TerrainTileModel>
 #include <osgEarth/CullingUtils>
+#include <osgEarth/Horizon>
 #include <osgEarth/ImageUtils>
 #include <osgEarth/Metrics>
 #include <osgEarth/Notify>
@@ -342,11 +343,11 @@ TileNode::shouldSubDivide(TerrainCuller* culler, const SelectionInfo& selectionI
 
             if (tileGeometrySizeInPixels <= 0.0)
             {
-                tileGeometrySizeInPixels = _surface->getPixelSizeOnScreen(culler);
+                tileGeometrySizeInPixels = _surface->getPixelSize(culler);
             }
         
             // SSE is the amount of error we are willing to tolerate in the screen space size
-            float pixelSizeThreshold = tileImagerySize + _context->options().getScreenSpaceError();
+            float pixelSizeThreshold = tileImagerySize + _context->options().getScreenSpaceError() + culler->getScreenSpaceError();
 
             return (tileGeometrySizeInPixels > pixelSizeThreshold);
         }

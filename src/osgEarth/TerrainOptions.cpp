@@ -55,7 +55,7 @@ TerrainOptions::getConfig() const
     conf.set( "texture_compression", textureCompression());
     conf.set( "concurrency", concurrency());
     conf.set( "use_land_cover", useLandCover() );
-    //conf.set("screen_space_error", screenSpaceError()); // don't serialize me, i'm set by the MapNode
+    conf.set("screen_space_error", screenSpaceError());
     conf.set("max_texture_size", maxTextureSize());
     conf.set("visible", visible());
     conf.set("create_tiles_async", createTilesAsync());
@@ -114,7 +114,8 @@ TerrainOptions::fromConfig(const Config& conf)
     conf.get( "texture_compression", textureCompression());
     conf.get( "concurrency", concurrency());
     conf.get( "use_land_cover", useLandCover());
-    //conf.get("screen_space_error", screenSpaceError()); // don't serialize me, i'm set by the MapNode
+    conf.get("screen_space_error", screenSpaceError());
+    conf.get("sse", screenSpaceError());
     conf.get("max_texture_size", maxTextureSize());
     conf.get("visible", visible());
     conf.get("create_tiles_async", createTilesAsync());

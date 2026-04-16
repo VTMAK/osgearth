@@ -1,5 +1,5 @@
 /* osgEarth
- * Copyright 2025 Pelican Mapping
+ * Copyright 2026 Pelican Mapping
  * MIT License
  */
 #pragma once
@@ -8,13 +8,12 @@
 #include <osgEarth/optional>
 #include <osgEarth/SpatialReference>
 #include <osgEarth/GeoTransform>
-#include <osgEarth/Horizon>
+#include <osgEarth/Math>
 
 #include <osg/ClusterCullingCallback>
 #include <osg/Vec3d>
 #include <osg/Vec3>
 #include <osg/LOD>
-#include <osg/NodeCallback>
 #include <osgUtil/CullVisitor>
 #include <osgUtil/RenderBin>
 
@@ -314,5 +313,28 @@ namespace osgEarth
         private:
             std::function<void(osg::Node*, osg::NodeVisitor*)> _func;
         };
+
+        //! Compute the extent (in on-screen pixels) of an object as pos with radius radius.
+        inline float getPixelSize(osg::CullStack* cull, const osg::Vec3d& pos, double radius)
+        {
+            auto& proj = *cull->getProjectionMatrix();
+            bool ortho = ProjectionMatrix::isOrtho(proj);
+
+            auto vpHeight = cull->getViewport()->height();
+            double ppu = 0.0; // pixels per world unit
+
+            if (ortho)
+            {
+                ppu = std::abs(proj(1, 1)) * vpHeight * 0.5;
+            }
+            else // perspective
+            {
+                auto eye_vs = pos * (*cull->getModelViewMatrix());
+                double dist = std::max(-eye_vs.z() - radius, 1.0);
+                ppu = std::abs(proj(1, 1)) * vpHeight * 0.5 / dist;
+            }
+
+            return 2.0f * std::max(radius, 0.5) * ppu;
+        }
     }
 }
