@@ -1,13 +1,13 @@
 /* osgEarth
- * Copyright 2025 Pelican Mapping
+ * Copyright 2026 Pelican Mapping
  * MIT License
  */
 #include "TritonHeightMap"
-#include "TritonContext"
 #include <osgEarth/CullingUtils>
 #include <osgEarth/VirtualProgram>
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/Utils>
+#include <osgEarth/Horizon>
 
 #define LC "[TritonHeightMap] "
 
