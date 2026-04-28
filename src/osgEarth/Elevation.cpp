@@ -192,25 +192,32 @@ ElevationTile::getNormal(double x, double y) const
         double v = (y - getExtent().yMin()) / getExtent().height();
         normal = NormalMapGenerator::unpack(_readNormal(u, v));
     }
-    else if (getHeightField())
+    else if (auto* hf = getHeightField())
     {
-        auto& e = getExtent();
-        auto res = getHeightField()->getYInterval(); // assume square pixels
+        auto* srs = _tilekey.getProfile()->getSRS();
+        Distance res(hf->getXInterval(), srs->getUnits());
+        double dy = srs->transformDistance(res, Units::METERS);
+        double du = 1.0 / (double)(hf->getNumColumns() - 1);
+        double dv = 1.0 / (double)(hf->getNumRows() - 1);
 
-        auto west = getElevation(std::max(x - res, e.xMin()), y);
-        auto east = getElevation(std::min(x + res, e.xMax()), y);
-        auto south = getElevation(x, std::max(y - res, e.yMin()));
-        auto north = getElevation(x, std::min(y + res, e.yMax()));
+        auto& ex = getExtent();
+        double u = (x - ex.xMin()) / ex.width();
+        double v = (y - ex.yMin()) / ex.height();
 
-        if (west.hasData() && east.hasData() && south.hasData() && north.hasData())
+        auto z_west = getRawElevationUV(std::max(u - du, 0.0), v);
+        auto z_east = getRawElevationUV(std::min(u + du, 1.0), v);
+        auto z_north = getRawElevationUV(u, std::min(v + dv, 1.0));
+        auto z_south = getRawElevationUV(u, std::max(v - dv, 0.0));
+
+        if (z_west != NO_DATA_VALUE && z_east != NO_DATA_VALUE && z_north != NO_DATA_VALUE && z_south != NO_DATA_VALUE)
         {
-            auto res_m = getExtent().getSRS()->transformDistance(Distance(res, e.getSRS()->getUnits()), Units::METERS, (e.yMin() + e.yMax()) / 2.0);
-            osg::Vec3 a[4];
-            a[0].set(-res, 0, west.elevation().as(Units::METERS));
-            a[1].set(res, 0, east.elevation().as(Units::METERS));
-            a[2].set(0, -res, south.elevation().as(Units::METERS));
-            a[3].set(0, res, north.elevation().as(Units::METERS));
-            normal = (a[1] - a[0]) ^ (a[3] - a[2]);
+            double y_or_lat = ex.yMin() + v * ex.height();
+            double dx = srs->transformDistance(res, Units::METERS, y_or_lat);
+
+            normal = 
+                (osg::Vec3d(-dx, 0, z_west) - osg::Vec3d(dx, 0, z_east)) ^ 
+                (osg::Vec3d(0, -dy, z_south) - osg::Vec3d(0, dy, z_north));
+
             normal.normalize();
         }
     }
