@@ -1730,11 +1730,6 @@ namespace
             }
         }
 
-        if (!reader)
-        {
-            OE_WARN << "Unhappy!" << std::endl;
-        }
-
         return reader;
     }
 }
