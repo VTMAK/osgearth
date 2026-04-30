@@ -40,6 +40,10 @@ namespace osgEarth
         bool _debugTiles = false;
         int _pixelsPerTile = 16;
         Texture::Ptr _texture;
+        bool _perspective = false;
+        float _fovY = 45.0f;
+        float _aspectRatio = 1.0f;
+        float _distance = 1000.0f;
 
     public:
         DecalsGUI() : ImGuiPanel("Decals") { }
@@ -123,14 +127,25 @@ namespace osgEarth
 
                 if (ImGuiLTable::Begin("decalsgui"))
                 {
-                    ImGuiLTable::SliderFloat("Size", &_size, 1.0f, 1000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-                    ImGuiLTable::SliderFloat("Depth", &_depth, 1.0f, 10000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-                    ImGuiLTable::Checkbox("  Lock depth", &_lockDepthToSize);
+                    ImGuiLTable::Checkbox("Perspective", &_perspective);
+                    if (_perspective)
+                    {
+                        ImGuiLTable::SliderFloat("Distance", &_distance, 1.0f, 100000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+                        ImGuiLTable::SliderFloat("Depth", &_depth, 1.0f, 10000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+                        ImGuiLTable::SliderFloat("FOV", &_fovY, 5.0f, 120.0f, "%.1f", 0);
+                        ImGuiLTable::SliderFloat("Aspect", &_aspectRatio, 0.25f, 4.0f, "%.2f", 0);
+                    }
+                    else
+                    {
+                        ImGuiLTable::SliderFloat("Size", &_size, 1.0f, 1000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+                        ImGuiLTable::SliderFloat("Depth", &_depth, 1.0f, 10000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+                        ImGuiLTable::Checkbox("  Lock depth", &_lockDepthToSize);
+                    }
                     ImGuiLTable::SliderFloat("Opacity", &_opacity, 0.0f, 1.0f);
                     ImGui::Separator();
                     ImGuiLTable::Checkbox("Drag", &_dragging);
-                    ImGuiLTable::Checkbox("Stamp", &_stamping);                   
-                    if (_dragging) ImGuiLTable::Checkbox("  RTT", &_rtt);
+                    ImGuiLTable::Checkbox("Stamp", &_stamping);
+                    if (_dragging && !_perspective) ImGuiLTable::Checkbox("  RTT", &_rtt);
                     ImGui::Separator();
                     ImGuiLTable::Checkbox("Nadir", &_nadir);
                     if (!_nadir)
@@ -145,7 +160,7 @@ namespace osgEarth
                     //if (ImGuiLTable::SliderInt("Tile size", &_pixelsPerTile, 16, 256)) {
                     //    _decalDecorator->setPixelsPerTile(_pixelsPerTile);
                     //}
-                    if (_lockDepthToSize) _depth = _size;
+                    if (!_perspective && _lockDepthToSize) _depth = _size;
                     ImGuiLTable::End();
                     if (ImGui::Button("Clear all")) {
                         _stampingDecals->getDecals().clear();
@@ -182,6 +197,25 @@ namespace osgEarth
                 pos.x(), pos.y(), pos.z(), 1.0);
         }
             
+        void applyDecalParams(Decal& decal)
+        {
+            decal.texture = _texture;
+            decal.opacity = _opacity;
+            if (_perspective)
+            {
+                decal.projection = DecalProjection::PERSPECTIVE;
+                decal.fovY_deg = _fovY;
+                decal.aspectRatio = _aspectRatio;
+                decal.distance = _distance;
+                decal.size.z() = _depth;
+            }
+            else
+            {
+                decal.projection = DecalProjection::ORTHOGRAPHIC;
+                decal.size = osg::Vec3f(_size, _size, _depth);
+            }
+        }
+
         void onMove(osg::View* view, float x, float y)
         {
             _draggingDecals->setNodeMask(0);
@@ -191,7 +225,7 @@ namespace osgEarth
                 auto i = intersectMouse(view, x, y, _mapNode.get());
                 if (i.isOK())
                 {
-                    if (_rtt)
+                    if (_rtt && !_perspective)
                     {
                         _decalMT->setMatrix(worldTBN(i->getWorldIntersectPoint(), i->getWorldIntersectNormal()));
                         _decalRTTNode->getDecal().size = osg::Vec3f(_size, _size, _depth);
@@ -203,9 +237,7 @@ namespace osgEarth
                     {
                         Decal& decal = _draggingDecals->getDecals().front();
                         decal.matrix = worldTBN(i->getWorldIntersectPoint(), i->getWorldIntersectNormal());
-                        decal.size = osg::Vec3f(_size, _size, _depth);
-                        decal.texture = _texture;
-                        decal.opacity = _opacity;
+                        applyDecalParams(decal);
 
                         _draggingDecals->dirtyBound();
                         _draggingDecals->debug(_debugBoxes);
@@ -224,9 +256,7 @@ namespace osgEarth
                 {
                     Decal decal;
                     decal.matrix = worldTBN(i->getWorldIntersectPoint(), i->getWorldIntersectNormal());
-                    decal.size = osg::Vec3f(_size, _size, _depth);
-                    decal.texture = _texture;
-                    decal.opacity = _opacity;
+                    applyDecalParams(decal);
 
                     _stampingDecals->getDecals().emplace_back(std::move(decal));
                     _stampingDecals->dirtyBound();

@@ -70,11 +70,73 @@ DecalNode::debug(bool value)
     {
         _debug = new osg::Group();
 
-        for (auto& decal : _decals) {
+        for (auto& decal : _decals)
+        {
             auto mt = new osg::MatrixTransform(decal.matrix);
-            mt->addChild(new osg::ShapeDrawable(new osg::Box(osg::Vec3(0, 0, 0), decal.size.x(), decal.size.y(), decal.size.z())));
+            
+            osg::Drawable* drawable = nullptr;
+            if (decal.projection == DecalProjection::PERSPECTIVE)
+            {
+                float tanH = tanf(osg::DegreesToRadians(decal.fovY_deg * 0.5f));
+                float halfDepth = decal.size.z() * 0.5f;
+                float nearClip = std::max(1.0f, decal.distance - halfDepth);
+                float farClip = decal.distance + halfDepth;
+                float farHalfW = farClip * tanH * decal.aspectRatio;
+                float farHalfH = farClip * tanH;
+                float nearHalfW = nearClip * tanH * decal.aspectRatio;
+                float nearHalfH = nearClip * tanH;
+
+                auto g = new osg::Geometry();
+                g->setUseVertexBufferObjects(true);
+                g->setUseDisplayList(false);
+
+                //osg::Vec3 verts[9] = {
+                //    osg::Vec3(-farHalfW, farHalfH, -farClip),
+                //    osg::Vec3(farHalfW, farHalfH, -farClip),
+                //    osg::Vec3(farHalfW, -farHalfH, -farClip),
+                //    osg::Vec3(-farHalfW, -farHalfH, -farClip),
+                //    osg::Vec3(-nearClip * tanH * decal.aspectRatio, nearClip * tanH, -nearClip),
+                //    osg::Vec3(nearClip * tanH * decal.aspectRatio, nearClip * tanH, -nearClip),
+                //    osg::Vec3(nearClip * tanH * decal.aspectRatio, -nearClip * tanH, -nearClip),
+                //    osg::Vec3(-nearClip * tanH * decal.aspectRatio, -nearClip * tanH, -nearClip),
+                //    osg::Vec3(0, 0, decal.distance)
+                //};
+
+                //farClip -= decal.distance;
+                //nearClip -= decal.distance;
+
+                osg::Vec3 verts[9] = {
+                    osg::Vec3(-farHalfW, farHalfH, decal.distance -farClip),
+                    osg::Vec3(farHalfW, farHalfH, decal.distance -farClip),
+                    osg::Vec3(farHalfW, -farHalfH, decal.distance -farClip),
+                    osg::Vec3(-farHalfW, -farHalfH, decal.distance -farClip),
+                    osg::Vec3(-nearHalfW, nearHalfH, decal.distance -nearClip),
+                    osg::Vec3(nearHalfW, nearHalfH, decal.distance -nearClip),
+                    osg::Vec3(nearHalfW, -nearHalfH, decal.distance -nearClip),
+                    osg::Vec3(-nearHalfW, -nearHalfH, decal.distance -nearClip),
+                    osg::Vec3(0, 0, decal.distance)
+                };
+                // make indices for GL_LINES representing the frustum:
+                unsigned char indices[24] = {
+                    0, 1, 1, 2, 2, 3, 3, 0, // far plane
+                    4, 5, 5, 6, 6, 7, 7, 4, // near plane
+                    0, 8, 1, 8, 2, 8, 3, 8 // connections
+                };
+                osg::Vec4 color = osg::Vec4(1, 1, 1, 1);
+                g->setVertexArray(new osg::Vec3Array(9, verts));
+                g->setColorArray(new osg::Vec4Array(osg::Array::BIND_OVERALL, 1, &color));
+                g->addPrimitiveSet(new osg::DrawElementsUByte(osg::PrimitiveSet::LINES, 24, indices));
+                
+                mt->addChild(g);
+            }
+            else
+            {
+                drawable = new osg::ShapeDrawable(new osg::Box(osg::Vec3(0, 0, 0), decal.size.x(), decal.size.y(), decal.size.z()));
+            }
+            mt->addChild(drawable);
             _debug->addChild(mt);
         }
+
         _debug->getOrCreateStateSet()->setAttribute(new osg::PolygonMode(
             osg::PolygonMode::FRONT_AND_BACK, osg::PolygonMode::LINE));
     }
@@ -84,11 +146,28 @@ osg::BoundingSphere
 DecalNode::computeBound() const
 {
     osg::BoundingSphere bs;
-    for (const auto& decal : _decals) 
+    for (const auto& decal : _decals)
     {
-        bs.expandBy(osg::BoundingSphere(
-            osg::Vec3(0, 0, 0) * decal.matrix,
-            std::max(decal.size.x(), decal.size.y()) * 0.7071f));
+        if (decal.projection == DecalProjection::PERSPECTIVE)
+        {
+            float tanH = tanf(osg::DegreesToRadians(decal.fovY_deg * 0.5f));
+            float halfDepth = decal.size.z() * 0.5f;
+            float nearClip = std::max(1.0f, decal.distance - halfDepth);
+            float farClip = decal.distance + halfDepth;
+            float midZ = (nearClip + farClip) * 0.5f;
+            float halfRange = (farClip - nearClip) * 0.5f;
+            float farHalfW = farClip * tanH * decal.aspectRatio;
+            float farHalfH = farClip * tanH;
+            float radius = sqrtf(halfRange * halfRange + farHalfW * farHalfW + farHalfH * farHalfH);
+            osg::Vec3 center = osg::Vec3(0, 0, -midZ) * decal.matrix;
+            bs.expandBy(osg::BoundingSphere(center, radius));
+        }
+        else
+        {
+            bs.expandBy(osg::BoundingSphere(
+                osg::Vec3(0, 0, 0) * decal.matrix,
+                std::max(decal.size.x(), decal.size.y()) * 0.7071f));
+        }
     }
     return bs;
 }
@@ -383,11 +462,35 @@ DecalDecorator::operator()(osg::RenderInfo& ri) const
         GPUDecal& instance = gc.decals.back();
         instance.mvm = leaf.matrix * gc.mvm;
         instance.mvmInverse = osg::Matrix::inverse(instance.mvm);
-        instance.halfX = 0.5f * leaf.size.x();
-        instance.halfY = 0.5f * leaf.size.y();
-        instance.halfZ = 0.5f * leaf.size.z();
         instance.textureIndex = leaf.texture ? (std::int32_t)_textures->add(leaf.texture) : -1;
         instance.opacity = leaf.opacity;
+
+        if (leaf.projection == DecalProjection::PERSPECTIVE)
+        {
+            float tanH = tanf(osg::DegreesToRadians(leaf.fovY_deg * 0.5f));
+            float halfDepth = leaf.size.z() * 0.5f;
+            float nearClip = std::max(1.0f, leaf.distance - halfDepth);
+            float farClip = leaf.distance + halfDepth;
+            float farHalfW = farClip * tanH * leaf.aspectRatio;
+            float farHalfH = farClip * tanH;
+            float bsRadius = sqrtf(farHalfW * farHalfW + farHalfH * farHalfH);
+
+            instance.zMin = leaf.distance - farClip;
+            instance.zMax = leaf.distance - nearClip;
+            instance.radius = bsRadius;
+            instance.distance = leaf.distance;
+            instance.tanHalfFovY = tanH;
+            instance.aspect = leaf.aspectRatio;
+        }
+        else
+        {
+            instance.halfX = 0.5f * leaf.size.x();
+            instance.halfY = 0.5f * leaf.size.y();
+            instance.halfZ = 0.5f * leaf.size.z();
+            instance.distance = 0.0f;
+            instance.tanHalfFovY = 0.0f;
+            instance.aspect = 0.0f;
+        }
     }
 
     // send it to the GPU
