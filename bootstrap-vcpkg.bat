@@ -14,12 +14,22 @@ if not exist %VCPKG_TOOLCHAIN_FILE% (
     goto :usage
 )
 
+:: Pre-scan args for the standalone -Y flag (auto-accept confirmation)
+set AUTO_YES=0
+for %%A in (%*) do (
+    if /I "%%~A"=="-Y" set AUTO_YES=1
+)
+
 :: Argument parser from: https://stackoverflow.com/a/8162578
 setlocal enableDelayedExpansion
 set "options=-S:. -B:..\build -I:..\install -G:"Visual Studio 17 2022" -A:x64"
 for %%O in (%options%) do for /f "tokens=1,* delims=:" %%A in ("%%O") do set "%%A=%%~B"
 :loopArgs
     if not "%~1"=="" (
+      if /I "%~1"=="-Y" (
+          shift /1
+          goto :loopArgs
+      )
       set "test=!options:*%~1:=! "
       if "!test!"=="!options! " (
           echo Error: Invalid option %~1
@@ -61,8 +71,12 @@ echo Build location   = %BUILD_DIR%
 echo Install location = %INSTALL_DIR%
 echo Compiler         = %COMPILER%
 echo Architecture     = %ARCHITECTURE%
-choice /C:YN /M Continue?
-if ERRORLEVEL == 2 goto :usage
+if "%AUTO_YES%"=="1" (
+    echo Continue? [Y/N]Y
+) else (
+    choice /C:YN /M Continue?
+    if ERRORLEVEL 2 goto :usage
+)
 
 set MANIFEST_DIR="%SOURCE_DIR%"
 
@@ -86,7 +100,8 @@ cmake ^
     -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
     -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%" ^
     -DCMAKE_TOOLCHAIN_FILE=%VCPKG_TOOLCHAIN_FILE% ^
-    -DVCPKG_MANIFEST_DIR="%MANIFEST_DIR%"
+    -DVCPKG_MANIFEST_DIR="%MANIFEST_DIR%" ^
+    -DVCPKG_TARGET_TRIPLET=x64-windows-release
 
 goto end
 
@@ -94,9 +109,10 @@ goto end
   if not "%ERROR_MSG%" == "" (
       echo Error: %ERROR_MSG%
   )
-  echo Usage: vcpkg-bootstrap.bat -S source_folder -B build_folder -I install_folder -G compiler -A architecture
-  echo Example: 
-  echo    vcpkg-bootstrap.bat -S . -B ..\build -I ..\install -G "Visual Studio 17 2022" -A x64 
+  echo Usage: vcpkg-bootstrap.bat -S source_folder -B build_folder -I install_folder -G compiler -A architecture [-Y]
+  echo   -Y  Skip the confirmation prompt and proceed automatically
+  echo Example:
+  echo    vcpkg-bootstrap.bat -S . -B ..\build -I ..\install -G "Visual Studio 17 2022" -A x64
 
 :end
   endlocal
