@@ -21,3 +21,10 @@ To run unit tests run this command from the tests directory
 ```
 osgearth_tests
 ```
+
+We use Google Benchmark to do microbenchmarks of functions in the src/applications/osgearth_benchmarks project.  When you are asked to improve performance, prove that you actually improved performance by writing a relevant benchmark and providing before and after numbers while also validating that behavior of a function did not change.
+
+To run benchmarks run this command from the tests directory
+```
+osgearth_benchmarks
+```
