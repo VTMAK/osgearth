@@ -9,8 +9,21 @@ layout(local_size_x = OE_TILES_PER_THREAD_GROUP, local_size_y = OE_TILES_PER_THR
 // by testing the decal's BS against all four frustum planes
 bool intersects(in Decal decal, in Frustum frustum)
 {
-    float radius = length(vec3(decal.hx, decal.hy, decal.hz));
-    vec3 posVS = (decal.mvm * vec4(0, 0, 0, 1)).xyz; // pos in view space
+    float radius;
+    vec3 posVS;
+
+    if (decal.distance > 0.0) // perspective
+    {
+        radius = decal.c; // precomputed bounding sphere radius
+        float midZ = -(decal.a + decal.b) * 0.5; // center of near..far range
+        posVS = (decal.mvm * vec4(0.0, 0.0, midZ, 1.0)).xyz;
+    }
+    else // orthographic
+    {
+        radius = length(vec3(decal.a, decal.b, decal.c));
+        posVS = (decal.mvm * vec4(0, 0, 0, 1)).xyz;
+    }
+
     for (int i = 0; i < 4; ++i)
     {
         if (dot(frustum.planes[i].xyz, posVS) - frustum.planes[i].w < -radius)

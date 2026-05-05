@@ -15,10 +15,14 @@ struct Decal
 {
     mat4 mvm;
     mat4 mvmInverse;
-    float hx, hy, hz;  // half extents of bbox (no vec3 in ssbo please)
-    int textureIndex;  // union of decal count (element 0) and textureIndex
+    float a; // halfX extent (ortho) or zmin (persp)
+    float b; // halfY extent (ortho) or zmax (persp)
+    float c; // halfZ extent (ortho) or culling radius (persp)
+    int textureIndex;
     float opacity;
-    float padding[3];
+    float distance; // > 0 = persp
+    float tanHalfFovY;
+    float aspect;
 };
 
 

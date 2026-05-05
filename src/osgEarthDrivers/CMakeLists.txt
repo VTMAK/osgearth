@@ -18,6 +18,7 @@ add_subdirectory(vdatum_egm96)
 add_subdirectory(viewpoints)
 add_subdirectory(webp)
 add_subdirectory(zip)
+add_subdirectory(stbdxt)
 
 add_subdirectory(script_engine_quickjsng)
 add_subdirectory(script_engine_duktape)

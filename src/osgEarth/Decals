@@ -17,6 +17,11 @@ namespace osgEarth
         class ShaderPackage;
     }
 
+    enum class DecalProjection {
+        ORTHOGRAPHIC = 0,
+        PERSPECTIVE = 1
+    };
+
     /**
     * Parameters controling the placement and appearance of a decal
     */
@@ -25,7 +30,7 @@ namespace osgEarth
         //! Optional matrix that places and orients the decal
         osg::Matrix matrix;
 
-        //! Rendered size of the decal in world units (meters)
+        //! Rendered size of the decal in world units (meters) [orthographic mode]
         osg::Vec3f size = osg::Vec3f{ 1.0f, 1.0f, 10.0f };
 
         //! Texture dimensions in world units (meters). If not set, defaults to 'size'.
@@ -33,6 +38,20 @@ namespace osgEarth
 
         //! Opacity (alpha)
         float opacity = 1.0f;
+
+        //! Projection mode
+        DecalProjection projection = DecalProjection::ORTHOGRAPHIC;
+
+        //! Vertical field of view in degrees [perspective mode]
+        float fovY_deg = 45.0f;
+
+        //! Width / height ratio [perspective mode]
+        float aspectRatio = 1.0f;
+
+        //! Distance from projector to target in meters [perspective mode].
+        //! Near/far clips are derived from distance and size.z() (depth):
+        //! near = distance - depth/2, far = distance + depth/2.
+        float distance = 100.0f;
     };
 
     /**
@@ -216,13 +235,26 @@ namespace osgEarth
         {
             osg::Matrixf mvm;
             osg::Matrixf mvmInverse;
-            float halfX, halfY, halfZ; // half extents of bbox (no vec3 in ssbo please)
             union {
-                std::int32_t textureIndex = -1;
-                std::int32_t count;
+                float halfX; // ortho: half extent
+                float zMin;  // persp: far clip in decal tangent space
+            };
+            union {
+                float halfY; // ortho: half extent
+                float zMax;  // persp: near clip in decal tangent space
+            };
+            union {
+                float halfZ; // ortho: half extent
+                float radius; // persp: culling radius
+            };
+            union {
+                std::int32_t textureIndex = -1; // index > 0
+                std::int32_t count; // index == 0
             };
             float opacity = 1.0f;
-            GLfloat padding[3];
+            GLfloat distance = 0.0f;    // distance (persp only)
+            GLfloat tanHalfFovY = 0.0f; // tan(fovY/2) (persp only)
+            GLfloat aspect = 0.0f;      // aspect ratio (persp only)
         };
         static_assert(sizeof(GPUDecal) % 16 == 0);
 

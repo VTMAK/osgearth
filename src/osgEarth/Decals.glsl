@@ -32,12 +32,38 @@ void oe_applyDecals(inout vec4 color)
     {
         Decal decal = oe_decals[tile.indices[i]];
 
-        vec3 local = (decal.mvmInverse * vec4(vp_VertexView, 1.0)).xyz; // vertex projected into decal space
-        vec3 bbox = vec3(decal.hx, decal.hy, decal.hz);
+        vec3 local = (decal.mvmInverse * vec4(vp_VertexView, 1.0)).xyz;
 
-        if (all(lessThanEqual(abs(local), bbox)))
+        vec2 uv;
+        bool inside = false;
+
+        if (decal.distance > 0.0) // perspective
         {
-            vec2 uv = (local.xy / bbox.xy + vec2(1.0)) * vec2(0.5);
+            // decal.a = zmin (far), decal.b = zmax (near)
+            if (local.z >= decal.a && local.z <= decal.b)
+            {
+                float halfW = (decal.distance - local.z) * decal.tanHalfFovY * decal.aspect;
+                float halfH = (decal.distance - local.z) * decal.tanHalfFovY;
+
+                if (abs(local.x) <= halfW && abs(local.y) <= halfH)
+                {
+                    uv = vec2(local.x / halfW, local.y / halfH) * 0.5 + 0.5;
+                    inside = true;
+                }
+            }
+        }
+        else // orthographic
+        {
+            vec3 bbox = vec3(decal.a, decal.b, decal.c); // decal.a,b,c = tangent bbox half-extents
+            if (all(lessThanEqual(abs(local), bbox)))
+            {
+                uv = (local.xy / bbox.xy + vec2(1.0)) * vec2(0.5);
+                inside = true;
+            }
+        }
+
+        if (inside)
+        {
             int ti = decal.textureIndex;
             vec4 tex = ti >= 0 ? texture(sampler2D(oe_decalTextures[ti]), uv) : vec4(1, 0, 0, 1);
             color.rgb = mix(color.rgb, tex.rgb, tex.a * decal.opacity * (1.0-u_debugTiles));
