@@ -84,6 +84,14 @@ uniform vec4 oe_lod_scale;
 uniform float osg_FrameTime;
 uniform float oe_chonk_lod_transition_factor = 0.0;
 
+#ifdef OE_IS_SHADOW_CAMERA
+// xform from shadow camera view space to primary camera view space
+uniform mat4 oe_shadowToPrimaryMatrix;
+uniform mat4 oe_primaryProjectionMatrix;
+uniform vec2 oe_primaryViewport;
+#endif
+uniform float oe_chonk_shadow_buffer_multiplier = 1.0;
+
 // Support a user-defined LOD scale uniform. When not present,
 // default to osgEarth's LOD scale value in oe_Camera.z.
 #ifdef OE_LOD_SCALE_UNIFORM
@@ -101,6 +109,31 @@ uniform float OE_LOD_SCALE_UNIFORM;
 #define REASON_FRUSTUM 1.5
 #define REASON_SSE 2.5
 #define REASON_NEARCLIP 3.5
+
+
+// calcluates the clip-space minimum bounding box of a view-space bounding sphere
+void compute_clip_mbb(in vec4 p_view, in float r, in mat4 proj, out vec4 LL, out vec4 UR)
+{
+    vec4 temp;
+    temp = proj * (p_view + vec4(-r, -r, -r, 0)); temp /= temp.w;
+    LL = temp; UR = temp;
+    temp = proj * (p_view + vec4(-r, -r, +r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(-r, +r, -r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(-r, +r, +r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(+r, -r, -r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(+r, -r, +r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(+r, +r, -r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+    temp = proj * (p_view + vec4(+r, +r, +r, 0)); temp /= temp.w;
+    LL = min(LL, temp); UR = max(UR, temp);
+}
+
+
 
 void cull()
 {
@@ -130,84 +163,105 @@ void cull()
     float max_scale = max(xform[0][0], max(xform[1][1], xform[2][2]));
     float r = chonks[v].bs.w * max_scale;
 
+
+
+    mat4 proj;
+    vec2 viewport;
+
+
+#ifdef OE_IS_SHADOW_CAMERA
+    // For a shadow camera we want to cull instances based on their location
+    // in the primary camera, not the shadow camera:
+    center_view = oe_shadowToPrimaryMatrix * center_view;
+    proj = oe_primaryProjectionMatrix;
+    viewport = oe_primaryViewport;
+#else
+    proj = gl_ProjectionMatrix;
+    viewport = oe_Camera.xy;
+
     // Trivially reject low-LOD instances that intersect the near clip plane:
-    if ((lod > 0) && (gl_ProjectionMatrix[3][3] < 0.01)) // is perspective camera
+    if ((lod > 0) && (proj[3][3] < 0.01)) // is perspective camera
     {
-        float near = gl_ProjectionMatrix[2][3] / (gl_ProjectionMatrix[2][2] - 1.0);
+        float near = proj[2][3] / (proj[2][2] - 1.0);
         if (-(center_view.z + r) <= near)
         {
             REJECT(REASON_NEARCLIP);
         }
     }
-
-    // find the clip-space MBR and intersect with the clip frustum:
-    vec4 LL, UR, temp;
-    temp = gl_ProjectionMatrix * (center_view + vec4(-r, -r, -r, 0)); temp /= temp.w;
-    LL = temp; UR = temp;
-    temp = gl_ProjectionMatrix * (center_view + vec4(-r, -r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(-r, +r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(-r, +r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(+r, -r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(+r, -r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(+r, +r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = gl_ProjectionMatrix * (center_view + vec4(+r, +r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-
-#if OE_GPUCULL_DEBUG
-    float threshold = 0.95; // 0.75;
-#else
-    float threshold = 1.0;
 #endif
 
-    if (LL.x > threshold || LL.y > threshold)
+
+    // Clip-space frustum boundary (in each direction)
+    float frustumBoundary = 1.0 * oe_chonk_shadow_buffer_multiplier;
+
+
+    // Compute the minimum bounding box in clip space for this instance:
+    vec4 LL, UR;
+    compute_clip_mbb(center_view, r, proj, LL, UR);
+
+    // Test against the view frustum:
+    bool outsideFrustum =
+        LL.x > frustumBoundary || UR.x < -frustumBoundary ||
+        LL.y > frustumBoundary || UR.y < -frustumBoundary;
+
+
+#ifdef OE_IS_SHADOW_CAMERA
+
+    // For a shadow camera, keep coarse-LOD instances even if they do not pass the frustum cull.
+    // This allows them to cast shadows into the visible frustum but only from a low LOD.
+    uint coarsestLod = chonks[v].num_lods - 1;
+
+    if (outsideFrustum && (lod != coarsestLod))
         REJECT(REASON_FRUSTUM);
 
-    if (UR.x < -threshold || UR.y < -threshold)
+#else // normal camera
+
+    if (outsideFrustum)
         REJECT(REASON_FRUSTUM);
 
-#ifndef OE_IS_SHADOW_CAMERA
+#endif
 
-    // OK, it is in view - now check pixel size on screen for this LOD:
-    vec2 dims = 0.5*(UR.xy - LL.xy)*oe_Camera.xy;
-
-    float pixelSize = min(dims.x, dims.y);
-    float pixelSizePad = pixelSize * oe_chonk_lod_transition_factor;
-
-    float minPixelSize = oe_sse * chonks[v].far_pixel_scale * oe_lod_scale[lod];
-    if (pixelSize < (minPixelSize - pixelSizePad))
-        REJECT(REASON_SSE);
-
-    float maxPixelSize = 3e38; // 1e10;
-    if (lod > 0)
+    // Check this, since we could have a instance outside the frustum (from the shadow pass or
+    // from a oe_chonk_shadow_buffer_multiplier > 1.0)
+    if (!outsideFrustum)
     {
-        float near_scale = chonks[v].near_pixel_scale * oe_lod_scale[lod - 1];
-        maxPixelSize = oe_sse * near_scale;
+        // Pixel-size-on-screen culling:
+        vec2 dims = 0.5 * (UR.xy - LL.xy) * viewport;
 
-        if (pixelSize > (maxPixelSize + pixelSizePad))
+        float pixelSize = min(dims.x, dims.y);
+        float pixelSizePad = pixelSize * oe_chonk_lod_transition_factor;
+
+        float minPixelSize = oe_sse * chonks[v].far_pixel_scale * oe_lod_scale[lod];
+        if (pixelSize < (minPixelSize - pixelSizePad))
             REJECT(REASON_SSE);
+
+        float maxPixelSize = 3e38;
+        if (lod > 0)
+        {
+            float near_scale = chonks[v].near_pixel_scale * oe_lod_scale[lod - 1];
+            maxPixelSize = oe_sse * near_scale;
+
+            if (pixelSize > (maxPixelSize + pixelSizePad))
+                REJECT(REASON_SSE);
+        }
+
+        // LOD cross-fade:
+        if (fade == 1.0)
+        {
+            pixelSizePad = max(pixelSizePad, 1.0);
+            if (pixelSize > maxPixelSize)
+                fade = 1.0 - (pixelSize - maxPixelSize) / pixelSizePad;
+            else if (pixelSize < minPixelSize)
+                fade = 1.0 - (minPixelSize - pixelSize) / pixelSizePad;
+        }
+
+        // Birthday fade-in:
+        const float fadein_time = 2.0; // seconds
+        float birth = clamp((osg_FrameTime - chonks[v].birthday) / fadein_time, 0.0, 1.0);
+        fade *= birth;
     }
 
-    if (fade == 1.0)  // good to go, set the proper fade:
-    {
-        pixelSizePad = max(pixelSizePad, 1.0);
-        if (pixelSize > maxPixelSize)
-            fade = 1.0 - (pixelSize - maxPixelSize) / pixelSizePad;
-        else if (pixelSize < minPixelSize)
-            fade = 1.0 - (minPixelSize - pixelSize) / pixelSizePad;
-    }
-
-    // Birthday-based fading:
-    const float fadein_time = 2.0; // seconds
-    float birth = clamp((osg_FrameTime - chonks[v].birthday) / fadein_time, 0.0, 1.0);
-    fade *= birth;
-
-    // Distance-based fading:
+    // Distance-based fade:
     float fade_range = chonks[v].fade_far - chonks[v].fade_near;
     if (fade_range > 0.0)
     {
@@ -217,8 +271,6 @@ void cull()
 
     if (fade < 0.1)
         return;
-
-#endif // !OE_IS_SHADOW_CAMERA
 
     // Pass! Set the visibility for this LOD:
     input_instances[i].visibility[lod] = fade;

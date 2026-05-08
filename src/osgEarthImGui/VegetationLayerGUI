@@ -111,6 +111,12 @@ namespace osgEarth
                             if (ImGuiLTable::SliderFloat("High impostor angle", &bb_high, 0.0f, 90.0f))
                                 _veglayer->setImpostorHighAngle(Angle(bb_high, Units::DEGREES));
 
+                            static float oe_chonk_shadow_buffer_multiplier = 1.0f;
+                            if (ImGuiLTable::SliderFloat("Shadow buffer multiplier", &oe_chonk_shadow_buffer_multiplier, 0.1f, 10.0f))
+                            {
+                                stateset(ri)->getOrCreateUniform("oe_chonk_shadow_buffer_multiplier", osg::Uniform::FLOAT)->set(oe_chonk_shadow_buffer_multiplier);
+                            }
+
                             bool normalMaps = _veglayer->getUseImpostorNormalMaps();
                             if (ImGuiLTable::Checkbox("Use impostor normal maps", &normalMaps))
                                 _veglayer->setUseImpostorNormalMaps(normalMaps);

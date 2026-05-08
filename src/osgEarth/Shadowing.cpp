@@ -153,6 +153,12 @@ ShadowCaster::reinitialize()
     _shadowToPrimaryMatrix = _rttStateSet->getOrCreateUniform(
         "oe_shadowToPrimaryMatrix", osg::Uniform::FLOAT_MAT4);
 
+    _primaryProjectionMatrix = _rttStateSet->getOrCreateUniform(
+        "oe_primaryProjectionMatrix", osg::Uniform::FLOAT_MAT4);
+
+    _primaryViewportUniform = _rttStateSet->getOrCreateUniform(
+        "oe_primaryViewport", osg::Uniform::FLOAT_VEC2);
+
     _renderStateSet = new osg::StateSet();
 
     // Establish a Virtual Program on the stateset.
@@ -262,6 +268,12 @@ ShadowCaster::traverse(osg::NodeVisitor& nv)
             // between the two cameras.
             osg::Matrix lightViewMatInv = osg::Matrix::inverse(lightViewMat);
             _shadowToPrimaryMatrix->set( lightViewMatInv * MV);
+
+            // and a projection matrix, so we can do clip-space work if necessary:
+            _primaryProjectionMatrix->set(*cv->getProjectionMatrix());
+
+            // and the primary viewport
+            _primaryViewportUniform->set(osg::Vec2f(cv->getViewport()->width(), cv->getViewport()->height()));
 
             if (_prevProjMatrix.isIdentity())
             {

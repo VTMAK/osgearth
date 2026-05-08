@@ -139,6 +139,8 @@ namespace osgEarth { namespace Util
         osg::ref_ptr<osg::Uniform>  _shadowBlurUniform;
         osg::ref_ptr<osg::Uniform>  _shadowColorUniform;
         osg::ref_ptr<osg::Uniform>  _shadowToPrimaryMatrix;
+        osg::ref_ptr<osg::Uniform>  _primaryProjectionMatrix;
+        osg::ref_ptr<osg::Uniform>  _primaryViewportUniform;
     };
 
 } }
