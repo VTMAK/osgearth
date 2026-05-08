@@ -140,6 +140,9 @@ flat in uint oe_normal_technique;
 
 const float oe_normal_attenuation = 0.65;
 
+uniform float oe_alpha_discard_threshold = 0.5;
+uniform float oe_shadow_alpha_discard_threshold = 0.5;
+
 // make a TBN from normal, vertex position, and texture uv
 // https://gamedev.stackexchange.com/a/86543
 mat3 make_tbn(vec3 N, vec3 p, vec2 uv)
@@ -163,8 +166,6 @@ mat3 make_tbn(vec3 N, vec3 p, vec2 uv)
 
 void oe_chonk_default_fragment(inout vec4 color)
 {
-    const float alpha_discard_threshold = 0.5;
-
     // When simulating normals, we invert the texture coordinates
     // for backfacing geometry
     if (!gl_FrontFacing && oe_normal_technique != NT_DEFAULT)
@@ -186,7 +187,7 @@ void oe_chonk_default_fragment(inout vec4 color)
 #if defined(OE_IS_SHADOW_CAMERA) || defined(OE_IS_DEPTH_CAMERA)
 
     // for shadowing cameras, just do a simple step discard.
-    color.a = step(alpha_discard_threshold, color.a * oe_fade);
+    color.a = step(oe_shadow_alpha_discard_threshold, color.a * oe_fade);
     if (color.a < 1.0)
         discard;
 
@@ -225,7 +226,7 @@ void oe_chonk_default_fragment(inout vec4 color)
     // flickering artifacts.
     // (TODO: consider a cheap alpha-only pass that we can sample to prevent overdraw
     // and discard in the expensive shader)
-    color.a = step(alpha_discard_threshold, color.a);
+    color.a = step(oe_alpha_discard_threshold, color.a);
     if (color.a < 1.0)
         discard;
 
