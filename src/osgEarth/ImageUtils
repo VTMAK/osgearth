@@ -704,6 +704,8 @@ namespace osgEarth { namespace Util
     class OSGEARTH_EXPORT TextureAndImageVisitor : public osg::NodeVisitor
     {
     public:
+        using osg::NodeVisitor::apply;
+
         TextureAndImageVisitor();
         virtual ~TextureAndImageVisitor() { }
 
