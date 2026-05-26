@@ -1,0 +1,18 @@
+<!--
+Mapterhorn Elevation
+https://mapterhorn.com/
+-->
+<Map name="Mapterhorn Elevation">    
+    <XYZElevation name="Mapterhorn Elevation">
+        <url>https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png</url>
+        <elevation_encoding>terrarium</elevation_encoding>
+        <max_level>12</max_level>
+        <stitch_edges>true</stitch_edges>
+    </XYZElevation>
+
+    <ContourMap name="Color Ramp"/>
+    
+    <gdaldem name="Hill Shade" blend="modulate" opacity="0.15">
+        <processing>hillshade</processing>
+    </gdaldem>
+</Map>
