@@ -19,6 +19,7 @@
 // whether to use the rotated axis-aligned bounding box method for
 // calculating a Voronoi site centroid (as opposed to a simple centroid)
 #define USE_ROTATED_AABB_CENTROID_METHOD 1
+//#define USE_WIDEST_SEGMENT_CENTROID_METHOD 1
 
 #undef FADE_UNIFORM_NAME
 #define FADE_UNIFORM_NAME "oe_declutter_fade"
@@ -34,6 +35,82 @@ namespace osgEarth { namespace Internal
             else return a.y < b.y;
         }
     };
+    struct WidthResult
+    {
+        osg::Vec3f left;
+        osg::Vec3f right;
+        osg::Vec3f center;
+        float width;
+    };
+
+    WidthResult widestXSegment(const std::vector<osg::Vec3f>& poly)
+    {
+        const float EPS = 1e-6f;
+
+        WidthResult best;
+        best.left = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.right = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.center = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.width = -1.0f;
+
+        for (std::size_t py = 0; py < poly.size(); ++py)
+        {
+            const float y = poly[py].y();
+
+            std::vector<float> xs;
+
+            for (std::size_t i = 0; i < poly.size(); ++i)
+            {
+                const osg::Vec3f& a = poly[i];
+                const osg::Vec3f& b = poly[(i + 1) % poly.size()];
+
+                // Skip horizontal edges
+                if (std::fabs(a.y() - b.y()) < EPS)
+                    continue;
+
+                const float ymin = std::min(a.y(), b.y());
+                const float ymax = std::max(a.y(), b.y());
+
+                // Half-open interval avoids double-counting vertices
+                if (y + EPS >= ymin && y < ymax - EPS)
+                {
+                    const float t = (y - a.y()) / (b.y() - a.y());
+                    const float x = a.x() + t * (b.x() - a.x());
+                    xs.push_back(x);
+                }
+            }
+
+            // Include vertices lying exactly on this Y
+            for (std::size_t i = 0; i < poly.size(); ++i)
+            {
+                if (std::fabs(poly[i].y() - y) < EPS)
+                    xs.push_back(poly[i].x());
+            }
+
+            if (xs.size() < 2)
+                continue;
+
+            std::vector<float>::const_iterator minIt =
+                std::min_element(xs.begin(), xs.end());
+
+            std::vector<float>::const_iterator maxIt =
+                std::max_element(xs.begin(), xs.end());
+
+            const float x0 = *minIt;
+            const float x1 = *maxIt;
+            const float w = x1 - x0;
+
+            if (w > best.width)
+            {
+                best.left = osg::Vec3f(x0, y, 0);
+                best.right = osg::Vec3f(x1, y, 0);
+                best.center = osg::Vec3f((x0 + x1) * 0.5f, y, 0);
+                best.width = w;
+            }
+        }
+
+        return best;
+    }
 
     /**
     * Custom RenderLeaf sorting algorithm for deconflicting drawables
@@ -69,7 +146,7 @@ namespace osgEarth { namespace Internal
 
             Element();
             bool operator < (const Element&) const; // comparator
-            void move(float dir);
+            //void move(float dir);
         };
 
         using Elements = std::map<osg::Drawable*, Element>;
@@ -130,14 +207,14 @@ namespace osgEarth { namespace Internal
         return ((intptr_t)_drawable < (intptr_t)rhs._drawable);
     }
 
-    void
-    CalloutImplementation::Element::move(float dir)
-    {
-        // rotate little more than 1/4 turn:
-        const double rotation = osg::PI / 16; //1.7; //osg::PI / 32; //1.6;
-        const osg::Quat q(dir*rotation, osg::Vec3d(0, 0, 1));
-        _offsetVector = q * _offsetVector;
-    }
+    //void
+    //CalloutImplementation::Element::move(float dir)
+    //{
+    //    // rotate little more than 1/4 turn:
+    //    const double rotation = osg::PI / 16; //1.7; //osg::PI / 32; //1.6;
+    //    const osg::Quat q(dir*rotation, osg::Vec3d(0, 0, 1));
+    //    _offsetVector = q * _offsetVector;
+    //}
 
     CalloutImplementation::CameraLocal::CameraLocal() :
         _camera(0),
@@ -159,7 +236,7 @@ namespace osgEarth { namespace Internal
         _voronoi = new LineDrawable(GL_LINES);
         _voronoi->setCullingActive(false);
         _voronoi->setDataVariance(osg::Object::DYNAMIC);
-        _voronoi->setColor(osg::Vec4f(1,0,0,1));
+        _voronoi->setColor(osg::Vec4f(0.3, 0.3, 0.3, 1)); // 1, 0, 0, 1));
         _voronoi->setLineWidth(1.0f);
         GLUtils::setLighting(_voronoi->getOrCreateStateSet(), osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
     }
@@ -373,11 +450,33 @@ namespace osgEarth { namespace Internal
         for(int i=0; i<diagram.numsites; ++i)
         {
             const jcv_site* site = &sites[i];
-
+            
             Element* element = local._lookup[site->p];
             if (element)
             {
-#ifdef USE_ROTATED_AABB_CENTROID_METHOD
+#if defined(USE_WIDEST_SEGMENT_CENTROID_METHOD)
+
+                // This centroid-finding method calculates the widest horizontal segment in the site,
+                // and uses the midpoint of that segment as the centroid. This seems to provide a
+                // better centroid for long skinny sites.
+                std::vector<osg::Vec3f> poly;
+                const jcv_graphedge* edge = site->edges;
+                while (edge)
+                {
+                    poly.emplace_back(edge->pos[0].x, edge->pos[0].y, 0);
+
+                    if (local._voronoi.valid())
+                    {
+                        local._voronoi->pushVertex(osg::Vec3f(edge->pos[0].x, edge->pos[0].y, 0));
+                        local._voronoi->pushVertex(osg::Vec3f(edge->pos[1].x, edge->pos[1].y, 0));
+                    }
+
+                    edge = edge->next;
+                }
+                WidthResult r = widestXSegment(poly);
+                osg::Vec3d centroid(r.center.x(), r.center.y(), 0);
+
+#elif defined(USE_ROTATED_AABB_CENTROID_METHOD)
                 // This centroid-finding method calculates an axis-aligned bounding box formed by
                 // first rotating the site so that its longest edge is axis-aligned. This seems to
                 // provide a better centroid in some cases, esp for trianglar sites.
