@@ -140,9 +140,12 @@ namespace osgEarth { namespace Internal
             osg::Vec3d _anchor;
             osg::Vec3d _offsetVector;
             double _offsetLength;
+            osg::Vec3d _pendingOffsetVector;
+            double _pendingOffsetLength;
             unsigned _leaderLineIndex;
             bool _declutter;
             int _numFramesSinceMove;
+            bool _pendingOffsetValid;
 
             Element();
             bool operator < (const Element&) const; // comparator
@@ -191,13 +194,16 @@ namespace osgEarth { namespace Internal
     CalloutImplementation::Element::Element() :
         _drawable(NULL),
         _text(NULL),
-        _frame(0u),
-        _leaderLineIndex(INT_MAX),
-        _offsetVector(0,1,0),
         _leaf(NULL),
+        _frame(0u),
+        _offsetVector(0,1,0),
         _offsetLength(0.0),
+        _pendingOffsetVector(0,1,0),
+        _pendingOffsetLength(0.0),
+        _leaderLineIndex(INT_MAX),
         _declutter(false),
-        _numFramesSinceMove(0)
+        _numFramesSinceMove(0),
+        _pendingOffsetValid(false)
     {
         //nop
     }
@@ -313,11 +319,15 @@ namespace osgEarth { namespace Internal
         {
             element._offsetVector = element._anchor - osg::Vec3d(0.5*vp->width(), 0.5*vp->height(), 0.0);
             element._offsetVector.normalize();
+            element._pendingOffsetValid = false;
+            element._numFramesSinceMove = 0;
         }
         else if (_resetWhenViewChanges && local._vpmChanged)
         {
             element._offsetVector = element._anchor - osg::Vec3d(0.5*vp->width(), 0.5*vp->height(), 0.0);
             element._offsetVector.normalize();
+            element._pendingOffsetValid = false;
+            element._numFramesSinceMove = 0;
         }
 
         if (element._leaderLineIndex == INT_MAX)
@@ -558,21 +568,48 @@ namespace osgEarth { namespace Internal
                 osg::Vec3d prevOffset = element->_offsetVector;
                 osg::Vec3d newOffset = centroid - element->_anchor;
                 double newOffsetLength = newOffset.length();
+                if (newOffsetLength == 0.0)
+                    continue;
                 newOffset.normalize();
 
                 // Try to avoid moving the offsetVector too drastically per frame.
                 // If the label still needs to move after 60 frames go ahead and move it.
                 // This helps for fast moving entities or if you are moving the camera quickly.
                 double dot = newOffset * prevOffset;
-                if (dot < 0.9 && element->_numFramesSinceMove < 60)
+                if (dot < 0.9)
                 {
-                    element->_numFramesSinceMove++;
+                    const double pendingDot = element->_pendingOffsetValid ?
+                        newOffset * element->_pendingOffsetVector :
+                        -1.0;
+
+                    if (!element->_pendingOffsetValid || pendingDot < 0.98)
+                    {
+                        element->_pendingOffsetVector = newOffset;
+                        element->_pendingOffsetLength = newOffsetLength;
+                        element->_pendingOffsetValid = true;
+                        element->_numFramesSinceMove = 1;
+                    }
+                    else
+                    {
+                        element->_pendingOffsetVector = newOffset;
+                        element->_pendingOffsetLength = newOffsetLength;
+                        element->_numFramesSinceMove++;
+                    }
+
+                    if (element->_numFramesSinceMove >= 60)
+                    {
+                        element->_offsetVector = element->_pendingOffsetVector;
+                        element->_offsetLength = element->_pendingOffsetLength;
+                        element->_pendingOffsetValid = false;
+                        element->_numFramesSinceMove = 0;
+                    }
                 }
                 else
                 {
-                    element->_offsetVector = newOffset;
+                    element->_offsetVector = prevOffset * 0.85 + newOffset * 0.15;
                     element->_numFramesSinceMove = 0;
                     element->_offsetLength = newOffsetLength;
+                    element->_pendingOffsetValid = false;
                     element->_offsetVector.normalize();
                 }
             }
