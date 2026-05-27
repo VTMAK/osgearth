@@ -175,7 +175,7 @@ namespace osgEarth { namespace Internal
         ScreenSpaceLayoutContext* _context;
         DeclutterSortFunctor* _customSortFunctor;
         PerObjectFastMap<const osg::Camera*, CameraLocal> _cameraLocal;
-        bool _resetWhenViewChanges;
+        bool _resetWhenViewChanges = false;
 
         //! Constructor
         CalloutImplementation(ScreenSpaceLayoutContext* context, DeclutterSortFunctor* f);
@@ -243,8 +243,7 @@ namespace osgEarth { namespace Internal
 
     CalloutImplementation::CalloutImplementation(ScreenSpaceLayoutContext* context, DeclutterSortFunctor* f) :
         _context(context),
-        _customSortFunctor(f),
-        _resetWhenViewChanges(false)
+        _customSortFunctor(f)
     {
         //nop
     }
@@ -565,7 +564,7 @@ namespace osgEarth { namespace Internal
                 // If the label still needs to move after 60 frames go ahead and move it.
                 // This helps for fast moving entities or if you are moving the camera quickly.
                 double dot = newOffset * prevOffset;
-                if (osg::absolute(dot) < 0.9 && element->_numFramesSinceMove < 60)
+                if (dot < 0.9 && element->_numFramesSinceMove < 60)
                 {
                     element->_numFramesSinceMove++;
                 }
