@@ -48,6 +48,8 @@ namespace osgEarth
     class /*header-only*/ MapNodeObserverVisitor : public osg::NodeVisitor
     {
     public:
+        using osg::NodeVisitor::apply;
+
         MapNodeObserverVisitor(osg::NodeVisitor::TraversalMode mode =osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
             : osg::NodeVisitor( mode ) { }
         
