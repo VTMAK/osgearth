@@ -258,6 +258,10 @@ namespace osgEarth { namespace Internal
         inline float signOf(float x) {
             return x<0.0f? -1.0f: x>0.0f? 1.0f : 0.0f;
         }
+
+        inline double clampTo(double x, double minValue, double maxValue) {
+            return osg::maximum(minValue, osg::minimum(maxValue, x));
+        }
     }
 
     void CalloutImplementation::push(osgUtil::RenderLeaf* leaf, CameraLocal& local)
@@ -409,6 +413,22 @@ namespace osgEarth { namespace Internal
         bounds.min.x = vp->x() + K, bounds.min.y = vp->y() + K;
         bounds.max.x = vp->x() + vp->width() - K * 2, bounds.max.y = vp->y() + vp->height() - K * 2;
 
+        struct SiteCluster
+        {
+            SiteCluster(const osg::Vec2d& in_center, Element* in_element) :
+                center(in_center)
+            {
+                elements.push_back(in_element);
+            }
+
+            osg::Vec2d center;
+            std::vector<Element*> elements;
+        };
+
+        const double clusterDistance = 4.0;
+        const double clusterDistance2 = clusterDistance * clusterDistance;
+        std::vector<SiteCluster> siteClusters;
+
         for (Elements::reverse_iterator i = local._elements.rbegin();
             i != local._elements.rend();
             ++i)
@@ -429,10 +449,64 @@ namespace osgEarth { namespace Internal
                         element._anchor.y() >= bounds.min.y &&
                         element._anchor.y() <= bounds.max.y)
                     {
-                        jcv_point back{ element._anchor.x(), element._anchor.y() };
-                        local._points.emplace_back(back);
-                        local._lookup[back] = &element;
+                        osg::Vec2d anchor(element._anchor.x(), element._anchor.y());
+                        bool addedToCluster = false;
+
+                        for (SiteCluster& cluster : siteClusters)
+                        {
+                            const double dx = anchor.x() - cluster.center.x();
+                            const double dy = anchor.y() - cluster.center.y();
+                            if (dx * dx + dy * dy <= clusterDistance2)
+                            {
+                                const double count = static_cast<double>(cluster.elements.size());
+                                cluster.center.x() = (cluster.center.x() * count + anchor.x()) / (count + 1.0);
+                                cluster.center.y() = (cluster.center.y() * count + anchor.y()) / (count + 1.0);
+                                cluster.elements.push_back(&element);
+                                addedToCluster = true;
+                                break;
+                            }
+                        }
+
+                        if (!addedToCluster)
+                        {
+                            siteClusters.emplace_back(anchor, &element);
+                        }
                     }
+                }
+            }
+        }
+
+        for (SiteCluster& cluster : siteClusters)
+        {
+            std::sort(cluster.elements.begin(), cluster.elements.end(),
+                [](const Element* lhs, const Element* rhs)
+                {
+                    return (intptr_t)lhs->_drawable < (intptr_t)rhs->_drawable;
+                });
+
+            if (cluster.elements.size() == 1)
+            {
+                Element* element = cluster.elements.front();
+                jcv_point site{ element->_anchor.x(), element->_anchor.y() };
+                local._points.emplace_back(site);
+                local._lookup[site] = element;
+            }
+            else
+            {
+                const double minX = bounds.min.x + 0.001;
+                const double maxX = bounds.max.x - 0.001;
+                const double minY = bounds.min.y + 0.001;
+                const double maxY = bounds.max.y - 0.001;
+                const double radius = clusterDistance;
+
+                for (std::size_t k = 0; k < cluster.elements.size(); ++k)
+                {
+                    const double angle = (2.0 * osg::PI * static_cast<double>(k)) / static_cast<double>(cluster.elements.size());
+                    jcv_point site{
+                        clampTo(cluster.center.x() + std::cos(angle) * radius, minX, maxX),
+                        clampTo(cluster.center.y() + std::sin(angle) * radius, minY, maxY) };
+                    local._points.emplace_back(site);
+                    local._lookup[site] = cluster.elements[k];
                 }
             }
         }
