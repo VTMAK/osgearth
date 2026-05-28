@@ -13,7 +13,40 @@
 #include <Lerc_c_api.h>
 #include <Lerc_types.h>
 
+#include <vector>
+
 #define LC "[lerc] "
+
+// LERC 3.0 added the nMasks argument to the C API. LERC 2.x headers do not
+// define LERC_VERSION_NUMBER, so keep the checks simple and preprocessor-only.
+#if defined(LERC_VERSION_NUMBER) && LERC_VERSION_NUMBER >= 30000
+#define OE_LERC_HAS_NMASKS 1
+#else
+#define OE_LERC_HAS_NMASKS 0
+#endif
+
+#if defined(LERC_VERSION_NUMBER) && LERC_VERSION_NUMBER >= 40000
+constexpr int kInfoArraySize = 11; // v4 adds nDepth and nUsesNoDataValue.
+#elif OE_LERC_HAS_NMASKS
+constexpr int kInfoArraySize = 9;  // v3 adds nMasks.
+#else
+constexpr int kInfoArraySize = 8;  // v2 ends at blobSize.
+#endif
+
+enum InfoIdx
+{
+    IDX_version      = 0,
+    IDX_dataType     = 1,
+    IDX_nDim         = 2,  // a.k.a. nDepth in v4+
+    IDX_nCols        = 3,
+    IDX_nRows        = 4,
+    IDX_nBands       = 5,
+    IDX_nValidPixels = 6,
+    IDX_blobSize     = 7,
+    IDX_nMasks       = 8,  // v3+
+    IDX_nDepth       = 9,  // v4+
+    IDX_nUsesNoData  = 10  // v4+
+};
 
 typedef unsigned char Byte;    // convenience
 typedef unsigned int uint32;
@@ -50,24 +83,29 @@ public:
         std::unique_ptr<char[]> data(new char[length]);
         fin.read(data.get(), length);
 
-        uint32 infoArr[8];
+        uint32 infoArr[kInfoArraySize] = {};
 
         lerc_status hr(0);
 
-        hr = lerc_getBlobInfo((const unsigned char*)(data.get()), length, infoArr, NULL, 8, 0);
+        hr = lerc_getBlobInfo((const unsigned char*)(data.get()), length, infoArr, NULL, kInfoArraySize, 0);
         if (hr)
         {
             OE_WARN << LC << "Failed to get blob info error = " << hr << std::endl;
             return ReadResult::ERROR_IN_READING_FILE;
         }
 
-        unsigned int dataType = infoArr[1];
-        unsigned int numDims = infoArr[2];
-        unsigned int width = infoArr[3];
-        unsigned int height = infoArr[4];
-        unsigned int numBands = infoArr[5];
-        unsigned int nValidPixels = infoArr[6];
-        unsigned int blobSize = infoArr[7];
+        unsigned int dataType = infoArr[IDX_dataType];
+        unsigned int numDims = infoArr[IDX_nDim];
+        unsigned int width = infoArr[IDX_nCols];
+        unsigned int height = infoArr[IDX_nRows];
+        unsigned int numBands = infoArr[IDX_nBands];
+        unsigned int nValidPixels = infoArr[IDX_nValidPixels];
+        unsigned int blobSize = infoArr[IDX_blobSize];
+#if OE_LERC_HAS_NMASKS
+        unsigned int nMasks = infoArr[IDX_nMasks];
+#else
+        unsigned int nMasks = 0;
+#endif
 
         GLenum glDataType;
         int    sampleSize;
@@ -157,9 +195,24 @@ public:
         Byte* output = new Byte[totalOutputSize];
         memset(output, 0, totalOutputSize);
 
+        unsigned int totalPixels = width * height;
+        unsigned int nMasksToDecode = nMasks > 0 ? nMasks : (nValidPixels < totalPixels ? 1 : 0);
+        std::vector<Byte> validBytes(totalPixels * nMasksToDecode);
+
         // Decode the image
         unsigned int bandOffset = 0;
-        hr = lerc_decode((const unsigned char*)(data.get()), length, 0, nullptr, numDims, width, height, numBands, dataType, (void*)output);
+#if OE_LERC_HAS_NMASKS
+        hr = lerc_decode(
+            (const unsigned char*)(data.get()), length,
+            nMasksToDecode,
+            validBytes.empty() ? nullptr : validBytes.data(),
+            numDims, width, height, numBands, dataType, (void*)output);
+#else
+        hr = lerc_decode(
+            (const unsigned char*)(data.get()), length,
+            validBytes.empty() ? nullptr : validBytes.data(),
+            numDims, width, height, numBands, dataType, (void*)output);
+#endif
         if (hr)
         {
             delete[]output;
@@ -331,12 +384,21 @@ public:
 
 
 
-        hr = lerc_computeCompressedSize((void*)imageData,    // raw image data, row by row, band by band
+#if OE_LERC_HAS_NMASKS
+        hr = lerc_computeCompressedSize(
+            (void*)imageData,    // raw image data, row by row, band by band
             dataType, numDims, width, height, numBands,
-            0,
-            nullptr,
+            0, nullptr,          // all pixels are valid
             maxZError,           // max coding error per pixel, or precision
             &numBytesNeeded);    // size of outgoing Lerc blob
+#else
+        hr = lerc_computeCompressedSize(
+            (void*)imageData,    // raw image data, row by row, band by band
+            dataType, numDims, width, height, numBands,
+            nullptr,             // all pixels are valid
+            maxZError,           // max coding error per pixel, or precision
+            &numBytesNeeded);    // size of outgoing Lerc blob
+#endif
         if (hr)
         {
             OE_WARN << LC << "Failed to compute compressed size of  image error=" << hr << std::endl;
@@ -346,6 +408,7 @@ public:
         uint32 numBytesBlob = numBytesNeeded;
         Byte* pLercBlob = new Byte[numBytesBlob];
 
+#if OE_LERC_HAS_NMASKS
         hr = lerc_encode((void*)imageData,    // raw image data, row by row, band by band
             dataType, numDims, width, height, numBands,
             0,
@@ -354,6 +417,15 @@ public:
             pLercBlob,           // buffer to write to, function will fail if buffer too small
             numBytesBlob,        // buffer size
             &numBytesWritten);   // num bytes written to buffer
+#else
+        hr = lerc_encode((void*)imageData,    // raw image data, row by row, band by band
+            dataType, numDims, width, height, numBands,
+            nullptr,             // all pixels are valid
+            maxZError,           // max coding error per pixel, or precision
+            pLercBlob,           // buffer to write to, function will fail if buffer too small
+            numBytesBlob,        // buffer size
+            &numBytesWritten);   // num bytes written to buffer
+#endif
         if (hr)
         {
             delete[]pLercBlob;
