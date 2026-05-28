@@ -255,10 +255,6 @@ namespace osgEarth { namespace Internal
     }
 
     namespace {
-        inline float signOf(float x) {
-            return x<0.0f? -1.0f: x>0.0f? 1.0f : 0.0f;
-        }
-
         inline double clampTo(double x, double minValue, double maxValue) {
             return osg::maximum(minValue, osg::minimum(maxValue, x));
         }
@@ -363,8 +359,17 @@ namespace osgEarth { namespace Internal
             box.yMin() -= (hh * (local._dprscale.y() - 1.0));
             box.yMax() += (hh * (local._dprscale.y() - 1.0));
 
-            alignment.x() = element._offsetVector.x() * 0.5*(box.xMax()- box.xMin()) + margin*signOf(element._offsetVector.x());
-            alignment.y() = element._offsetVector.y() * 0.5*(box.yMax()- box.yMin()) + margin*signOf(element._offsetVector.y());
+            const osg::Vec3d boxCenter(
+                0.5*(box.xMin() + box.xMax()),
+                0.5*(box.yMin() + box.yMax()),
+                0.0);
+            const double halfWidth = 0.5*(box.xMax() - box.xMin());
+            const double halfHeight = 0.5*(box.yMax() - box.yMin());
+            const double absX = osg::absolute(element._offsetVector.x());
+            const double absY = osg::absolute(element._offsetVector.y());
+            const double tx = absX > 1e-6 ? halfWidth / absX : DBL_MAX;
+            const double ty = absY > 1e-6 ? halfHeight / absY : DBL_MAX;
+            alignment = element._offsetVector * (osg::minimum(tx, ty) + margin) - boxCenter;
 
             leaf->_modelview->makeTranslate(pos + alignment);
             leaf->_modelview->preMultScale(local._dprscale);
