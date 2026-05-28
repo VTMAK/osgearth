@@ -75,7 +75,7 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(
     void* dsHandle,
     void* layerHandle,
     const FeatureSource* source,
-    const FeatureProfile* profile,
+    const FeatureProfile* featureProfile,
     const Query& query,
     const FeatureFilterChain& filters,
     bool rewindPolygons,
@@ -87,7 +87,7 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(
     _dsHandle(dsHandle),
     _layerHandle(layerHandle),
     _chunkSize(chunkSize == 0u ? 500u : chunkSize),
-    _profile(profile),
+    _featureProfile(featureProfile),
     _filters(filters),
     _rewindPolygons(rewindPolygons),
     _query(query)
@@ -146,9 +146,9 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(
     }
 
     // if the tilekey is set, convert it to feature profile coords
-    if (_query.tileKey().isSet() && !_query.bounds().isSet() && profile)
+    if (_query.tileKey().isSet() && !_query.bounds().isSet() && featureProfile)
     {
-        GeoExtent localEx = _query.tileKey()->getExtent().transform(profile->getSRS());
+        GeoExtent localEx = _query.tileKey()->getExtent().transform(featureProfile->getSRS());
         _query.bounds() = localEx.bounds();
     }
 
@@ -187,8 +187,8 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(
     OGR_L_ResetReading(static_cast<OGRLayerH>(_resultSetHandle));
 
     _factory = new OGRFeatureFactory();
-    _factory->srs = _profile->getSRS();
-    _factory->interp = _profile->geoInterp();
+    _factory->srs = _featureProfile->getSRS();
+    _factory->interp = _featureProfile->geoInterp();
     _factory->rewindPolygons = _rewindPolygons;
     _factory->fieldNames.reserve(_source->getSchema().size());
     for(auto& f : _source->getSchema())
@@ -200,7 +200,7 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(
 OGR::OGRFeatureCursor::OGRFeatureCursor(void* resultSetHandle, const FeatureProfile* profile) :
     FeatureCursor(nullptr),
     _resultSetHandle(resultSetHandle),
-    _profile(profile)
+    _featureProfile(profile)
 {
     if (_resultSetHandle)
     {
@@ -208,8 +208,8 @@ OGR::OGRFeatureCursor::OGRFeatureCursor(void* resultSetHandle, const FeatureProf
     }
 
     _factory = new OGRFeatureFactory();
-    _factory->srs = _profile->getSRS();
-    _factory->interp = _profile->geoInterp();
+    _factory->srs = _featureProfile->getSRS();
+    _factory->interp = _featureProfile->geoInterp();
     _factory->rewindPolygons = _rewindPolygons;
 
     readChunk();

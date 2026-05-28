@@ -73,7 +73,7 @@ namespace osgEarth
         void setGeometry(const Geometry* geom) { _geometry = geom; }
         const Geometry* getGeometry() const { return _geometry.get(); }
 
-        //! Profile of feature data
+        //! Tiling profile of feature data
         void setProfile(const Profile* profile) { _profile = profile; }
         const Profile* getProfile() const { return _profile.get(); }
 
@@ -152,7 +152,7 @@ namespace osgEarth
                 void*                     dsHandle,
                 void*                     layerHandle,
                 const FeatureSource*      source,
-                const FeatureProfile*     profile,
+                const FeatureProfile*     featureProfile,
                 const Query&              query,
                 const FeatureFilterChain& filters,
                 bool                      rewindPolygons,
@@ -183,7 +183,7 @@ namespace osgEarth
             void* _nextHandleToQueue = nullptr;
             Query _query;
             osg::ref_ptr<const FeatureSource> _source;
-            osg::ref_ptr<const FeatureProfile> _profile;
+            osg::ref_ptr<const FeatureProfile> _featureProfile;
             std::queue< osg::ref_ptr<Feature> > _queue;
             osg::ref_ptr<Feature> _lastFeatureReturned;
             const FeatureFilterChain _filters;

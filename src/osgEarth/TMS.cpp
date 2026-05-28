@@ -9,6 +9,7 @@
 #include "LandCover"
 #include "MetaTile"
 #include "GDAL"
+#include "ImageToHeightFieldConverter"
 #include <osgDB/FileUtils>
 
 using namespace osgEarth;
@@ -1396,13 +1397,6 @@ TMSElevationLayer::createHeightFieldImplementation(const TileKey& key, ProgressC
                 return (p.r() * 255.0f * 256.0f + p.g() * 255.0f + p.b() * 255.0f / 256.0f) - 32768.0f;
             };
     }
-    else
-    {
-        decode = [](const osg::Vec4f& p) -> float
-            {
-                return p.r();
-            };
-    }
 
     if (options().stitchEdges() == true)
     {
@@ -1449,7 +1443,7 @@ TMSElevationLayer::createHeightFieldImplementation(const TileKey& key, ProgressC
                 double y = ymin + v * (ymax - ymin);
                 if (metaImage.readAtCoord(pixel, x, y))
                 {
-                    hf->setHeight(c, r, decode(pixel));
+                    hf->setHeight(c, r, decode ? decode(pixel) : pixel.r());
                 }
             }
         }
@@ -1464,27 +1458,32 @@ TMSElevationLayer::createHeightFieldImplementation(const TileKey& key, ProgressC
         if (geoImage.valid())
         {
             const osg::Image* image = geoImage.getImage();
+            osg::ref_ptr<osg::HeightField> hf;
 
-#if 0
-            ImageToHeightFieldConverter converter;
-            osg::ref_ptr<osg::HeightField> hf = converter.convert(image);
-            return GeoHeightField(hf.get(), key.getExtent());
+            if (decode)
+            {
+                hf = new osg::HeightField();
+                hf->allocate(image->s(), image->t());
 
-#else
-            // Allocate the heightfield.
-            osg::HeightField* hf = new osg::HeightField();
-            hf->allocate(image->s(), image->t());
+                ImageUtils::PixelReader read(image);
+                osg::Vec4f pixel;
 
-            ImageUtils::PixelReader read(image);
-            osg::Vec4f pixel;
-            read.forEachPixel([&](auto& i)
-                {
-                    read(pixel, i.s(), i.t());
-                    hf->setHeight(i.s(), i.t(), decode(pixel));
-                });
+                auto xform = [&](auto& i)
+                    {
+                        read(pixel, i.s(), i.t());
+                        hf->setHeight(i.s(), i.t(), decode(pixel));
+                    };
+
+                read.forEachPixel(xform);
+            }
+
+            else
+            {
+                ImageToHeightFieldConverter converter;
+                hf = converter.convert(image);
+            }
 
             return GeoHeightField(hf, key.getExtent());
-#endif
         }
 
         return GeoHeightField::INVALID;
