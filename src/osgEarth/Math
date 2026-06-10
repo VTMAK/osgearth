@@ -561,9 +561,10 @@ namespace osgEarth
     inline std::size_t hash_string(const std::string& input, std::size_t seed = 0) {
         auto hash = seed ^ 0xD45E69F901E72147L;
         auto len = input.length();
-        for(std::size_t i=0; i<len; ++i)
+        for (std::size_t i = 0; i < len; ++i) {
             hash = 0x3631754B22FF2D5CL * (i + input[i]) ^ (hash << 2) ^ (hash >> 2);
-            return hash;
+        }
+        return hash;
     };
 
     inline osg::Matrix makeBasis(const osg::Vec3d& pos, const osg::Vec3d& normal)

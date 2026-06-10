@@ -19,6 +19,7 @@
 // whether to use the rotated axis-aligned bounding box method for
 // calculating a Voronoi site centroid (as opposed to a simple centroid)
 #define USE_ROTATED_AABB_CENTROID_METHOD 1
+//#define USE_WIDEST_SEGMENT_CENTROID_METHOD 1
 
 #undef FADE_UNIFORM_NAME
 #define FADE_UNIFORM_NAME "oe_declutter_fade"
@@ -34,6 +35,82 @@ namespace osgEarth { namespace Internal
             else return a.y < b.y;
         }
     };
+    struct WidthResult
+    {
+        osg::Vec3f left;
+        osg::Vec3f right;
+        osg::Vec3f center;
+        float width;
+    };
+
+    WidthResult widestXSegment(const std::vector<osg::Vec3f>& poly)
+    {
+        const float EPS = 1e-6f;
+
+        WidthResult best;
+        best.left = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.right = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.center = osg::Vec3f(0.0f, 0.0f, 0.0f);
+        best.width = -1.0f;
+
+        for (std::size_t py = 0; py < poly.size(); ++py)
+        {
+            const float y = poly[py].y();
+
+            std::vector<float> xs;
+
+            for (std::size_t i = 0; i < poly.size(); ++i)
+            {
+                const osg::Vec3f& a = poly[i];
+                const osg::Vec3f& b = poly[(i + 1) % poly.size()];
+
+                // Skip horizontal edges
+                if (std::fabs(a.y() - b.y()) < EPS)
+                    continue;
+
+                const float ymin = std::min(a.y(), b.y());
+                const float ymax = std::max(a.y(), b.y());
+
+                // Half-open interval avoids double-counting vertices
+                if (y + EPS >= ymin && y < ymax - EPS)
+                {
+                    const float t = (y - a.y()) / (b.y() - a.y());
+                    const float x = a.x() + t * (b.x() - a.x());
+                    xs.push_back(x);
+                }
+            }
+
+            // Include vertices lying exactly on this Y
+            for (std::size_t i = 0; i < poly.size(); ++i)
+            {
+                if (std::fabs(poly[i].y() - y) < EPS)
+                    xs.push_back(poly[i].x());
+            }
+
+            if (xs.size() < 2)
+                continue;
+
+            std::vector<float>::const_iterator minIt =
+                std::min_element(xs.begin(), xs.end());
+
+            std::vector<float>::const_iterator maxIt =
+                std::max_element(xs.begin(), xs.end());
+
+            const float x0 = *minIt;
+            const float x1 = *maxIt;
+            const float w = x1 - x0;
+
+            if (w > best.width)
+            {
+                best.left = osg::Vec3f(x0, y, 0);
+                best.right = osg::Vec3f(x1, y, 0);
+                best.center = osg::Vec3f((x0 + x1) * 0.5f, y, 0);
+                best.width = w;
+            }
+        }
+
+        return best;
+    }
 
     /**
     * Custom RenderLeaf sorting algorithm for deconflicting drawables
@@ -63,13 +140,16 @@ namespace osgEarth { namespace Internal
             osg::Vec3d _anchor;
             osg::Vec3d _offsetVector;
             double _offsetLength;
+            osg::Vec3d _pendingOffsetVector;
+            double _pendingOffsetLength;
             unsigned _leaderLineIndex;
             bool _declutter;
             int _numFramesSinceMove;
+            bool _pendingOffsetValid;
 
             Element();
             bool operator < (const Element&) const; // comparator
-            void move(float dir);
+            //void move(float dir);
         };
 
         using Elements = std::map<osg::Drawable*, Element>;
@@ -98,7 +178,7 @@ namespace osgEarth { namespace Internal
         ScreenSpaceLayoutContext* _context;
         DeclutterSortFunctor* _customSortFunctor;
         PerObjectFastMap<const osg::Camera*, CameraLocal> _cameraLocal;
-        bool _resetWhenViewChanges;
+        bool _resetWhenViewChanges = false;
 
         //! Constructor
         CalloutImplementation(ScreenSpaceLayoutContext* context, DeclutterSortFunctor* f);
@@ -114,13 +194,16 @@ namespace osgEarth { namespace Internal
     CalloutImplementation::Element::Element() :
         _drawable(NULL),
         _text(NULL),
-        _frame(0u),
-        _leaderLineIndex(INT_MAX),
-        _offsetVector(0,1,0),
         _leaf(NULL),
+        _frame(0u),
+        _offsetVector(0,1,0),
         _offsetLength(0.0),
+        _pendingOffsetVector(0,1,0),
+        _pendingOffsetLength(0.0),
+        _leaderLineIndex(INT_MAX),
         _declutter(false),
-        _numFramesSinceMove(0)
+        _numFramesSinceMove(0),
+        _pendingOffsetValid(false)
     {
         //nop
     }
@@ -130,14 +213,14 @@ namespace osgEarth { namespace Internal
         return ((intptr_t)_drawable < (intptr_t)rhs._drawable);
     }
 
-    void
-    CalloutImplementation::Element::move(float dir)
-    {
-        // rotate little more than 1/4 turn:
-        const double rotation = osg::PI / 16; //1.7; //osg::PI / 32; //1.6;
-        const osg::Quat q(dir*rotation, osg::Vec3d(0, 0, 1));
-        _offsetVector = q * _offsetVector;
-    }
+    //void
+    //CalloutImplementation::Element::move(float dir)
+    //{
+    //    // rotate little more than 1/4 turn:
+    //    const double rotation = osg::PI / 16; //1.7; //osg::PI / 32; //1.6;
+    //    const osg::Quat q(dir*rotation, osg::Vec3d(0, 0, 1));
+    //    _offsetVector = q * _offsetVector;
+    //}
 
     CalloutImplementation::CameraLocal::CameraLocal() :
         _camera(0),
@@ -159,22 +242,21 @@ namespace osgEarth { namespace Internal
         _voronoi = new LineDrawable(GL_LINES);
         _voronoi->setCullingActive(false);
         _voronoi->setDataVariance(osg::Object::DYNAMIC);
-        _voronoi->setColor(osg::Vec4f(1,0,0,1));
+        _voronoi->setColor(osg::Vec4f(0.3, 0.3, 0.3, 1)); // 1, 0, 0, 1));
         _voronoi->setLineWidth(1.0f);
         GLUtils::setLighting(_voronoi->getOrCreateStateSet(), osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED);
     }
 
     CalloutImplementation::CalloutImplementation(ScreenSpaceLayoutContext* context, DeclutterSortFunctor* f) :
         _context(context),
-        _customSortFunctor(f),
-        _resetWhenViewChanges(false)
+        _customSortFunctor(f)
     {
         //nop
     }
 
     namespace {
-        inline float signOf(float x) {
-            return x<0.0f? -1.0f: x>0.0f? 1.0f : 0.0f;
+        inline double clampTo(double x, double minValue, double maxValue) {
+            return osg::maximum(minValue, osg::minimum(maxValue, x));
         }
     }
 
@@ -237,11 +319,15 @@ namespace osgEarth { namespace Internal
         {
             element._offsetVector = element._anchor - osg::Vec3d(0.5*vp->width(), 0.5*vp->height(), 0.0);
             element._offsetVector.normalize();
+            element._pendingOffsetValid = false;
+            element._numFramesSinceMove = 0;
         }
         else if (_resetWhenViewChanges && local._vpmChanged)
         {
             element._offsetVector = element._anchor - osg::Vec3d(0.5*vp->width(), 0.5*vp->height(), 0.0);
             element._offsetVector.normalize();
+            element._pendingOffsetValid = false;
+            element._numFramesSinceMove = 0;
         }
 
         if (element._leaderLineIndex == INT_MAX)
@@ -273,8 +359,17 @@ namespace osgEarth { namespace Internal
             box.yMin() -= (hh * (local._dprscale.y() - 1.0));
             box.yMax() += (hh * (local._dprscale.y() - 1.0));
 
-            alignment.x() = element._offsetVector.x() * 0.5*(box.xMax()- box.xMin()) + margin*signOf(element._offsetVector.x());
-            alignment.y() = element._offsetVector.y() * 0.5*(box.yMax()- box.yMin()) + margin*signOf(element._offsetVector.y());
+            const osg::Vec3d boxCenter(
+                0.5*(box.xMin() + box.xMax()),
+                0.5*(box.yMin() + box.yMax()),
+                0.0);
+            const double halfWidth = 0.5*(box.xMax() - box.xMin());
+            const double halfHeight = 0.5*(box.yMax() - box.yMin());
+            const double absX = osg::absolute(element._offsetVector.x());
+            const double absY = osg::absolute(element._offsetVector.y());
+            const double tx = absX > 1e-6 ? halfWidth / absX : DBL_MAX;
+            const double ty = absY > 1e-6 ? halfHeight / absY : DBL_MAX;
+            alignment = element._offsetVector * (osg::minimum(tx, ty) + margin) - boxCenter;
 
             leaf->_modelview->makeTranslate(pos + alignment);
             leaf->_modelview->preMultScale(local._dprscale);
@@ -323,6 +418,22 @@ namespace osgEarth { namespace Internal
         bounds.min.x = vp->x() + K, bounds.min.y = vp->y() + K;
         bounds.max.x = vp->x() + vp->width() - K * 2, bounds.max.y = vp->y() + vp->height() - K * 2;
 
+        struct SiteCluster
+        {
+            SiteCluster(const osg::Vec2d& in_center, Element* in_element) :
+                center(in_center)
+            {
+                elements.push_back(in_element);
+            }
+
+            osg::Vec2d center;
+            std::vector<Element*> elements;
+        };
+
+        const double clusterDistance = 4.0;
+        const double clusterDistance2 = clusterDistance * clusterDistance;
+        std::vector<SiteCluster> siteClusters;
+
         for (Elements::reverse_iterator i = local._elements.rbegin();
             i != local._elements.rend();
             ++i)
@@ -343,10 +454,64 @@ namespace osgEarth { namespace Internal
                         element._anchor.y() >= bounds.min.y &&
                         element._anchor.y() <= bounds.max.y)
                     {
-                        jcv_point back{ element._anchor.x(), element._anchor.y() };
-                        local._points.emplace_back(back);
-                        local._lookup[back] = &element;
+                        osg::Vec2d anchor(element._anchor.x(), element._anchor.y());
+                        bool addedToCluster = false;
+
+                        for (SiteCluster& cluster : siteClusters)
+                        {
+                            const double dx = anchor.x() - cluster.center.x();
+                            const double dy = anchor.y() - cluster.center.y();
+                            if (dx * dx + dy * dy <= clusterDistance2)
+                            {
+                                const double count = static_cast<double>(cluster.elements.size());
+                                cluster.center.x() = (cluster.center.x() * count + anchor.x()) / (count + 1.0);
+                                cluster.center.y() = (cluster.center.y() * count + anchor.y()) / (count + 1.0);
+                                cluster.elements.push_back(&element);
+                                addedToCluster = true;
+                                break;
+                            }
+                        }
+
+                        if (!addedToCluster)
+                        {
+                            siteClusters.emplace_back(anchor, &element);
+                        }
                     }
+                }
+            }
+        }
+
+        for (SiteCluster& cluster : siteClusters)
+        {
+            std::sort(cluster.elements.begin(), cluster.elements.end(),
+                [](const Element* lhs, const Element* rhs)
+                {
+                    return (intptr_t)lhs->_drawable < (intptr_t)rhs->_drawable;
+                });
+
+            if (cluster.elements.size() == 1)
+            {
+                Element* element = cluster.elements.front();
+                jcv_point site{ element->_anchor.x(), element->_anchor.y() };
+                local._points.emplace_back(site);
+                local._lookup[site] = element;
+            }
+            else
+            {
+                const double minX = bounds.min.x + 0.001;
+                const double maxX = bounds.max.x - 0.001;
+                const double minY = bounds.min.y + 0.001;
+                const double maxY = bounds.max.y - 0.001;
+                const double radius = clusterDistance;
+
+                for (std::size_t k = 0; k < cluster.elements.size(); ++k)
+                {
+                    const double angle = (2.0 * osg::PI * static_cast<double>(k)) / static_cast<double>(cluster.elements.size());
+                    jcv_point site{
+                        clampTo(cluster.center.x() + std::cos(angle) * radius, minX, maxX),
+                        clampTo(cluster.center.y() + std::sin(angle) * radius, minY, maxY) };
+                    local._points.emplace_back(site);
+                    local._lookup[site] = cluster.elements[k];
                 }
             }
         }
@@ -373,11 +538,33 @@ namespace osgEarth { namespace Internal
         for(int i=0; i<diagram.numsites; ++i)
         {
             const jcv_site* site = &sites[i];
-
+            
             Element* element = local._lookup[site->p];
             if (element)
             {
-#ifdef USE_ROTATED_AABB_CENTROID_METHOD
+#if defined(USE_WIDEST_SEGMENT_CENTROID_METHOD)
+
+                // This centroid-finding method calculates the widest horizontal segment in the site,
+                // and uses the midpoint of that segment as the centroid. This seems to provide a
+                // better centroid for long skinny sites.
+                std::vector<osg::Vec3f> poly;
+                const jcv_graphedge* edge = site->edges;
+                while (edge)
+                {
+                    poly.emplace_back(edge->pos[0].x, edge->pos[0].y, 0);
+
+                    if (local._voronoi.valid())
+                    {
+                        local._voronoi->pushVertex(osg::Vec3f(edge->pos[0].x, edge->pos[0].y, 0));
+                        local._voronoi->pushVertex(osg::Vec3f(edge->pos[1].x, edge->pos[1].y, 0));
+                    }
+
+                    edge = edge->next;
+                }
+                WidthResult r = widestXSegment(poly);
+                osg::Vec3d centroid(r.center.x(), r.center.y(), 0);
+
+#elif defined(USE_ROTATED_AABB_CENTROID_METHOD)
                 // This centroid-finding method calculates an axis-aligned bounding box formed by
                 // first rotating the site so that its longest edge is axis-aligned. This seems to
                 // provide a better centroid in some cases, esp for trianglar sites.
@@ -460,21 +647,48 @@ namespace osgEarth { namespace Internal
                 osg::Vec3d prevOffset = element->_offsetVector;
                 osg::Vec3d newOffset = centroid - element->_anchor;
                 double newOffsetLength = newOffset.length();
+                if (newOffsetLength == 0.0)
+                    continue;
                 newOffset.normalize();
 
                 // Try to avoid moving the offsetVector too drastically per frame.
                 // If the label still needs to move after 60 frames go ahead and move it.
                 // This helps for fast moving entities or if you are moving the camera quickly.
                 double dot = newOffset * prevOffset;
-                if (osg::absolute(dot) < 0.9 && element->_numFramesSinceMove < 60)
+                if (dot < 0.9)
                 {
-                    element->_numFramesSinceMove++;
+                    const double pendingDot = element->_pendingOffsetValid ?
+                        newOffset * element->_pendingOffsetVector :
+                        -1.0;
+
+                    if (!element->_pendingOffsetValid || pendingDot < 0.98)
+                    {
+                        element->_pendingOffsetVector = newOffset;
+                        element->_pendingOffsetLength = newOffsetLength;
+                        element->_pendingOffsetValid = true;
+                        element->_numFramesSinceMove = 1;
+                    }
+                    else
+                    {
+                        element->_pendingOffsetVector = newOffset;
+                        element->_pendingOffsetLength = newOffsetLength;
+                        element->_numFramesSinceMove++;
+                    }
+
+                    if (element->_numFramesSinceMove >= 60)
+                    {
+                        element->_offsetVector = element->_pendingOffsetVector;
+                        element->_offsetLength = element->_pendingOffsetLength;
+                        element->_pendingOffsetValid = false;
+                        element->_numFramesSinceMove = 0;
+                    }
                 }
                 else
                 {
-                    element->_offsetVector = newOffset;
+                    element->_offsetVector = prevOffset * 0.85 + newOffset * 0.15;
                     element->_numFramesSinceMove = 0;
                     element->_offsetLength = newOffsetLength;
+                    element->_pendingOffsetValid = false;
                     element->_offsetVector.normalize();
                 }
             }

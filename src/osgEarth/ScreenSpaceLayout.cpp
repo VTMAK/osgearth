@@ -24,43 +24,44 @@ bool osgEarth::ScreenSpaceLayout::globallyEnabled = true;
 //----------------------------------------------------------------------------
 
 void
-ScreenSpaceLayoutOptions::fromConfig( const Config& conf )
+ScreenSpaceLayoutOptions::fromConfig(const Config& conf)
 {
-    conf.get( "min_animation_scale", _minAnimScale );
-    conf.get( "min_animation_alpha", _minAnimAlpha );
-    conf.get( "in_animation_time",   _inAnimTime );
-    conf.get( "out_animation_time",  _outAnimTime );
-    conf.get( "sort_by_priority",    _sortByPriority );
-    conf.get( "sort_by_distance",    _sortByDistance);
-    conf.get( "snap_to_pixel",       _snapToPixel );
-    conf.get( "max_objects",         _maxObjects );
-    conf.get( "render_order",        _renderBinNumber );
-    conf.get( "technique", "labels", _technique, TECHNIQUE_LABELS );
-    conf.get( "technique", "callouts", _technique, TECHNIQUE_CALLOUTS );
-    conf.get( "max_leader_length", _leaderLineMaxLen ); // backwards compat
-    conf.get( "leader_line_max_length", _leaderLineMaxLen );
-    conf.get( "leader_line_color", _leaderLineColor );
-    conf.get( "leader_line_width", _leaderLineWidth );
+    conf.get("min_animation_scale", minAnimationScale());
+    conf.get("min_animation_alpha", minAnimationAlpha());
+    conf.get("in_animation_time", inAnimationTime());
+    conf.get("out_animation_time", outAnimationTime());
+    conf.get("sort_by_priority", sortByPriority());
+    conf.get("sort_by_distance", sortByDistance());
+    conf.get("snap_to_pixel", snapToPixel());
+    conf.get("max_objects", maxObjects());
+    conf.get("render_order", renderOrder());
+    conf.get("technique", "labels", technique(), TECHNIQUE_LABELS);
+    conf.get("technique", "callouts", technique(), TECHNIQUE_CALLOUTS);
+    conf.get("max_leader_length", leaderLineMaxLength());
+    conf.get("leader_line_max_length", leaderLineMaxLength());
+    conf.get("leader_line_color", leaderLineColor());
+    conf.get("leader_line_width", leaderLineWidth());
 }
 
 Config
 ScreenSpaceLayoutOptions::getConfig() const
 {
     Config conf;
-    conf.set( "min_animation_scale", _minAnimScale );
-    conf.set( "min_animation_alpha", _minAnimAlpha );
-    conf.set( "in_animation_time",   _inAnimTime );
-    conf.set( "out_animation_time",  _outAnimTime );
-    conf.set( "sort_by_priority",    _sortByPriority );
-    conf.set( "sort_by_distance",    _sortByDistance);
-    conf.set( "snap_to_pixel",       _snapToPixel );
-    conf.set( "max_objects",         _maxObjects );
-    conf.set( "render_order",        _renderBinNumber );
-    conf.set( "technique", "labels", _technique, TECHNIQUE_LABELS);
-    conf.set( "technique", "callouts", _technique, TECHNIQUE_CALLOUTS);
-    conf.set( "leader_line_max_length", _leaderLineMaxLen );
-    conf.set( "leader_line_color", _leaderLineColor );
-    conf.set( "leader_line_width", _leaderLineWidth );
+    conf.set("min_animation_scale", minAnimationScale());
+    conf.set("min_animation_alpha", minAnimationAlpha());
+    conf.set("in_animation_time", inAnimationTime());
+    conf.set("out_animation_time", outAnimationTime());
+    conf.set("sort_by_priority", sortByPriority());
+    conf.set("sort_by_distance", sortByDistance());
+    conf.set("snap_to_pixel", snapToPixel());
+    conf.set("max_objects", maxObjects());
+    conf.set("render_order", renderOrder());
+    conf.set("technique", "labels", technique(), TECHNIQUE_LABELS);
+    conf.set("technique", "callouts", technique(), TECHNIQUE_CALLOUTS);
+    conf.set("max_leader_length", leaderLineMaxLength());
+    conf.set("leader_line_max_length", leaderLineMaxLength());
+    conf.set("leader_line_color", leaderLineColor());
+    conf.set("leader_line_width", leaderLineWidth());
     return conf;
 }
 

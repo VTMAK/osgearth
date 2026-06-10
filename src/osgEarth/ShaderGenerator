@@ -71,6 +71,8 @@ namespace osgEarth
     class OSGEARTH_EXPORT ShaderGenerator : public osg::NodeVisitor
     {
     public:
+        using osg::NodeVisitor::apply;
+
         /** Constructs a new shader generator */
         ShaderGenerator();
 

@@ -7,6 +7,10 @@
 
 #include <osgEarth/GeoData>
 #include <osgEarth/ImageUtils>
+#include <array>
+#include <bitset>
+#include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 #include <map>
@@ -36,16 +40,15 @@ namespace osgEarth
     public:
         using Ptr = std::shared_ptr<Coverage<T>>;
         
+        using Index = std::uint8_t;
+        static constexpr Index NoData = 0;
+        static constexpr std::size_t MaxIndex = std::numeric_limits<Index>::max();
+
         // maps T to index for duplicate values (std::map so that T doesn't need std::hash)
-        using LUT = std::map<T, int>;
+        using LUT = std::map<T, Index>;                 // value -> palette index
 
         // reverse lookup for reading; maps index to value
-        using RLUT = std::unordered_map<int, T>;
-
-        // max out at 255 different indices. Make it a short if you want more.
-        // TODO: consider templatizing this with something like
-        // <typename T, typename Index=unsigned char>
-        using Index = unsigned char;
+        using RLUT = std::array<T, MaxIndex + 1>;       // palette index -> value
 
         // raster of indices
         using Grid = std::vector<Index>;
@@ -85,10 +88,11 @@ namespace osgEarth
         //! allocate width*height pixels
         void allocate(unsigned w, unsigned h)
         {
-            _width = w, _height = h;
+            _width = w;
+            _height = h;
             _lut.clear();
-            _rlut.clear();
-            _pixels.assign(w*h, 0);
+            _rlutValid.reset();
+            _pixels.assign(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), NoData);
             _valid_count = 0;
         }
 
@@ -124,37 +128,44 @@ namespace osgEarth
         //! times in a row.
         int write(const T& value, unsigned s, unsigned t, int k = -1)
         {
-            int ptr = t * _width + s;
-            if (value.valid())
-            {
-                if (_pixels[ptr] > 0)
-                    --_valid_count;
+            const std::size_t ptr = static_cast<std::size_t>(t) * _width + s;
+            const Index oldIndex = _pixels[ptr];
+            const bool oldValid = oldIndex != NoData;
+            const bool newValid = value.valid();
 
-                if (k < 0)
+            Index newIndex = NoData;
+
+            if (newValid)
+            {
+                if (k > 0)
                 {
-                    typename LUT::iterator i = _lut.find(value);
-                    if (i != _lut.end())
+                    newIndex = static_cast<Index>(k);
+                }
+                else
+                {
+                    auto it = _lut.find(value);
+                    if (it != _lut.end())
                     {
-                        k = i->second;
+                        newIndex = it->second;
                     }
                     else
                     {
-                        k = _lut.size() + 1; // skip 0, 0=>nodata
-                        _lut[value] = k;
-                        _rlut[k] = value;
+                        if (_lut.size() >= MaxIndex)
+                            return 0; // or assert/throw: palette overflow
+
+                        newIndex = static_cast<Index>(_lut.size() + 1); // reserve 0 for NoData
+                        _lut.emplace(value, newIndex);
+                        _rlut[newIndex] = value;
+                        _rlutValid.set(newIndex);
                     }
                 }
-                ++_valid_count;
-            }
-            else
-            {
-                k = 0;
-                if (_pixels[ptr] > 0)
-                    --_valid_count;
             }
 
-            _pixels[ptr] = k;
-            return k;
+            if (!oldValid && newValid) ++_valid_count;
+            else if (oldValid && !newValid) --_valid_count;
+
+            _pixels[ptr] = newIndex;
+            return static_cast<int>(newIndex);
         }
 
         bool read(T& output, unsigned s, unsigned t) const
@@ -181,12 +192,10 @@ namespace osgEarth
         const T* read(unsigned s, unsigned t) const
         {
             OE_SOFT_ASSERT_AND_RETURN(s < _width && t < _height, nullptr);
-            int ptr = t * _width + s;
-            Index i = _pixels[ptr];
-            if (i > 0)
-            {
+            const std::size_t ptr = static_cast<std::size_t>(t) * _width + s;
+            const Index i = _pixels[ptr];
+            if (i != NoData && _rlutValid.test(i))
                 return &_rlut[i];
-            }
             return nullptr;
         }
 
@@ -207,7 +216,7 @@ namespace osgEarth
             for (auto& entry : _lut)
             {
                 Config value_conf = entry.first.getConfig();
-                value_conf.set("__coverage_index", entry.second);
+                value_conf.set("__coverage_index", static_cast<int>(entry.second));
                 values.add(value_conf);
             }
             root.add(values);
@@ -243,10 +252,16 @@ namespace osgEarth
             for (auto& value_conf : values.children())
             {
                 T value(value_conf);
-                int index;
-                value_conf.get("__coverage_index", index);
-                _lut[value] = index;
-                _rlut[index] = value;
+                int index = 0;
+                if (!value_conf.get("__coverage_index", index))
+                    continue;
+                if (index > 0 && index <= static_cast<int>(MaxIndex))
+                {
+                    Index i = static_cast<Index>(index);
+                    _lut[value] = i;
+                    _rlut[i] = value;
+                    _rlutValid.set(static_cast<std::size_t>(i));
+                }
             }
 
             std::string pixels_string = root.value("pixels");
@@ -276,6 +291,7 @@ namespace osgEarth
         Grid _pixels;
         LUT _lut;
         mutable RLUT _rlut;
+        std::bitset<MaxIndex + 1> _rlutValid;
     };
 
     template<typename T>

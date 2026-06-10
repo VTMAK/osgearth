@@ -88,101 +88,57 @@ namespace osgEarth
             TECHNIQUE_CALLOUTS
         };
 
-        ScreenSpaceLayoutOptions( const ConfigOptions& co =ConfigOptions() )
-            : ConfigOptions         ( co ),
-              _minAnimAlpha         ( 0.35f ),
-              _minAnimScale         ( 0.45f ),
-              _inAnimTime           ( 0.00f ), //0.40f ),
-              _outAnimTime          ( 0.00f ),
-              _sortByPriority       ( false ),
-              _sortByDistance       ( true ),
-              _snapToPixel          ( false ),
-              _maxObjects           ( INT_MAX ),
-              _renderBinNumber      ( 13 ),
-              _technique            ( TECHNIQUE_LABELS ),
-              _leaderLineMaxLen     ( 60 ),
-              _leaderLineColor      ( Color::White ),
-              _leaderLineWidth      ( 1.0f )
+        ScreenSpaceLayoutOptions(const ConfigOptions& co = ConfigOptions()) : ConfigOptions(co)
         {
             fromConfig(_conf);
         }
 
-        virtual ~ScreenSpaceLayoutOptions() { }
-
         /** Alpha value of a fully-occluded object */
-        optional<float>& minAnimationAlpha() { return _minAnimAlpha; }
-        const optional<float>& minAnimationAlpha() const { return _minAnimAlpha; }
+        OE_OPTION(float, minAnimationAlpha, 0.35f);
 
         /** Scale factor of a fully-occluded object */
-        optional<float>& minAnimationScale() { return _minAnimScale; }
-        const optional<float>& minAnimationScale() const { return _minAnimScale; }
+        OE_OPTION(float, minAnimationScale, 0.45f);
 
         /** Time (in seconds) for an object to transition from occluded to visible */
-        optional<float>& inAnimationTime() { return _inAnimTime; }
-        const optional<float>& inAnimationTime() const { return _inAnimTime; }
+        OE_OPTION(float, inAnimationTime, 0.00f);
 
         /** Time (in seconds) for an object to transition from visible to occluded */
-        optional<float>& outAnimationTime() { return _outAnimTime; }
-        const optional<float>& outAnimationTime() const { return _outAnimTime; }
+        OE_OPTION(float, outAnimationTime, 0.00f);
 
         /** If set, activate the ScreenSpaceLayoutData priority-based sorting */
-        optional<bool>& sortByPriority() { return _sortByPriority; }
-        const optional<bool>& sortByPriority() const { return _sortByPriority; }
+        OE_OPTION(bool, sortByPriority, false);
 
         /** If set, activate the ScreenSpaceLayoutData distance-based sorting */
-        optional<bool>& sortByDistance() { return _sortByDistance; }
-        const optional<bool>& sortByDistance() const { return _sortByDistance; }
+        OE_OPTION(bool, sortByDistance, true);
 
         /** Whether to always start rendering text on a pixel boundary, thereby 
           * minimizing filtering artifacts. */
-        optional<bool>& snapToPixel() { return _snapToPixel; }
-        const optional<bool>& snapToPixel() const { return _snapToPixel; }
+        OE_OPTION(bool, snapToPixel, false);
 
         /** Maximum number of objects to draw after sorting */
-        optional<unsigned>& maxObjects() { return _maxObjects; }
-        const optional<unsigned>& maxObjects() const { return _maxObjects; }
+        OE_OPTION(unsigned, maxObjects, INT_MAX);
 
         /** Render bin number to use for the screen layout */
-        optional<int>& renderOrder() { return _renderBinNumber; }
-        const optional<int>& renderOrder() const { return _renderBinNumber; }
+        OE_OPTION(int, renderOrder, 13);
 
-        //! Technique to use for drawing 
-        optional<Technique>& technique() { return _technique; }
-        const optional<Technique>& technique() const { return _technique; }
+        //! Technique to use for drawing
+        OE_OPTION(Technique, technique, TECHNIQUE_LABELS);
 
         //! For callouts, the maximum length of a leader line in pixels
-        optional<float>& leaderLineMaxLength() { return _leaderLineMaxLen; }
-        const optional<float>& leaderLineMaxLength() const { return _leaderLineMaxLen; }
+        OE_OPTION(float, leaderLineMaxLength, 60.0f);
 
         //! For callouts, the maximum length of a leader line in pixels
-        optional<Color>& leaderLineColor() { return _leaderLineColor; }
-        const optional<Color>& leaderLineColor() const { return _leaderLineColor; }
+        OE_OPTION(Color, leaderLineColor, Color::White);
 
         //! For callouts, the width of a leader line in pixels
-        optional<float>& leaderLineWidth() { return _leaderLineWidth; }
-        const optional<float>& leaderLineWidth() const { return _leaderLineWidth; }
+        OE_OPTION(float, leaderLineWidth, 1.0f);
 
     public:
 
         Config getConfig() const;
-
-    protected:
-        optional<float>    _minAnimAlpha;
-        optional<float>    _minAnimScale;
-        optional<float>    _inAnimTime;
-        optional<float>    _outAnimTime;
-        optional<bool>     _sortByPriority;
-        optional<bool>     _sortByDistance;
-        optional<bool>     _snapToPixel;
-        optional<unsigned> _maxObjects;
-        optional<int>      _renderBinNumber;
-        optional<Technique> _technique;
-        optional<float>    _leaderLineMaxLen;
-        optional<Color>    _leaderLineColor;
-        optional<float>    _leaderLineWidth;
-
         void fromConfig( const Config& conf );
     };
+
 
     struct OSGEARTH_EXPORT ScreenSpaceLayout
     {
