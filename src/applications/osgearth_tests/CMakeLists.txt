@@ -1,6 +1,7 @@
 set(TARGET_SRC
     main.cpp
     CacheTests.cpp
+    CoverageTests.cpp
     EndianTests.cpp
     ExpressionTests.cpp
     GeoExtentTests.cpp
