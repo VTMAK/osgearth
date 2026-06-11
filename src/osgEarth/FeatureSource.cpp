@@ -320,7 +320,7 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
     }
 
     // TileKey path:
-    if (query.tileKey().isSet())
+    if (query.tileKey().isSet() && query.tileKey()->valid())
     {
         if (!temp_cx.workingExtent().isSet())
         {
@@ -498,6 +498,8 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
 unsigned
 FeatureSource::getKeys(const TileKey& key, const Distance& buffer, std::set<TileKey>& output) const
 {
+    OE_SOFT_ASSERT_AND_RETURN(key.valid(), 0u);
+
     if (_featureProfile.valid())
     {
         unsigned firstLevel = _featureProfile->getFirstLevel();
