@@ -64,9 +64,17 @@ TileNodeRegistry::add(TileNode* tile)
     std::lock_guard<std::mutex> lock(_mutex);
 
     auto& entry = _tiles[tile->getKey()];
-    entry._tile = tile;
     bool recyclingOrphan = entry._trackerToken != nullptr;
-    entry._trackerToken = _tracker.use(tile, nullptr);
+
+    // Important: prevent duplicate tracker entries for the same key.
+    if (entry._trackerToken != nullptr)
+    {
+        _tracker.erase(entry._trackerToken);
+        entry._trackerToken = nullptr;
+    }
+
+    entry._tile = tile;
+    entry._trackerToken = _tracker.use(entry._tile, nullptr);
 
     // Start waiting on our neighbors.
     // (If we're recycling and orphaned record, we need to remove old listeners first)
@@ -74,7 +82,6 @@ TileNodeRegistry::add(TileNode* tile)
     {
         const TileKey& key = tile->getKey();
 
-        // If we're recycling, we need to remove the old listeners first
         if (recyclingOrphan)
         {
             stopListeningFor(key.createNeighborKey(1, 0), key);
@@ -84,21 +91,20 @@ TileNodeRegistry::add(TileNode* tile)
         startListeningFor(key.createNeighborKey(1, 0), tile);
         startListeningFor(key.createNeighborKey(0, 1), tile);
 
-        // check for tiles that are waiting on this tile, and notify them!
-        TileKeyOneToMany::iterator notifier = _notifiers.find( tile->getKey() );
-        if ( notifier != _notifiers.end() )
+        TileKeyOneToMany::iterator notifier = _notifiers.find(tile->getKey());
+        if (notifier != _notifiers.end())
         {
             TileKeySet& listeners = notifier->second;
 
-            for(TileKeySet::iterator listener = listeners.begin(); listener != listeners.end(); ++listener)
+            for (TileKeySet::iterator listener = listeners.begin(); listener != listeners.end(); ++listener)
             {
-                TileTable::iterator i = _tiles.find( *listener );
-                if ( i != _tiles.end())
+                TileTable::iterator i = _tiles.find(*listener);
+                if (i != _tiles.end())
                 {
-                    i->second._tile->notifyOfArrival( tile );
+                    i->second._tile->notifyOfArrival(tile);
                 }
             }
-            _notifiers.erase( notifier );
+            _notifiers.erase(notifier);
         }
 
         OE_DEBUG << LC
