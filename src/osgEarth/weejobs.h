@@ -80,44 +80,43 @@ namespace WEEJOBS_NAMESPACE
         {
         public:
             //! Construct a new event
-            event() : _set(false) { }
+            event() : _set(false), _shutdown(false) { }
 
             //! DTOR
             ~event() {
-                _set = false;
-                for (int i = 0; i < 255; ++i)  // workaround buggy broadcast
-                    _cond.notify_all();
+                {
+                    std::lock_guard<std::mutex> lock(_m);
+                    _shutdown = true;
+                    _set = false;
+                }
+                _cond.notify_all();
             }
 
             //! Block until the event is set, then return true.
             inline bool wait() {
-                while (!_set) {
-                    std::unique_lock<std::mutex> lock(_m);
-                    if (!_set)
-                        _cond.wait(lock);
-                }
+                std::unique_lock<std::mutex> lock(_m);
+                _cond.wait(lock, [this]() { return _set || _shutdown; });
                 return _set;
             }
 
-            //! Block until the event is set or the timout expires.
+            //! Block until the event is set or the timeout expires.
             //! Return true if the event has set, otherwise false.
             template<typename T>
             inline bool wait(T timeout) {
-                if (!_set) {
-                    std::unique_lock<std::mutex> lock(_m);
-                    if (!_set)
-                        _cond.wait_for(lock, timeout);
-                }
+                std::unique_lock<std::mutex> lock(_m);
+                _cond.wait_for(lock, timeout, [this]() { return _set || _shutdown; });
                 return _set;
             }
 
             //! Block until the event is set; then reset it.
             inline bool waitAndReset() {
                 std::unique_lock<std::mutex> lock(_m);
-                if (!_set)
-                    _cond.wait(lock);
-                _set = false;
-                return true;
+                _cond.wait(lock, [this]() { return _set || _shutdown; });
+                if (_set) {
+                    _set = false;
+                    return true;
+                }
+                return false;
             }
 
             //! Set if true, reset if false.
@@ -130,23 +129,24 @@ namespace WEEJOBS_NAMESPACE
 
             //! Set the event state, causing any waiters to unblock.
             inline void set() {
-                if (!_set) {
-                    std::unique_lock<std::mutex> lock(_m);
-                    if (!_set) {
-                        _set = true;
-                        _cond.notify_all();
-                    }
+                {
+                    std::lock_guard<std::mutex> lock(_m);
+                    if (_set || _shutdown)
+                        return;
+                    _set = true;
                 }
+                _cond.notify_all();
             }
 
             //! Reset (unset) the event state; new waiters will block until set() is called.
             inline void reset() {
-                std::unique_lock<std::mutex> lock(_m);
+                std::lock_guard<std::mutex> lock(_m);
                 _set = false;
             }
 
             //! Whether the event state is set (waiters will not block).
             inline bool isSet() const {
+                std::lock_guard<std::mutex> lock(_m);
                 return _set;
             }
 
@@ -157,8 +157,9 @@ namespace WEEJOBS_NAMESPACE
 
         protected:
             bool _set;
-            std::condition_variable_any _cond;
-            std::mutex _m; // do not use Mutex, we never want tracking
+            bool _shutdown;
+            std::condition_variable _cond;
+            mutable std::mutex _m; // do not use Mutex, we never want tracking
         };
 
 
@@ -172,7 +173,7 @@ namespace WEEJOBS_NAMESPACE
             //! Acquire, increasing the usage count by one
             inline void acquire()
             {
-                std::unique_lock<std::mutex> lock(_m);
+                std::lock_guard<std::mutex> lock(_m);
                 ++_count;
             }
 
@@ -183,7 +184,7 @@ namespace WEEJOBS_NAMESPACE
             //! the semaphore will reset to its initial state.
             inline void release()
             {
-                std::unique_lock<std::mutex> lock(_m);
+                std::lock_guard<std::mutex> lock(_m);
                 _count = std::max(_count - 1, 0);
                 if (_count == 0)
                     _cv.notify_all();
@@ -195,7 +196,7 @@ namespace WEEJOBS_NAMESPACE
             //! even if no acquisitions have taken place.
             inline void reset()
             {
-                std::unique_lock<std::mutex> lock(_m);
+                std::lock_guard<std::mutex> lock(_m);
                 _count = 0;
                 _cv.notify_all();
             }
@@ -203,8 +204,8 @@ namespace WEEJOBS_NAMESPACE
             //! Current count in the semaphore
             inline std::size_t count() const
             {
-                std::unique_lock<std::mutex> lock(_m);
-                return _count;
+                std::lock_guard<std::mutex> lock(_m);
+                return static_cast<std::size_t>(_count);
             }
 
             //! Block until the semaphore count returns to zero.
@@ -214,8 +215,7 @@ namespace WEEJOBS_NAMESPACE
             inline void join()
             {
                 std::unique_lock<std::mutex> lock(_m);
-                while (_count > 0)
-                    _cv.wait(lock);
+                _cv.wait(lock, [this]() { return _count == 0; });
             }
 
             //! Block until the semaphore count returns to zero, or
@@ -223,18 +223,18 @@ namespace WEEJOBS_NAMESPACE
             //! (It must first have left zero)
             inline void join(cancelable* c)
             {
-                _cv.wait_for(_m, std::chrono::seconds(1), [this, c]() {
-                    return
-                        (_count == 0) ||
-                        (c && c->canceled());
-                    }
-                );
-                _count = 0;
+                std::unique_lock<std::mutex> lock(_m);
+                while (_count > 0)
+                {
+                    if (c && c->canceled())
+                        return;
+                    _cv.wait_for(lock, std::chrono::milliseconds(50));
+                }
             }
 
         private:
             int _count = 0;
-            std::condition_variable_any _cv;
+            std::condition_variable _cv;
             mutable std::mutex _m;
         };
 
