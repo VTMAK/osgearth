@@ -148,6 +148,15 @@ namespace osgEarth { namespace Util
             return _priorityScale;
         }
 
+        //! The minimum time after last access that this node should be
+        //! protected from unloading.
+        void setTimeoutSeconds(double value) {
+            _timeoutSeconds = value;
+        }
+        double getTimeoutSeconds() const {
+            return _timeoutSeconds;
+        }
+
         //! Pre- and post-merge callbacks for the async data
         void setSceneGraphCallbacks(SceneGraphCallbacks* value) {
             _callbacks = value;
@@ -258,10 +267,12 @@ namespace osgEarth { namespace Util
         bool _autoUnload = true;
         float _lastRange = FLT_MAX;
         float _lastPixelSize = 0.0f;
+        double _lastTime = 0.0;
         mutable float _priority = 0.0f;
         RefinePolicy _refinePolicy = REFINE_REPLACE;
         std::string _jobpoolName;
         PagedNodeManager* _owner = nullptr;
+        double _timeoutSeconds = 0.0;
 
         bool merge(int revision);
         void traverseChildren(osg::NodeVisitor& nv);
@@ -305,7 +316,7 @@ namespace osgEarth { namespace Util
         }
 
         //! Manually call an update on the PagingManager.  This should only be used if you are loading data outside of a traditional frameloop and want to merge data.
-        void update();
+        void update(osg::NodeVisitor* nv = nullptr);
 
         float sse() const {
             return _sse;

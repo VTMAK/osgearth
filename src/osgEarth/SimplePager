@@ -64,6 +64,9 @@ namespace osgEarth { namespace Util
         void setEnableCancelation(bool value);
         bool getEnableCancelation() const;
 
+        void setTimeoutSeconds(double value);
+        float getTimeoutSeconds() const { return _timeoutSeconds; }
+
         //! Whether to install cluster culling for geographic nodes
         void setClusterCullingEnabled(bool value);
         bool getClusterCullingEnabled() const;
@@ -132,6 +135,7 @@ namespace osgEarth { namespace Util
         bool _done = false;
         bool _clusterCullingEnabled = true;
         bool _usePayloadBoundsForChildren = false;
+        double _timeoutSeconds = 0.0;
 
         osg::observer_ptr<const osgEarth::Map> _map;
         osg::ref_ptr<const Profile> _profile;

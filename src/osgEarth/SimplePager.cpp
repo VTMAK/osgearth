@@ -35,6 +35,15 @@ SimplePager::SimplePager(const osgEarth::Map* map, const osgEarth::Profile* prof
     }
 }
 
+void SimplePager::setTimeoutSeconds(double value)
+{
+    _timeoutSeconds = value;
+    forEachNodeOfType<PagedNode2>(this, [&](auto* node)
+        {
+            node->setTimeoutSeconds(_timeoutSeconds);
+        });
+}   
+
 void SimplePager::setEnableCancelation(bool value)
 {
     _canCancel = value;
@@ -280,7 +289,6 @@ SimplePager::createChildNode(const TileKey& key, ProgressCallback* progress)
 
     if (hasChildren)
     {
-        //osg::ref_ptr<PagedNode2> pagedNode = new PagedNode2();
         osg::ref_ptr<PagedNode2> pagedNode;
         if (_createPagedNodeFunction)
             pagedNode = _createPagedNodeFunction(key);
@@ -353,6 +361,8 @@ SimplePager::createChildNode(const TileKey& key, ProgressCallback* progress)
             pagedNode->setName(getName() + " " + key.str());
 
         pagedNode->setPriorityScale(_priorityScale);
+
+        pagedNode->setTimeoutSeconds(_timeoutSeconds);
 
         // Now set up a loader that will load the child data
         osg::observer_ptr<SimplePager> pager_weakptr(this);
