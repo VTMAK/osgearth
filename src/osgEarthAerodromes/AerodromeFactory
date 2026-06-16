@@ -16,8 +16,7 @@
 * You should have received a copy of the GNU Lesser General Public License
 * along with this program.  If not, see <http://www.gnu.org/licenses/>
 */
-#ifndef OSGEARTH_AERODROME_AERODROMEFACTORY
-#define OSGEARTH_AERODROME_AERODROMEFACTORY 1
+#pragma once
 
 #include <osg/Group>
 
@@ -71,6 +70,8 @@ namespace osgEarth { namespace Aerodrome
         std::unordered_set<std::string>& icaoExclusions() { return _icaoExclusions; };
         const std::unordered_set<std::string>& icaoExclusions() const { return _icaoExclusions; };
 
+        //! Set the timeout for paging out culled aerodromes, in seconds. Call before init().
+        void setTimeout(double value) { _timeout = value; }
 
         //! Map to reference for geometry generation
         const Map* getMap() const { return _map.get(); }
@@ -116,11 +117,10 @@ namespace osgEarth { namespace Aerodrome
         std::unordered_set<std::string> _icaoExclusions;
         Distance _lodRange = Distance(15000.0f, Units::METERS);
         bool _clampToTerrain = false;
+        optional<double> _timeout;
 
         std::shared_ptr<std::atomic_int> _residentTiles;
         friend class AerodromeLayer;
     };
 
 } } // namespace osgEarth::Aerodrome
-
-#endif // OSGEARTH_AERODROME_AERODROMEFACTORY

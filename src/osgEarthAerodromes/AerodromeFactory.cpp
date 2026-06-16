@@ -630,6 +630,9 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
                         p->setMaxRange(_lodRange.as(Units::METERS));
                     }
 
+                    if (_timeout.isSet())
+                        p->setTimeoutSeconds(_timeout.value());
+
                     tree->addChild( p );
                     aeroCount++;
                 }

@@ -142,6 +142,9 @@ AerodromeLayer::createSceneGraph()
         if (options().clampToTerrain().isSet())
             factory->setClampToTerrain(options().clampToTerrain().get());
 
+        if (options().timeout().isSet())
+            factory->setTimeout(options().timeout().value());
+
         factory->_serialLoading = options().serialLoading().get();
 
         factory->init(getReadOptions());

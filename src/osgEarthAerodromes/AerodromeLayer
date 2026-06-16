@@ -38,10 +38,6 @@ namespace osgEarth { namespace Aerodrome
     public:
         AerodromeLayerOptions( const ConfigOptions& opt =ConfigOptions() ) : VisibleLayer::Options( opt )
         {
-            // init properties here
-            range().setDefault(Distance(15000, Units::METERS));
-            buildTerminals().setDefault(true);
-            clampToTerrain().setDefault(false);
             fromConfig( _conf );
         }
 
@@ -49,10 +45,10 @@ namespace osgEarth { namespace Aerodrome
         OE_OPTION(URI, catalog);
 
         //! Range at which aerodromes whould appear
-        OE_OPTION(Distance, range);
+        OE_OPTION(Distance, range, Distance(15000, Units::METERS));
 
         //! Whether to build terminal buildings (default is true)
-        OE_OPTION(bool, buildTerminals);
+        OE_OPTION(bool, buildTerminals, true);
 
         //! ICAO codes to exclude
         OE_OPTION_VECTOR(std::string, icaoExclusions);
@@ -60,7 +56,7 @@ namespace osgEarth { namespace Aerodrome
         //! Whether to clamp aerodrome elements to the terrain. Defaults to FALSE.
         //! If false, catalog elements will place using a single global elevation 
         //! for the associated aerodrome.
-        OE_OPTION(bool, clampToTerrain);
+        OE_OPTION(bool, clampToTerrain, false);
 
         //! Render bin number
         OE_OPTION(int, renderOrder);
@@ -70,6 +66,9 @@ namespace osgEarth { namespace Aerodrome
 
         //! Whether to serialize (one at a time) aerodrome loads
         OE_OPTION(bool, serialLoading, false);
+
+        //! Time in seconds for an aerodrome to timeout after being culled
+        OE_OPTION(double, timeout, 10.0);
 
     public:
         Config getConfig() const
@@ -84,6 +83,7 @@ namespace osgEarth { namespace Aerodrome
                 conf.set("exclude_icaos", joinStrings(icaoExclusions(), ','));
             conf.set("clamp_to_terrain", clampToTerrain());
             conf.set("serial_loading", serialLoading());
+            conf.set("timeout", timeout());
             return conf;
         }
 
@@ -104,6 +104,8 @@ namespace osgEarth { namespace Aerodrome
             conf.get("render_bin", renderBin());
             conf.get("clamp_to_terrain", clampToTerrain());
             conf.get("serial_loading", serialLoading());
+            conf.get("timeout", timeout());
+            conf.get("min_expiry_time", timeout()); // backwards compatibility
 
             _icaoExclusions = StringTokenizer()
                 .delim(",").delim(" ")
