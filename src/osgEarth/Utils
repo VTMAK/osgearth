@@ -345,25 +345,35 @@ namespace osgEarth { namespace Util
         ListIterator _sentryptr;
         std::atomic_uint _total = { 0u };
 
+        inline bool erase(void* token)
+        {
+            if (token == nullptr)
+                return false;
+
+            Token* ptr = static_cast<Token*>(token);
+            _list.erase(*ptr);
+            delete ptr;
+            --_total;
+            return true;
+        }
+
         inline void* use(const T& data, void* token)
         {
-            // Find the tracker for this tile and update its timestamp
             if (token)
             {
                 Token* ptr = static_cast<Token*>(token);
 
-                // Move the tracker to the front of the list (ahead of the sentry).
-                // Once a cull traversal is complete, all visited tiles will be
-                // in front of the sentry, leaving all non-visited tiles behind it.
+                // Keep data current in case caller reuses a token for a replaced object.
+                (*ptr)->_data = data;
+
                 _list.splice(_list.begin(), _list, *ptr);
                 *ptr = _list.begin();
                 return ptr;
             }
             else
             {
-                // New entry:
                 Token* ptr = new Token();
-                _list.emplace_front(data, ptr); // ListEntry
+                _list.emplace_front(data, ptr);
                 *ptr = _list.begin();
                 ++_total;
                 return ptr;
@@ -384,10 +394,8 @@ namespace osgEarth { namespace Util
             {
                 ListEntry& le = *i;
 
-                // user disposal function
-                bool disposed = dispose(le._data);
-
-                if (disposed)
+                // if we are ready to dispose it, dispose() will return true, and we can safely delete the entry.
+                if (dispose(le._data))
                 {
                     // back up the iterator so we can safely erase the entry:
                     tmp = i;

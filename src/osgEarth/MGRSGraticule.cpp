@@ -289,9 +289,6 @@ MGRSGraticule::init()
     _root = new osg::Group;
 
     GLUtils::setLighting(_root->getOrCreateStateSet(), osg::StateAttribute::OFF);
-
-    // install the range callback for clip plane activation
-    _root->addCullCallback( new RangeUniformCullCallback() );
 }
 
 Config

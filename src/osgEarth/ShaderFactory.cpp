@@ -1421,15 +1421,3 @@ ShaderFactory::createColorFilterChainFragmentShader(
     
     return new osg::Shader(osg::Shader::FRAGMENT, bufstr);
 }
-
-std::string
-ShaderFactory::getRangeUniformName() const
-{
-    return "oe_range_to_bs";
-}
-
-osg::Uniform*
-ShaderFactory::createRangeUniform() const
-{
-    return new osg::Uniform(osg::Uniform::FLOAT, getRangeUniformName());
-}

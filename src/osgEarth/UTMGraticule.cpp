@@ -209,9 +209,6 @@ UTMGraticule::init()
     this->getOrCreateStateSet()->setRenderBinDetails(1, "RenderBin");
 
     _root = new osg::Group();
-
-    // install the range callback for clip plane activation
-    _root->addCullCallback( new RangeUniformCullCallback() );
 }
 
 void
