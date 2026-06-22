@@ -1420,6 +1420,7 @@ ChonkDrawable::GLObjects::release()
     _instanceOutputBuf = nullptr;
     _chonkBuf = nullptr;
     _commands.clear();
+    _pcps.clear(); // clear cached program-state map to prevent unbounded growth
     _dirty = true;
 }
 
