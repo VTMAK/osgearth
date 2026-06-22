@@ -1,5 +1,5 @@
 /* osgEarth
-* Copyright 2025 Pelican Mapping
+* Copyright 2026 Pelican Mapping
 * MIT License
 */
 #pragma once
@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <queue>
 #include <thread>
+#include <cstdlib>
 
 namespace osgEarth { namespace Util
 {
@@ -41,10 +42,6 @@ namespace osgEarth { namespace Util
         EQUAL keys_equal;
 
         container_t _container;
-
-        //inline bool keys_equal(const KEY& a, const KEY& b) const {
-        //    return EQUAL()(a, b);
-        //}
 
         inline DATA& operator[](const KEY& key) {
             for(unsigned i=0; i<_container.size(); ++i) {
@@ -220,6 +217,7 @@ namespace osgEarth { namespace Util
         using E = typename std::pair<K, V>;
         mutable typename std::list<E> cache;
         mutable std::map<K, typename std::list<E>::iterator> map;
+        bool enabled = true;
 
     public:
         using ValueType = typename std::optional<V>;
@@ -228,7 +226,7 @@ namespace osgEarth { namespace Util
 
         LRUCache(unsigned cap) : capacity(std::max(1u, cap))
         {
-            //nop
+            enabled = (::getenv("OSGEARTH_NO_L2_CACHE") == nullptr);
         }
 
         LRUCache(bool) = delete;
@@ -288,7 +286,7 @@ namespace osgEarth { namespace Util
         //! @param value The value to associate with the key.
         inline void insert(const K& key, const V& value)
         {
-            if (capacity == 0)
+            if (capacity == 0 || !enabled)
                 return;
             std::scoped_lock L(mutex);
             auto it = map.find(key);
@@ -316,7 +314,7 @@ namespace osgEarth { namespace Util
         template<typename FUNC>
         inline ValueType get_or_insert(const K& key, FUNC&& create)
         {
-            if (capacity == 0) {
+            if (capacity == 0 || !enabled) {
                 ValueType v;
                 create(v);
                 return v;
