@@ -150,8 +150,8 @@ TEST_CASE("GeoCoverage readAtCoords maps world coords to raster values")
     cov->write(TestCoverageValue(11), 1, 1);
     cov->write(TestCoverageValue(22), 2, 2);
 
-    const SpatialReference* wgs84 = SpatialReference::get("wgs84");
-    REQUIRE(wgs84 != 0);
+    osg::ref_ptr<SpatialReference> wgs84 = SpatialReference::get("wgs84");
+    REQUIRE(wgs84.valid());
 
     GeoExtent extent(wgs84, 0.0, 0.0, 40.0, 40.0);
     GeoCoverage<TestCoverageValue> geo(cov, extent);

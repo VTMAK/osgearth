@@ -6,6 +6,7 @@
 #include <osgEarth/catch.hpp>
 #include <cmath>
 #include <osgEarth/SpatialReference>
+#include <osgEarth/Profile>
 
 using namespace osgEarth;
 
@@ -17,7 +18,12 @@ namespace
             if (!osg::equivalent(a[i], b[i])) return false;
         return true;
     }
-                
+
+    bool near(double a, double b, double eps = 1e-3)
+    {
+        return std::abs(a - b) <= eps;
+    }
+                 
 }
 
 TEST_CASE("Parsing doubles") {
@@ -207,4 +213,58 @@ TEST_CASE("MFE SRS") {
     mfe->transform(p_mfe, wgs84, p_wgs84);
     REQUIRE(p_wgs84.x() == -157.0);
     REQUIRE(p_wgs84.y() == 21.0);
+}
+
+TEST_CASE("transformExtentToMBR is a no-op for equivalent SRS") {
+    const SpatialReference* wgs84 = SpatialReference::get("wgs84");
+
+    double xmin = -10.0;
+    double ymin = -20.0;
+    double xmax = 30.0;
+    double ymax = 40.0;
+
+    REQUIRE(wgs84->transformExtentToMBR(wgs84, xmin, ymin, xmax, ymax));
+    REQUIRE(xmin == -10.0);
+    REQUIRE(ymin == -20.0);
+    REQUIRE(xmax == 30.0);
+    REQUIRE(ymax == 40.0);
+}
+
+TEST_CASE("transformExtentToMBR clamps WGS84 latitude when targeting spherical mercator") {
+    const SpatialReference* wgs84 = SpatialReference::get("wgs84");
+    const SpatialReference* sm = SpatialReference::get("spherical-mercator");
+    osg::ref_ptr<const Profile> mercProfile = Profile::create(Profile::SPHERICAL_MERCATOR);
+
+    double xmin = -5.0;
+    double ymin = -90.0; // outside spherical-mercator legal lat range
+    double xmax = 5.0;
+    double ymax = 90.0;  // outside spherical-mercator legal lat range
+
+    REQUIRE(wgs84->transformExtentToMBR(sm, xmin, ymin, xmax, ymax));
+    REQUIRE(std::isfinite(xmin));
+    REQUIRE(std::isfinite(ymin));
+    REQUIRE(std::isfinite(xmax));
+    REQUIRE(std::isfinite(ymax));
+
+    osg::Vec3d pMin, pMax;
+    const double latMin = mercProfile->getLatLongExtent().yMin();
+    const double latMax = mercProfile->getLatLongExtent().yMax();
+
+    REQUIRE(wgs84->transform(osg::Vec3d(0.0, latMin, 0.0), sm, pMin));
+    REQUIRE(wgs84->transform(osg::Vec3d(0.0, latMax, 0.0), sm, pMax));
+
+    REQUIRE(near(ymin, pMin.y(), 1e-2));
+    REQUIRE(near(ymax, pMax.y(), 1e-2));
+}
+
+TEST_CASE("transformExtentToMBR rejects inverted extents") {
+    const SpatialReference* wgs84 = SpatialReference::get("wgs84");
+    const SpatialReference* sm = SpatialReference::get("spherical-mercator");
+
+    double xmin = 10.0;
+    double ymin = 5.0;
+    double xmax = -10.0; // inverted X range
+    double ymax = 15.0;
+
+    REQUIRE_FALSE(wgs84->transformExtentToMBR(sm, xmin, ymin, xmax, ymax));
 }
