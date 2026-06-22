@@ -51,8 +51,9 @@ FeatureSource::Options::fromConfig(const Config& conf)
     conf.get("buffer_width", bufferWidth(), bufferWidthAsPercentage());
     conf.get("auto_fid", autoFID());
 
+    filters().clear();
     for(auto& filterConf : conf.child("filters").children())
-        filters().push_back(filterConf);
+        filters().emplace_back(filterConf);
 }
 
 //...................................................................
@@ -319,8 +320,11 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
         }
     }
 
+    const bool isTileQuery = query.tileKey().isSet() && query.tileKey()->valid();
+    const bool canUseL2TileCache = isTileQuery && (_featuresCache != nullptr);
+
     // TileKey path:
-    if (query.tileKey().isSet() && query.tileKey()->valid())
+    if (isTileQuery)
     {
         if (!temp_cx.workingExtent().isSet())
         {
@@ -334,7 +338,7 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
             getKeys(query.tileKey().value(), query.buffer().value(), keys);
 
             // Try reading from the cache first if we have a TileKey.
-            if (_featuresCache)
+            if (canUseL2TileCache)
             {
                 for (auto& key : keys)
                     cache_key += key.str() + ',';
@@ -356,7 +360,6 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
                 if (keys.size() == 1)
                 {
                     Query query(*keys.begin());
-                    osg::ref_ptr<FeatureCursor> cursor;
                     result = createPatchFeatureCursor(query, progress);
                     if (!result.valid())
                         result = createFeatureCursorImplementation(query, progress);
@@ -411,11 +414,13 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
     {
         if (!fromCache)
         {
-            if (!_filters.empty() ||
+            const bool requiresMaterialization =
+                !_filters.empty() ||
                 options().fidAttribute().isSet() ||
                 options().autoFID() == true ||
-                query.tileKey().isSet() ||
-                _featuresCache != nullptr)
+                isTileQuery;
+
+            if (requiresMaterialization)
             {
                 FeatureList features;
                 result->fill(features, [](const Feature* f) { return f != nullptr; });
@@ -450,7 +455,7 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
                 }
 
                 // Insert the tile level for tiled features:
-                if (query.tileKey().isSet())
+                if (isTileQuery)
                 {
                     for (auto& feature : features)
                     {
@@ -458,9 +463,9 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
                     }
                 }
 
-                // Write the feature set to the L2 cache.
+                // Write the feature set to the L2 cache (tile-key queries only).
                 // TODO: If we have a persistent cache, write to that as well here
-                if (_featuresCache)
+                if (canUseL2TileCache && !cache_key.empty())
                 {
                     // clone the list for caching:
                     FeatureList clone(features.size());
@@ -474,7 +479,7 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
             }
         }
 
-        // apply caller's filters. These are NOT cached by this class because the 
+        // apply caller's filters. These are NOT cached by this class because the
         // modifications are the resposibility of the caller.
         if (!post_filters.empty())
         {
@@ -491,7 +496,7 @@ FeatureSource::createFeatureCursor(const Query& in_query, const FeatureFilterCha
 
     //if (fromCache) hits += 1;
     //OE_INFO << LC << "cache hits = " << 100.0f * (hits / reads) << "%" << std::endl;
-    
+
     return result;
 }
 
@@ -599,37 +604,6 @@ TiledFeatureSource::Options::fromConfig(const Config& conf)
 Status
 TiledFeatureSource::openImplementation()
 {
-    Status parent = super::openImplementation();
-    if (parent.isError())
-        return parent;
-
-#if 0
-    if (patch.isSet() && (patch.embeddedOptions() != nullptr))
-    {
-        auto* layer = patch.create(getReadOptions());
-        if (layer && getFeatureProfile() && getFeatureProfile()->getTilingProfile())
-        {
-            layer->setMinLevel(getMinLevel());
-            layer->setMaxLevel(getMaxLevel());
-            layer->setFeatureProfile(getFeatureProfile());
-            layer->setFIDAttribute(getFIDAttribute());
-            layer->setGeoInterpolation(getGeoInterpolation());
-            parent = layer->open(getReadOptions());
-
-            if (parent.isError())
-            {
-                OE_WARN << LC << "Failed to open patch: " << parent.message() << std::endl;
-            }
-        }
-    }
-#endif
-
-    if (parent.isError())
-    {
-        OE_WARN << LC << "Failed to open patch: " << parent.message() << std::endl;
-    }
-
-
     return super::openImplementation();
 }
 
