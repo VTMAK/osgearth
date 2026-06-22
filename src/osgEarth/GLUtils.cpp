@@ -207,15 +207,21 @@ GLUtils::enableGLDebugging()
 void
 GLUtils::pushDebugGroup(const char* name)
 {
-    gl.init();
-    gl.PushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name);
+    if (GLUtils::isGLDebuggingEnabled())
+    {
+        gl.init();
+        gl.PushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, name);
+    }
 }
 
 void
 GLUtils::popDebugGroup()
 {
-    gl.init();
-    gl.PopDebugGroup();
+    if (GLUtils::isGLDebuggingEnabled())
+    {
+        gl.init();
+        gl.PopDebugGroup();
+    }
 }
 
 void
@@ -515,6 +521,12 @@ namespace
 {
     std::mutex s_pools_mutex;
     std::vector<osg::ref_ptr<GLObjectPool>> s_pools;
+
+    bool glObjectPoolDebugEnabled()
+    {
+        static bool s_enabled = (::getenv("OSGEARTH_DEBUG_GL_OBJECT_POOL") != nullptr);
+        return s_enabled;
+    }
 }
 bool GLObjectPool::_enableRecycling = true;
 unsigned GLObjectPool::_bytes_to_delete_per_frame = 100000u;
@@ -556,6 +568,9 @@ GLObjectPool::GLObjectPool(unsigned cxid) :
     char* value = ::getenv("OSGEARTH_GL_OBJECT_POOL_DELAY");
     if (value)
         _frames_to_delay_deletion = as<unsigned>(value, _frames_to_delay_deletion);
+
+    if (::getenv("OSGEARTH_GL_OBJECT_POOL_DISABLE_RECYCLING"))
+        _enableRecycling = false;
 }
 
 namespace
@@ -693,7 +708,12 @@ GLObjectPool::releaseOrphans(const osg::GraphicsContext* gc)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
+    const std::size_t beforeCount = _objects.size();
+    const GLsizeiptr beforeBytes = _totalBytes;
+
     int bytes_remaining = (int)_bytes_to_delete_per_frame;
+    int bytes_deleted = 0;
+    unsigned deleted_count = 0u;
 
     // then check for objects to add to the orphan list:
     GLsizeiptr bytes = 0;
@@ -717,8 +737,11 @@ GLObjectPool::releaseOrphans(const osg::GraphicsContext* gc)
             bytes_remaining > 0 &&
             object->_orphan_frames++ >= _frames_to_delay_deletion)
         {
+            const int object_size = object->size();
             object->release();
-            bytes_remaining -= object->size();
+            bytes_remaining -= object_size;
+            bytes_deleted += object_size;
+            ++deleted_count;
             continue;
         }
 
@@ -729,6 +752,19 @@ GLObjectPool::releaseOrphans(const osg::GraphicsContext* gc)
 
     _objects.swap(keepers);
     _totalBytes = bytes;
+
+    if (glObjectPoolDebugEnabled())
+    {
+        OE_INFO << "[GLObjectPool]"
+            << " cx=" << getContextID()
+            << " watched=" << beforeCount << "->" << _objects.size()
+            << " bytes=" << beforeBytes << "->" << _totalBytes
+            << " deleted_count=" << deleted_count
+            << " deleted_bytes=" << bytes_deleted
+            << " budget=" << _bytes_to_delete_per_frame
+            << " delay_frames=" << _frames_to_delay_deletion
+            << std::endl;
+    }
 }
 
 
@@ -743,11 +779,14 @@ GLObject::GLObject(GLenum ns, osg::State& state) :
 void
 GLObject::debugLabel(const std::string& category, const std::string& uniqueid)
 {
-    _category = category;
-    _uid = uniqueid;
+    if (GLUtils::isGLDebuggingEnabled())
+    {
+        _category = category;
+        _uid = uniqueid;
 
-    OE_SOFT_ASSERT_AND_RETURN(valid(), void());
-    ext()->debugObjectLabel(ns(), name(), label());
+        OE_SOFT_ASSERT_AND_RETURN(valid(), void());
+        ext()->debugObjectLabel(ns(), name(), label());
+    }
 }
 
 GLQuery::GLQuery(GLenum target, osg::State& state) :
