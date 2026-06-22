@@ -18,7 +18,7 @@
 using namespace osgEarth;
 using namespace osgEarth::Util;
 
-#define LC "[SimplerPager] "
+#define LC "[SimplePager] "
 
 
 SimplePager::SimplePager(const osgEarth::Map* map, const osgEarth::Profile* profile) :
@@ -332,8 +332,10 @@ SimplePager::createChildNode(const TileKey& key, ProgressCallback* progress)
             if (ccExtent.isValid())
             {
                 // if the extent is more than 90 degrees, bail
-                GeoExtent geodeticExtent = ccExtent.transform(ccExtent.getSRS()->getGeographicSRS());
-                if (geodeticExtent.width() < 90.0 && geodeticExtent.height() < 90.0)
+                auto geoSRS = ccExtent.getSRS()->getGeographicSRS();
+                auto geodeticExtent = ccExtent.transform(geoSRS);
+
+                if (geodeticExtent.isValid() && geodeticExtent.width() < 90.0 && geodeticExtent.height() < 90.0)
                 {
                     // get the geocentric tile center:
                     osg::Vec3d tileCenter;
