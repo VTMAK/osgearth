@@ -305,7 +305,7 @@ BridgeLayer::addedToMap(const Map* map)
     // create a terrain constraint layer that will 'clamp' the terrain to the end caps of our bridges.
     if (options().constraintMinLevel() > 0 && options().constraintMinLevel() <= 21)
     {
-        auto* c = new TerrainConstraintLayer();
+        osg::ref_ptr<TerrainConstraintLayer> c = new TerrainConstraintLayer();
         c->setName(getName() + "_constraints");
         c->setRemoveInterior(false);
         c->setRemoveExterior(false);

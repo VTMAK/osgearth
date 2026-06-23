@@ -94,7 +94,7 @@ FeatureSource::init()
 Status
 FeatureSource::openImplementation()
 {
-    unsigned int l2CacheSize = 32u;
+    unsigned int l2CacheSize = 16u;
 
     if (options().l2CacheSize().isSet())
     {
