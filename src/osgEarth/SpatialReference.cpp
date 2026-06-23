@@ -564,27 +564,24 @@ SpatialReference::getGeographicSRS() const
     if ( _is_spherical_mercator )
         return get("wgs84", _key.vertLower);
 
+    std::lock_guard<std::mutex> lock(_mutex);
+
     if ( !_geo_srs.valid() )
     {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        if ( !_geo_srs.valid() ) // double-check pattern
+        // temporary SRS to build the WKT
+        void* temp_handle = OSRNewSpatialReference(NULL);
+        int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
+        if (err == OGRERR_NONE)
         {
-            // temporary SRS to build the WKT
-            void* temp_handle = OSRNewSpatialReference(NULL);
-            int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
-            if (err == OGRERR_NONE)
+            char* wktbuf;
+            if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
             {
-                char* wktbuf;
-                if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
-                {
-                    Key key(std::string(wktbuf), _key.vertLower);
-                    _geo_srs = new SpatialReference(key);
-                    CPLFree(wktbuf);
-                }
+                Key key(std::string(wktbuf), _key.vertLower);
+                _geo_srs = new SpatialReference(key);
+                CPLFree(wktbuf);
             }
-            OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
         }
+        OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
     }
 
     return _geo_srs.get();
@@ -596,27 +593,24 @@ SpatialReference::getGeodeticSRS() const
     if ( isGeodetic() )
         return this;
 
+    std::lock_guard<std::mutex> lock(_mutex);
+
     if ( !_geodetic_srs.valid() )
     {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        if ( !_geodetic_srs.valid() ) // double check pattern
+        // temporary SRS to build the WKT
+        void* temp_handle = OSRNewSpatialReference(NULL);
+        int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
+        if (err == OGRERR_NONE)
         {
-            // temporary SRS to build the WKT
-            void* temp_handle = OSRNewSpatialReference(NULL);
-            int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
-            if (err == OGRERR_NONE)
+            char* wktbuf;
+            if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
             {
-                char* wktbuf;
-                if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
-                {
-                    Key key(std::string(wktbuf), "");
-                    _geodetic_srs = new SpatialReference(key);
-                    CPLFree(wktbuf);
-                }
+                Key key(std::string(wktbuf), "");
+                _geodetic_srs = new SpatialReference(key);
+                CPLFree(wktbuf);
             }
-            OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
         }
+        OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
     }
 
     return _geodetic_srs.get();
@@ -628,28 +622,25 @@ SpatialReference::getGeocentricSRS() const
     if ( isGeocentric() )
         return this;
 
-    if ( !_geocentric_srs.valid() )
-    {
-        std::lock_guard<std::mutex> lock(_mutex);
+    std::lock_guard<std::mutex> lock(_mutex);
 
-        if ( !_geocentric_srs.valid() ) // double-check pattern
+    if (!_geocentric_srs.valid())
+    {
+        // temporary SRS to build the WKT
+        void* temp_handle = OSRNewSpatialReference(NULL);
+        int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
+        if (err == OGRERR_NONE)
         {
-            // temporary SRS to build the WKT
-            void* temp_handle = OSRNewSpatialReference(NULL);
-            int err = OSRCopyGeogCSFrom(static_cast<OGRSpatialReferenceH>(temp_handle), static_cast<OGRSpatialReferenceH>(getHandle()));
-            if (err == OGRERR_NONE)
+            char* wktbuf;
+            if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
             {
-                char* wktbuf;
-                if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
-                {
-                    Key key(std::string(wktbuf), ""); // to vdatum in ECEF
-                    _geocentric_srs = new SpatialReference(key);
-                    _geocentric_srs->_domain = GEOCENTRIC;
-                    CPLFree(wktbuf);
-                }
+                Key key(std::string(wktbuf), ""); // to vdatum in ECEF
+                _geocentric_srs = new SpatialReference(key);
+                _geocentric_srs->_domain = GEOCENTRIC;
+                CPLFree(wktbuf);
             }
-            OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
         }
+        OSRDestroySpatialReference(static_cast<OGRSpatialReferenceH>(temp_handle));
     }
 
     return _geocentric_srs.get();
@@ -1308,100 +1299,134 @@ SpatialReference::transformExtentToMBR(
     if (!valid())
         return false;
 
-    // Same SRS? no work to do.
+    // Same horizontal SRS? no work to do.
     if (isHorizEquivalentTo(to_srs))
         return true;
 
-    // Transform all points and take the maximum bounding rectangle the resulting points
-    std::vector<osg::Vec3d> v;
+    // Validate input extent.
+    if (in_out_xmin > in_out_xmax || in_out_ymin > in_out_ymax)
+        return false;
 
-    // Start by clamping to the out_srs' legal bounds, if possible.
-    // TODO: rethink this to be more generic.
-    if (isGeographic() && (to_srs->isMercator() || to_srs->isSphericalMercator()))
+    // Best-effort clamp to legal target bounds (generic).
+    clampExtentToLegalBounds(to_srs, in_out_xmin, in_out_ymin, in_out_xmax, in_out_ymax);
+
+    if (in_out_xmin > in_out_xmax || in_out_ymin > in_out_ymax)
+        return false;
+
+    const double width = in_out_xmax - in_out_xmin;
+    const double height = in_out_ymax - in_out_ymin;
+
+    // Adaptive-ish fixed sampling; denser than legacy 5-point edges.
+    const unsigned int edgeSamples = 9;     // includes endpoints
+    const unsigned int interiorSamples = 5; // 5x5 interior grid (excluding edges)
+
+    std::vector<osg::Vec3d> samples;
+    samples.reserve(1 + edgeSamples * 4 + (interiorSamples - 2) * (interiorSamples - 2));
+
+    // Centroid first (used as a stable unwrap reference after transform).
+    samples.push_back(osg::Vec3d(in_out_xmin + width * 0.5, in_out_ymin + height * 0.5, 0.0));
+
+    // Edge samples.
+    for (unsigned int i = 0; i < edgeSamples; ++i)
     {
-        osg::ref_ptr<const Profile> merc = Profile::create(Profile::SPHERICAL_MERCATOR);
-        in_out_ymin = clamp(in_out_ymin, merc->getLatLongExtent().yMin(), merc->getLatLongExtent().yMax());
-        in_out_ymax = clamp(in_out_ymax, merc->getLatLongExtent().yMin(), merc->getLatLongExtent().yMax());
+        const double t = (double)i / (double)(edgeSamples - 1);
+        const double x = in_out_xmin + width * t;
+        const double y = in_out_ymin + height * t;
+
+        samples.push_back(osg::Vec3d(in_out_xmin, y, 0.0)); // left
+        samples.push_back(osg::Vec3d(in_out_xmax, y, 0.0)); // right
+        samples.push_back(osg::Vec3d(x, in_out_ymax, 0.0)); // top
+        samples.push_back(osg::Vec3d(x, in_out_ymin, 0.0)); // bottom
     }
 
-    double height = in_out_ymax - in_out_ymin;
-    double width = in_out_xmax - in_out_xmin;
-    unsigned int numSamples = 5;
-
-    v.reserve(5 + numSamples * 4);
-
-    // first point is a centroid. This we will use to make sure none of the corner points
-    // wraps around if the target SRS is geographic.
-    v.push_back(osg::Vec3d(in_out_xmin + width * 0.5, in_out_ymin + height * 0.5, 0)); // centroid.
-
-    // add the four corners
-    v.push_back( osg::Vec3d(in_out_xmin, in_out_ymin, 0) ); // ll
-    v.push_back( osg::Vec3d(in_out_xmin, in_out_ymax, 0) ); // ul
-    v.push_back( osg::Vec3d(in_out_xmax, in_out_ymax, 0) ); // ur
-    v.push_back( osg::Vec3d(in_out_xmax, in_out_ymin, 0) ); // lr
-
-    //We also sample along the edges of the bounding box and include them in the 
-    //MBR computation in case you are dealing with a projection that will cause the edges
-    //of the bounding box to be expanded.  This was first noticed when dealing with converting
-    //Hotline Oblique Mercator to WGS84
-   
-    //Sample the edges
-    double dWidth  = width / (numSamples - 1);
-    double dHeight = height / (numSamples - 1);
-    
-    //Left edge
-    for (unsigned int i = 0; i < numSamples; i++)
+    // Interior samples (helps with non-linear projections whose extrema are not on edges).
+    for (unsigned int iy = 1; iy + 1 < interiorSamples; ++iy)
     {
-        v.push_back( osg::Vec3d(in_out_xmin, in_out_ymin + dHeight * (double)i, 0) );
-    }
+        const double ty = (double)iy / (double)(interiorSamples - 1);
+        const double y = in_out_ymin + height * ty;
 
-    //Right edge
-    for (unsigned int i = 0; i < numSamples; i++)
-    {
-        v.push_back( osg::Vec3d(in_out_xmax, in_out_ymin + dHeight * (double)i, 0) );
-    }
-
-    //Top edge
-    for (unsigned int i = 0; i < numSamples; i++)
-    {
-        v.push_back( osg::Vec3d(in_out_xmin + dWidth * (double)i, in_out_ymax, 0) );
-    }
-
-    //Bottom edge
-    for (unsigned int i = 0; i < numSamples; i++)
-    {
-        v.push_back( osg::Vec3d(in_out_xmin + dWidth * (double)i, in_out_ymin, 0) );
-    }
-    
-    if ( transform(v, to_srs) )
-    {
-        in_out_xmin = DBL_MAX;
-        in_out_ymin = DBL_MAX;
-        in_out_xmax = -DBL_MAX;
-        in_out_ymax = -DBL_MAX;
-
-        // For a geographic target, make sure the new extents contain the centroid
-        // because they might have wrapped around or run into a precision failure.
-        // v[0]=centroid, v[1]=LL, v[2]=UL, v[3]=UR, v[4]=LR
-        if (to_srs->isGeographic())
+        for (unsigned int ix = 1; ix + 1 < interiorSamples; ++ix)
         {
-            if (v[1].x() > v[0].x() || v[2].x() > v[0].x()) in_out_xmin = -180.0;
-            if (v[3].x() < v[0].x() || v[4].x() < v[0].x()) in_out_xmax = 180.0;
+            const double tx = (double)ix / (double)(interiorSamples - 1);
+            const double x = in_out_xmin + width * tx;
+            samples.push_back(osg::Vec3d(x, y, 0.0));
+        }
+    }
+
+    // Fast path: transform all at once.
+    std::vector<osg::Vec3d> transformed(samples);
+    bool ok = transform(transformed, to_srs);
+
+    // Robust fallback: transform point-by-point and keep successful points.
+    if (!ok)
+    {
+        transformed.clear();
+        transformed.reserve(samples.size());
+
+        for (unsigned int i = 0; i < samples.size(); ++i)
+        {
+            osg::Vec3d out;
+            if (transform(samples[i], to_srs, out))
+                transformed.push_back(out);
+        }
+    }
+
+    if (transformed.empty())
+        return false;
+
+    in_out_xmin = DBL_MAX;
+    in_out_ymin = DBL_MAX;
+    in_out_xmax = -DBL_MAX;
+    in_out_ymax = -DBL_MAX;
+
+    if (to_srs->isGeographic())
+    {
+        // Unwrap longitudes around the centroid/reference to avoid false full-world expansion.
+        const double refLon = transformed[0].x();
+
+        auto unwrapLon = [refLon](double lon) -> double
+            {
+                while (lon - refLon > 180.0) lon -= 360.0;
+                while (lon - refLon < -180.0) lon += 360.0;
+                return lon;
+            };
+
+        double uxmin = DBL_MAX, uxmax = -DBL_MAX;
+
+        for (unsigned int i = 0; i < transformed.size(); ++i)
+        {
+            const double ux = unwrapLon(transformed[i].x());
+            uxmin = std::min(uxmin, ux);
+            uxmax = std::max(uxmax, ux);
+
+            in_out_ymin = std::min(in_out_ymin, transformed[i].y());
+            in_out_ymax = std::max(in_out_ymax, transformed[i].y());
         }
 
-        // enforce an MBR:
-        for (unsigned int i = 0; i < v.size(); i++)
+        const double span = uxmax - uxmin;
+        if (span >= 360.0 - 1e-9)
         {
-            in_out_xmin = std::min( v[i].x(), in_out_xmin );
-            in_out_ymin = std::min( v[i].y(), in_out_ymin );
-            in_out_xmax = std::max( v[i].x(), in_out_xmax );
-            in_out_ymax = std::max( v[i].y(), in_out_ymax );
+            in_out_xmin = -180.0;
+            in_out_xmax = 180.0;
         }
-
-        return true;
+        else
+        {
+            in_out_xmin = uxmin;
+            in_out_xmax = uxmax;
+        }
+    }
+    else
+    {
+        for (unsigned int i = 0; i < transformed.size(); ++i)
+        {
+            in_out_xmin = std::min(in_out_xmin, transformed[i].x());
+            in_out_ymin = std::min(in_out_ymin, transformed[i].y());
+            in_out_xmax = std::max(in_out_xmax, transformed[i].x());
+            in_out_ymax = std::max(in_out_ymax, transformed[i].y());
+        }
     }
 
-    return false;
+    return true;
 }
 
 bool 
