@@ -1,9 +1,8 @@
 /* osgEarth
- * Copyright 2025 Pelican Mapping
+ * Copyright 2026 Pelican Mapping
  * MIT License
  */
-#ifndef OSGEARTH_SPATIAL_REFERENCE_H
-#define OSGEARTH_SPATIAL_REFERENCE_H 1
+#pragma once
 
 #include <osgEarth/Common>
 #include <osgEarth/Units>
@@ -307,15 +306,6 @@ namespace osgEarth
     protected:
         virtual ~SpatialReference();
 
-    protected:
-
-        struct TransformInfo {
-            TransformInfo() : _failed(false), _handle(nullptr) { }
-            bool _failed;
-            void* _handle;
-        };
-        typedef std::unordered_map<std::string,optional<TransformInfo>> TransformHandleCache;
-
         // SRS requires per-thread handles to be thread safe
         struct ThreadLocal
         {
@@ -323,7 +313,6 @@ namespace osgEarth
             ~ThreadLocal();
             std::thread::id _threadId;
             void* _handle;
-            TransformHandleCache _xformCache;
             double* _workspace;
             unsigned _workspaceSize;
         };
@@ -424,8 +413,6 @@ namespace osgEarth
 
         static SpatialReference* createFromKey(const Key& key);
 
-        SpatialReference* fixWKT();
-
         friend class Registry;
     };
 }
@@ -439,5 +426,3 @@ namespace std {
         }
     };
 }
-
-#endif // OSGEARTH_SPATIAL_REFERENCE_H

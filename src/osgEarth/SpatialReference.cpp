@@ -58,6 +58,15 @@ namespace
             minX, minY, 0.0, 1.0);
         return transform;
     }
+
+    // A thread-local cache of coordinate transformations.
+    // They are expensive to create AND thread-specific.
+    // The handles in this cache are never deleted; this is intentional.
+    struct TransformCacheEntry {
+        void* handle = nullptr;
+        bool failed = false;
+    };
+    static thread_local std::unordered_map<std::string, TransformCacheEntry> s_transformCache;
 }
 
 //------------------------------------------------------------------------
@@ -876,7 +885,7 @@ SpatialReference::transform(std::vector<osg::Vec3d>& points,
         z_done = inputSRS->transformZ( points, outputSRS, true );
     }
 
-    ThreadLocal& local = getLocal();
+    ThreadLocal& local = inputSRS->getLocal();
 
     // move the xy data into straight arrays that OGR can use
     unsigned count = points.size();
@@ -959,6 +968,7 @@ SpatialReference::transform2D(double x, double y,
     return ok;
 }
 
+#define USE_TRANSFORM_CACHE
 
 bool
 SpatialReference::transformXYPointArrays(
@@ -970,41 +980,58 @@ SpatialReference::transformXYPointArrays(
 {  
     OE_SOFT_ASSERT_AND_RETURN(out_srs!=nullptr, false);
 
-    if (!valid())
+#ifdef USE_TRANSFORM_CACHE
+
+    // thread-local transform cache lookup:
+    auto key = this->getWKT() + out_srs->getWKT();
+    auto& info = s_transformCache[key];
+    
+    if (info.failed)
         return false;
 
-    // Transform the X and Y values inside an exclusive GDAL/OGR lock
-    optional<TransformInfo>& xform = local._xformCache[out_srs->getWKT()];
-    if (!xform.isSet())
+    if (!info.handle)
     {
-        xform.mutable_value()._handle = OCTNewCoordinateTransformation(static_cast<OGRSpatialReferenceH>(local._handle), static_cast<OGRSpatialReferenceH>(out_srs->getHandle()));
+        info.handle = OCTNewCoordinateTransformation(
+            static_cast<OGRSpatialReferenceH>(local._handle),
+            static_cast<OGRSpatialReferenceH>(out_srs->getHandle()));
 
-        if ( xform.mutable_value()._handle == nullptr )
+        if (!info.handle)
         {
             OE_WARN << LC
                 << "SRS xform not possible:" << std::endl
                 << "    From => " << getName() << std::endl
                 << "    To   => " << out_srs->getName() << std::endl;
-
             OE_WARN << LC << "INPUT: " << getWKT() << std::endl
                 << "OUTPUT: " << out_srs->getWKT() << std::endl;
-
             const char* errmsg = CPLGetLastErrorMsg();
-            OE_WARN << LC << "ERROR: " << (errmsg? errmsg : "do not know") << std::endl;
-
-            xform.mutable_value()._handle = nullptr;
-            xform.mutable_value()._failed = true;
-
+            OE_WARN << LC << "ERROR: " << (errmsg ? errmsg : "do not know") << std::endl;
+            info.failed = true;
             return false;
         }
+
+        OE_DEBUG << LC << "Thread " << std::this_thread::get_id() << " xform cache size = " << s_transformCache.size() << std::endl;
     }
 
-    if (xform->_failed)
+    return OCTTransform(static_cast<OGRCoordinateTransformationH>(info.handle), count, x, y, 0L) > 0;
+
+    if (!valid())
+        return false;
+
+#else
+
+    auto handle = OCTNewCoordinateTransformation(static_cast<OGRSpatialReferenceH>(local._handle), static_cast<OGRSpatialReferenceH>(out_srs->getHandle()));
+    if (handle)
+    {
+        auto r = OCTTransform(static_cast<OGRCoordinateTransformationH>(handle), count, x, y, 0L) > 0;
+        OCTDestroyCoordinateTransformation(static_cast<OGRCoordinateTransformationH>(handle));
+        return r;
+    }
+    else
     {
         return false;
     }
 
-    return OCTTransform(static_cast<OGRCoordinateTransformationH>(xform->_handle), count, x, y, 0L) > 0;
+#endif
 }
 
 
