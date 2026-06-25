@@ -56,6 +56,9 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
     if (error)
         *error = false;
 
+    if (input.empty())
+        return {};
+
     std::vector<std::string> output;
 
     std::stringstream buf;
