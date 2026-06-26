@@ -380,7 +380,7 @@ MapNodeHelper::configureView( osgViewer::View* view ) const
 
     // thread-safe initialization of the OSG wrapper manager. Calling this here
     // prevents the "unsupported wrapper" messages from OSG
-    osgDB::Registry::instance()->getObjectWrapperManager()->findWrapper("osg::Image");
+    //osgDB::Registry::instance()->getObjectWrapperManager()->findWrapper("osg::Image");
 
     // add some stock OSG handlers:
     view->addEventHandler(new osgViewer::StatsHandler());

@@ -32,11 +32,17 @@ option(OSGEARTH_BUILD_WITH_CPP14_POLYFILLS "Build osgEarth with C++14 polyfills 
 
 if(OSGEARTH_BUILD_WITH_CPP14_POLYFILLS)
     message(STATUS "Building with polyfills to support C++14!")
+    set(OSGEARTH_HAVE_CPP14_POLYFILLS ON)
+    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
 else()
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
+
+set(OSGEARTH_BUILDING_SDK ON)
 
 # Detect out-of-source build. We'll need this for protobuf generated files.
 if (NOT "${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")

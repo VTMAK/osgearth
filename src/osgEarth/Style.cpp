@@ -134,7 +134,6 @@ Style::fromSLD(const Config& sld, const StyleMap* sheet)
 
             if (sheet)
             {
-                const StyleSheet::Options* sheetImpl = reinterpret_cast<const StyleSheet::Options*>(sheet);
                 StyleMap::const_iterator i = sheet->find(tokens[1]);
                 if (i != sheet->end())
                 {

@@ -5,7 +5,7 @@ if (CESIUM_NATIVE_FOUND)
     message(STATUS "Found Cesium Native")
 
     set(LIB_NAME osgEarthCesium)
-
+            
     set(OSGEARTH_HAVE_CESIUM_NODEKIT ON PARENT_SCOPE) # for BuildConfig
 
     if(OSGEARTH_BUILD_SHARED_LIBS)
@@ -41,6 +41,8 @@ if (CESIUM_NATIVE_FOUND)
         TaskProcessor)
 
     set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
 
     add_osgearth_library(
         TARGET ${LIB_NAME}
