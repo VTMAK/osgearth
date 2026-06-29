@@ -80,7 +80,6 @@ namespace osgEarth
         /** Gets a named style from this sheet. If the name isn't found, optionally falls back on the
             "default" style. Note: if the name has a hashtag prefix (e.g., "#name") it will search for
             the name with and without the hash. (they are considered equivalent) */
-        Style* getStyle( const std::string& name, bool fallBackOnDefault =true );
         const Style* getStyle( const std::string& name, bool fallBackOnDefault =true ) const;
 
         //! Same as getStyle, but also returns the style's index within the sheet.
@@ -89,16 +88,13 @@ namespace osgEarth
         
 
         /** Gets the default style in this sheet. */
-        Style* getDefaultStyle();
         const Style* getDefaultStyle() const;
 
         /** Get access to styles for manual configuration */
-        StyleMap& getStyles();
         const StyleMap& getStyles() const;
 
         /** Selectors pick a style from the sheet based on some criteria. */
         void addSelector(const StyleSelector&);
-        StyleSelectors& getSelectors();
         const StyleSelectors& getSelectors() const;
         const StyleSelector* getSelector(const std::string& name) const;
 
