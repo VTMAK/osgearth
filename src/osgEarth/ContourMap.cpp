@@ -195,7 +195,7 @@ ContourMapLayer::prepareForRendering(TerrainEngine* engine)
             stateset->addUniform(new osg::Uniform("oe_contour_geoid", _reservationGeoid.unit()));
             stateset->setDefine("OE_USE_GEOID");
 
-            osgDB::writeImageFile(*image, "geoid.tif");
+            //osgDB::writeImageFile(*image, "geoid.tif");
         }
     }
 }
