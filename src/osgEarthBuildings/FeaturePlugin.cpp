@@ -101,10 +101,12 @@ namespace osgEarth { namespace Buildings
             StyleSheet* sheet = new StyleSheet();
             sheet->addResourceLibrary( reslib.get() );
 
-            BuildingSymbol* sym = sheet->getDefaultStyle()->getOrCreate<BuildingSymbol>();
+            Style defaultStyle;
+            BuildingSymbol* sym = defaultStyle.getOrCreate<BuildingSymbol>();
             sym->height() = NumericExpression("max(5.0, [HEIGHT])");
+            sheet->addStyle(defaultStyle);
 
-            osg::ref_ptr<Session> session = new Session(0L);
+            osg::ref_ptr<Session> session = new Session(nullptr);
             session->setStyles( sheet );
             //session->setResourceCache( new ResourceCache(options) );
 
