@@ -295,25 +295,6 @@ StyleSheet::addStylesFromCSS(const std::string& css)
     }
 }
 
-Style*
-StyleSheet::getStyle( const std::string& name, bool fallBackOnDefault )
-{
-    StyleMap::iterator i = options().styles().find( name );
-    if ( i != options().styles().end() ) {
-        return &i->second;
-    }
-    else if ( name.length() > 1 && name[0] == '#' ) {
-        std::string nameWithoutHash = name.substr( 1 );
-        return getStyle( nameWithoutHash, fallBackOnDefault );
-    }
-    else if ( fallBackOnDefault ) {
-        return getDefaultStyle();
-    }
-    else {
-        return 0L;
-    }
-}
-
 const Style*
 StyleSheet::getStyle( const std::string& name, bool fallBackOnDefault ) const
 {
@@ -348,22 +329,10 @@ StyleSheet::getStyleAndIndex(const std::string& name) const
     }
 }
 
-StyleMap&
-StyleSheet::getStyles()
-{
-    return options().styles();
-}
-
 const StyleMap&
 StyleSheet::getStyles() const
 {
     return options().styles();
-}
-
-StyleSelectors&
-StyleSheet::getSelectors()
-{
-    return options().selectors();
 }
 
 const StyleSelectors&
@@ -388,28 +357,7 @@ StyleSheet::getSelector(const std::string& name) const
 void
 StyleSheet::addSelector(const StyleSelector& value)
 {
-    getSelectors()[value.name().get()] = value;
-}
-
-Style*
-StyleSheet::getDefaultStyle()
-{
-    StyleMap& styles = options().styles();
-
-    if (styles.find( "default" ) != styles.end() ) {
-        return &styles.find( "default" )->second;
-    }
-    else if (styles.find( "" ) != styles.end() ) {
-        return &styles.find( "" )->second;
-    }
-    if (styles.size() > 0 ) {
-        return &styles.begin()->second;
-    }
-    else {
-        // insert the empty style and return it.
-        styles["default"] = _emptyStyle;
-        return &styles.begin()->second;
-    }
+    options().selectors()[value.name().get()] = value;
 }
 
 const Style*
