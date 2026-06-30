@@ -21,6 +21,7 @@ namespace osgEarth
             META_LayerOptions(osgEarth, Options, TileLayer::Options);
             OE_OPTION(std::string, verticalDatum);
             OE_OPTION(bool, interpretValuesAsOffsets, false);
+            OE_OPTION(osg::Vec2f, clampBetween, osg::Vec2f(-FLT_MAX, FLT_MAX));
             Config getConfig() const override;
             void fromConfig(const Config& conf);
         };
@@ -43,6 +44,10 @@ namespace osgEarth
         //! Whether this layer contains offsets instead of absolute elevation heights
         void setInterpretValuesAsOffsets(bool value);
         bool getInterpretValuesAsOffsets() const;
+
+        //! Clamp source data values between a min and max.
+        void setClampBetween(const osg::Vec2f& value);
+        const osg::Vec2f& getClampBetween() const;
 
     public: // deprecated
 

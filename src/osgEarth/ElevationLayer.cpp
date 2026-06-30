@@ -27,6 +27,7 @@ ElevationLayer::Options::getConfig() const
     Config conf = TileLayer::Options::getConfig();
     conf.set("vdatum", verticalDatum());
     conf.set("interpret_values_as_offsets", interpretValuesAsOffsets());
+    conf.set("clamp_between", clampBetween());
 
     conf.set("offset", interpretValuesAsOffsets()); // back compat
     return conf;
@@ -37,6 +38,7 @@ ElevationLayer::Options::fromConfig( const Config& conf )
 {
     conf.get("vdatum", verticalDatum());
     conf.get("interpret_values_as_offsets", interpretValuesAsOffsets());
+    conf.get("clamp_between", clampBetween());
 
     conf.get("vsrs", verticalDatum()); // back compat
     conf.get("offset", interpretValuesAsOffsets()); // back compat
@@ -142,6 +144,18 @@ ElevationLayer::getInterpretValuesAsOffsets() const
 }
 
 void
+ElevationLayer::setClampBetween(const osg::Vec2f& value)
+{
+    setOptionThatRequiresReopen(options().clampBetween(), value);
+}
+
+const osg::Vec2f&
+ElevationLayer::getClampBetween() const
+{
+    return options().clampBetween().get();
+}
+
+void
 ElevationLayer::normalizeNoDataValues(osg::HeightField* hf) const
 {
     if ( hf )
@@ -153,6 +167,10 @@ ElevationLayer::normalizeNoDataValues(osg::HeightField* hf) const
             if (std::isnan(value) || equivalent(value, getNoDataValue()) || value < getMinValidValue() || value > getMaxValidValue() )
             {
                 value = NO_DATA_VALUE;
+            }
+            else
+            {
+                value = clamp(value, options().clampBetween()->x(), options().clampBetween()->y());
             }
         }
     }
