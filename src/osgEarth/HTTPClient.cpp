@@ -676,10 +676,10 @@ namespace
             struct curl_slist *headers=NULL;
             if (!request.getHeaders().empty())
             {
-                for (HTTPRequest::Parameters::const_iterator itr = request.getHeaders().begin(); itr != request.getHeaders().end(); ++itr)
+                for(auto& header : request.getHeaders())
                 {
                     std::stringstream buf;
-                    buf << osgEarth::toLower(itr->first) << ": " << itr->second;
+                    buf << osgEarth::toLower(header.first) << ": " << header.second;
                     headers = curl_slist_append(headers, buf.str().c_str());
                 }
             }
@@ -830,11 +830,9 @@ namespace
                     << url << "\" (" << DateTime(filetime).asRFC1123() << ") t="
                     << std::setprecision(4) << response.getDuration() << "s" << std::endl;
 
-                for(HTTPRequest::Parameters::const_iterator itr = request.getHeaders().begin();
-                    itr != request.getHeaders().end(); 
-                    ++itr)
+                for(auto& header : request.getHeaders())
                 {
-                    OE_NOTICE << LC << "    Header: " << itr->first << " = " << itr->second << std::endl;
+                    OE_NOTICE << LC << "    Header: " << header.first << " = " << header.second << std::endl;
                 }
 
                 {

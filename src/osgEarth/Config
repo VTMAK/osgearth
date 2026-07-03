@@ -99,7 +99,16 @@ namespace osgEarth
         }
 
         Config(Config&& rhs) noexcept {
-            *this = rhs;
+            if (this != &rhs) {
+                _key = std::move(rhs._key);
+                _defaultValue = std::move(rhs._defaultValue);
+                _referrer = std::move(rhs._referrer);
+                _externalRef = std::move(rhs._externalRef);
+                _children = std::move(rhs._children);
+                _isLocation = rhs._isLocation;
+                _isNumber = rhs._isNumber;
+                rhs.clear();
+            }
         }
 
 #endif

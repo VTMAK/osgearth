@@ -12,9 +12,9 @@ namespace osgEarth
      * This is used extensively in osgEarth's Config subsystem.
      */
     template<typename T> struct optional {
-        optional() { }
-        optional(const optional<T>& rhs) : _set(rhs._set), _value(rhs._value), _defaultValue(rhs._defaultValue) { }
-        optional<T>& operator = (const optional<T>& rhs) { _set=rhs._set; _value=rhs._value; _defaultValue=rhs._defaultValue; return *this; }
+        optional() = default;
+        optional(const optional<T>& rhs) = default;
+        optional<T>& operator = (const optional<T>& rhs) = default;
         optional(const T& defaultValue) : _value(defaultValue), _defaultValue(defaultValue) { }
         const T& operator =(const T& value) { _set=true; _value=value; return _value; }
         bool operator ==(const optional<T>& rhs) const { return _set && rhs._set && _value==rhs._value; }
@@ -61,11 +61,7 @@ namespace osgEarth
 
     private:
         bool _set = false;
-        T _value;
-        T _defaultValue;
-        typedef T* optional::*unspecified_bool_type;
-
-    public:
-        operator unspecified_bool_type() const { return 0; }
+        T _value { };
+        T _defaultValue { };
     };
 }

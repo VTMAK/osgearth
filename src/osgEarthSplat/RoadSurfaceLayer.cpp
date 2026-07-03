@@ -16,8 +16,8 @@ using namespace osgEarth::Splat;
 #define LC "[RoadSurfaceLayer] "
 
 
-REGISTER_OSGEARTH_LAYER(roadsurface, RoadSurfaceLayer);
-REGISTER_OSGEARTH_LAYER(road_surface, RoadSurfaceLayer);
+REGISTER_OSGEARTH_LAYER(roadsurfacesplat, RoadSurfaceLayer);
+REGISTER_OSGEARTH_LAYER(road_surface_splat, RoadSurfaceLayer);
 
 //........................................................................
 

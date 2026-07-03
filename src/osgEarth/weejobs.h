@@ -896,6 +896,8 @@ namespace WEEJOBS_NAMESPACE
 
     inline void detail::runtime::shutdown()
     {
+        std::lock_guard<std::mutex> lock(_pools_mutex);
+
         _alive = false;
 
         //std::cout << "stopping " << _pools.size() << " threads..." << std::endl;

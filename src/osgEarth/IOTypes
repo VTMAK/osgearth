@@ -79,7 +79,7 @@ OSGEARTH_SPECIALIZE_CONFIG(osgEarth::ProxySettings);
 
 namespace osgEarth
 {
-    using Headers = std::unordered_map<std::string,std::string>;
+    using Headers = vector_map<std::string, std::string>; //std::unordered_map<std::string,std::string>;
 
 
 //--------------------------------------------------------------------

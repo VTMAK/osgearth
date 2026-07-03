@@ -66,7 +66,20 @@ namespace
         void* handle = nullptr;
         bool failed = false;
     };
-    static thread_local std::unordered_map<std::string, TransformCacheEntry> s_transformCache;
+    using TransformCache = std::unordered_map<std::string, TransformCacheEntry>;
+    TransformCache& xformCache() {
+        static thread_local TransformCache s_transformCache;
+        return s_transformCache;
+    }
+
+    struct SRSCacheEntry {
+        osg::ref_ptr<SpatialReference> srs;
+    };
+    using SRSCache = std::map<SpatialReference::Key, SRSCacheEntry>;
+    SRSCache& srsCache() {
+        static thread_local SRSCache s_srsCache;
+        return s_srsCache;
+    };
 }
 
 //------------------------------------------------------------------------
@@ -105,8 +118,13 @@ SpatialReference::ThreadLocal::~ThreadLocal()
 SpatialReference*
 SpatialReference::create( const std::string& horiz, const std::string& vert )
 {
-    osg::ref_ptr<SpatialReference> srs = Registry::instance()->getOrCreateSRS( Key(horiz, vert) );
-    return srs.release();
+    Key key(horiz, vert);
+    auto& entry = srsCache()[key];
+    if (!entry.srs.valid())
+    {
+        entry.srs = createFromKey(key);
+    }
+    return entry.srs.get();
 }
 
 SpatialReference*
@@ -586,7 +604,7 @@ SpatialReference::getGeographicSRS() const
             if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
             {
                 Key key(std::string(wktbuf), _key.vertLower);
-                _geo_srs = new SpatialReference(key);
+                _geo_srs = createFromKey(key);
                 CPLFree(wktbuf);
             }
         }
@@ -615,7 +633,7 @@ SpatialReference::getGeodeticSRS() const
             if (OSRExportToWkt(static_cast<OGRSpatialReferenceH>(temp_handle), &wktbuf) == OGRERR_NONE)
             {
                 Key key(std::string(wktbuf), "");
-                _geodetic_srs = new SpatialReference(key);
+                _geodetic_srs = createFromKey(key);
                 CPLFree(wktbuf);
             }
         }
@@ -984,7 +1002,7 @@ SpatialReference::transformXYPointArrays(
 
     // thread-local transform cache lookup:
     auto key = this->getWKT() + out_srs->getWKT();
-    auto& info = s_transformCache[key];
+    auto& info = xformCache()[key];
     
     if (info.failed)
         return false;
@@ -1009,7 +1027,7 @@ SpatialReference::transformXYPointArrays(
             return false;
         }
 
-        OE_DEBUG << LC << "Thread " << std::this_thread::get_id() << " xform cache size = " << s_transformCache.size() << std::endl;
+        OE_DEBUG << LC << "Thread " << std::this_thread::get_id() << " xform cache size = " << xformCache().size() << std::endl;
     }
 
     return OCTTransform(static_cast<OGRCoordinateTransformationH>(info.handle), count, x, y, 0L) > 0;

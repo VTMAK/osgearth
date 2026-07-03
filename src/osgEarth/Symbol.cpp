@@ -16,7 +16,7 @@ SymbolRegistry::instance()
 
     std::call_once(s_once, []() {
         s_singleton = new SymbolRegistry();
-        Registry::instance()->registerSingleton(s_singleton.get());
+        //Registry::instance()->registerSingleton(s_singleton.get());
     });
 
     return s_singleton;
@@ -31,19 +31,21 @@ SymbolRegistry::add( SymbolFactory* factory )
 Symbol*
 SymbolRegistry::create( const Config& conf )
 {
-    for (SymbolFactoryList::iterator itr = _factories.begin(); itr != _factories.end(); itr++)
+    for(auto& factory : _factories)
     {
-        Symbol* symbol = itr->get()->create( conf );
-        if (symbol) return symbol;
+        auto* symbol = factory->create(conf);
+        if (symbol)
+            return symbol;
     }
-    return 0;
+
+    return nullptr;
 } 
 
 void SymbolRegistry::parseSLD(const Config& c, class Style& style) const
 {
-    for (SymbolFactoryList::const_iterator itr = _factories.begin(); itr != _factories.end(); itr++)
+    for(auto& factory : _factories)
     {
-        itr->get()->parseSLD( c, style );     
+        factory->parseSLD( c, style );     
     }
 }
 
