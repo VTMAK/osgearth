@@ -62,9 +62,7 @@ namespace osgEarth { namespace Util
 
         //! Sets an optional owner that the paged node can query for traversal information.
         //! The owner MUST be an ancestor node in the scene graph.
-        void setOwner(PagedNodeManager* owner) {
-            _owner = owner;
-        }
+        void setOwner(PagedNodeManager* owner);
 
         //! Function to run to load the asychronous child. When null, there is no child data.
         void setLoadFunction(const Loader& value);
@@ -273,6 +271,7 @@ namespace osgEarth { namespace Util
         std::string _jobpoolName;
         PagedNodeManager* _owner = nullptr;
         double _timeoutSeconds = 0.0;
+        osg::ref_ptr<osg::Group> _payload;
 
         bool merge(int revision);
         void traverseChildren(osg::NodeVisitor& nv);

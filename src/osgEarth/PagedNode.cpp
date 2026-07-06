@@ -28,11 +28,24 @@ namespace
 PagedNode2::PagedNode2()
 {
     _job.name = (typeid(*this).name());
+    _payload = new osg::Group(); // parent of _loaded
 }
 
 PagedNode2::~PagedNode2()
 {
     //nop
+}
+
+void
+PagedNode2::setOwner(PagedNodeManager* owner)
+{
+    _owner = owner;
+
+    if (_owner->visibilityCallback())
+    {
+        OE_SOFT_ASSERT_AND_RETURN(_payload.valid(), void());
+        _payload->setCullCallback(_owner->visibilityCallback());
+    }        
 }
 
 void
@@ -170,21 +183,24 @@ PagedNode2::merge(int revision)
         OE_SOFT_ASSERT_AND_RETURN(_loaded.available(), false);
         OE_SOFT_ASSERT_AND_RETURN(_loaded.value().valid(), false);
         OE_SOFT_ASSERT_AND_RETURN(_loaded.value()->getNumParents() == 0, false);
+        OE_SOFT_ASSERT_AND_RETURN(_payload.valid() && _payload->getNumParents() == 0, false);
 
-        addChild(_loaded.value());
+        _payload->removeChildren(0, _payload->getNumChildren());
+        _payload->addChild(_loaded.value());
+        this->addChild(_payload);
         
         if (_callbacks.valid())
             _callbacks->firePostMergeNode(_loaded.value().get());
 
         // If we have an owner, install its cull callback as the first callback!
-        if (_owner && _owner->visibilityCallback())
-        {
-            auto cb = _owner->visibilityCallback();
-            //NO, this is wrong, refactor IF necessary:
-            //cb->addNestedCallback(_loaded.value()->getCullCallback());
-            OE_SOFT_ASSERT(_loaded.value()->getCullCallback() == nullptr, "PagedNode2 does not support an existing cull callback on the loaded node");
-            _loaded.value()->setCullCallback(cb);
-        }
+        //if (_owner && _owner->visibilityCallback())
+        //{
+        //    auto cb = _owner->visibilityCallback();
+        //    //NO, this is wrong, refactor IF necessary:
+        //    //cb->addNestedCallback(_loaded.value()->getCullCallback());
+        //    OE_SOFT_ASSERT(_loaded.value()->getCullCallback() == nullptr, "PagedNode2 does not support an existing cull callback on the loaded node");
+        //    _loaded.value()->setCullCallback(cb);
+        //}
 
         _merged.resolve(true);
         return true;
@@ -313,7 +329,9 @@ void PagedNode2::unload()
 {
     if (_merged.has_value(true))
     {
-        removeChild(_loaded.value());
+        _payload->removeChildren(0, _payload->getNumChildren());
+        removeChild(_payload.get());
+        //removeChild(_loaded.value());
     }
 
     _loaded.reset();
