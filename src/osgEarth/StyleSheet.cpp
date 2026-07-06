@@ -366,15 +366,23 @@ StyleSheet::getDefaultStyle() const
     const StyleMap& styles = options().styles();
 
     if (styles.size() == 1 ) {
+        // only one style? return it
         return &styles.begin()->second;
     }
     else if (styles.find( "default" ) != styles.end() ) {
+        // style names "default"? use it
         return &styles.find( "default" )->second;
     }
     else if (styles.find( "" ) != styles.end() ) {
+        // unnamed style? use it
         return &styles.find( "" )->second;
     }
+    else if (styles.size() > 0) {
+        // no default, but at least one style? return the first one
+        return &styles.begin()->second;
+    }
     else {
+        // no styles at all? return a static empty style
         return &_emptyStyle;
     }
 }
