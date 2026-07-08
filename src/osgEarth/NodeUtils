@@ -484,6 +484,11 @@ namespace osgEarth { namespace Util
     */
     extern OSGEARTH_EXPORT void loadData(osg::Node* node, std::vector<osg::BoundingSphered>& areasToLoad);
 
+    /**
+    * Trims excess vector capacity from any osg::KdTree shapes attached to
+    * geometries in the scene graph.
+    */
+    extern OSGEARTH_EXPORT void trimKdTrees(osg::Node* node);
 
     inline Result<osgUtil::LineSegmentIntersector::Intersection> intersectMouse(osg::View* view, float x, float y,osg::Node* graph)
     {

@@ -5,6 +5,8 @@
 
 #include <osgEarth/NodeUtils>
 
+#include <osg/KdTree>
+
 using namespace osgEarth;
 using namespace osgEarth::Util;
 
@@ -210,5 +212,47 @@ void osgEarth::Util::loadData(osg::Node* node, std::vector<osg::BoundingSphered>
         fullyLoaded = v.isFullyLoaded();
         // Call manual update on the PagingManger to peform merges.
         v.manualUpdate();
+    }
+}
+
+namespace
+{
+    template<typename T>
+    void trimVectorCapacity(std::vector<T>& values)
+    {
+        if (values.capacity() > values.size())
+        {
+            std::vector<T>(values.begin(), values.end()).swap(values);
+        }
+    }
+
+    struct TrimKdTreeVisitor : public osg::NodeVisitor
+    {
+        TrimKdTreeVisitor() :
+            osg::NodeVisitor(osg::NodeVisitor::TRAVERSE_ALL_CHILDREN)
+        {
+        }
+
+        void apply(osg::Geometry& geometry) override
+        {
+            osg::KdTree* kdTree = dynamic_cast<osg::KdTree*>(geometry.getShape());
+            if (kdTree)
+            {
+                trimVectorCapacity(kdTree->getPrimitiveIndices());
+                trimVectorCapacity(kdTree->getVertexIndices());
+                trimVectorCapacity(kdTree->getNodes());
+            }
+
+            traverse(geometry);
+        }
+    };
+}
+
+void osgEarth::Util::trimKdTrees(osg::Node* node)
+{
+    if (node)
+    {
+        TrimKdTreeVisitor visitor;
+        node->accept(visitor);
     }
 }

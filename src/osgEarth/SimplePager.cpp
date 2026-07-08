@@ -271,6 +271,7 @@ SimplePager::createChildNode(const TileKey& key, ProgressCallback* progress)
             {
                 osg::ref_ptr< osg::KdTreeBuilder > kdTreeBuilder = osgDB::Registry::instance()->getKdTreeBuilder()->clone();
                 payload->accept(*kdTreeBuilder.get());
+                Util::trimKdTrees(payload.get());
             }
         }
 
