@@ -1401,7 +1401,7 @@ namespace osgEarth
                     ImGui::Separator();
                     for (unsigned int i = 0; i < arrays.size(); ++i)
                     {
-                        if (!arrays[i].valid() && arrays[i]->getBinding() != osg::Array::BIND_OFF) continue;
+                        if (!arrays[i].valid() || arrays[i]->getBinding() == osg::Array::BIND_OFF) continue;
 
                         const char* arrayName = attributeTypeToString((osg::Drawable::AttributeType)i);
 
