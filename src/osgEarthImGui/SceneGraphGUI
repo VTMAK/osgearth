@@ -19,6 +19,7 @@
 #include <osgDB/WriteFile>
 #include <osg/TextureBuffer>
 #include <osg/ComputeBoundsVisitor>
+#include <osg/KdTree>
 
 #include <osg/io_utils>
 #include <osg/PolygonMode>
@@ -176,17 +177,39 @@ namespace osgEarth
     {
         unsigned int arrayCount = 0;
         unsigned int elementCount = 0;
-        unsigned int size = 0;
+        unsigned long long size = 0;
     };
+
+    static unsigned long long getKdTreeDataSize(const osg::KdTree* kdTree)
+    {
+        if (!kdTree)
+        {
+            return 0;
+        }
+
+        unsigned long long size = sizeof(osg::KdTree);
+        size += kdTree->getPrimitiveIndices().capacity() * sizeof(osg::KdTree::Indices::value_type);
+        size += kdTree->getVertexIndices().capacity() * sizeof(osg::KdTree::Indices::value_type);
+        size += kdTree->getNodes().capacity() * sizeof(osg::KdTree::KdNode);
+        return size;
+    }
 
     struct MemoryStats
     {
         void reset()
         {
             arrayStats.clear();
+            totalArrayDataSize = 0;
+            totalPrimitiveSetDataSize = 0;
+            totalKdTreeDataSize = 0;
             totalDataSize = 0;
             totalGeometries = 0;
             totalPrimitiveSets = 0;
+            totalPrimitiveSetIndices = 0;
+            totalKdTrees = 0;
+            totalKdTreePrimitiveIndices = 0;
+            totalKdTreeVertexIndices = 0;
+            totalKdTreeNodes = 0;
             computed = false;
         }
 
@@ -197,8 +220,41 @@ namespace osgEarth
                 arrayStats[index].arrayCount += 1;
                 arrayStats[index].elementCount += array->getNumElements();;
                 arrayStats[index].size += array->getTotalDataSize();
+                totalArrayDataSize += array->getTotalDataSize();
                 totalDataSize += array->getTotalDataSize();
             }
+            computed = true;
+        }
+
+        void addPrimitiveSet(const osg::PrimitiveSet* primitiveSet)
+        {
+            if (primitiveSet)
+            {
+                ++totalPrimitiveSets;
+                totalPrimitiveSetIndices += primitiveSet->getNumIndices();
+
+                auto size = getPrimitiveSetDataSize(primitiveSet);
+                totalPrimitiveSetDataSize += size;
+                totalDataSize += size;
+            }
+            computed = true;
+        }
+
+        void addDrawableShape(const osg::Shape* shape)
+        {
+            const osg::KdTree* kdTree = dynamic_cast<const osg::KdTree*>(shape);
+            if (kdTree)
+            {
+                ++totalKdTrees;
+                totalKdTreePrimitiveIndices += kdTree->getPrimitiveIndices().size();
+                totalKdTreeVertexIndices += kdTree->getVertexIndices().size();
+                totalKdTreeNodes += kdTree->getNodes().size();
+
+                unsigned long long size = getKdTreeDataSize(kdTree);
+                totalKdTreeDataSize += size;
+                totalDataSize += size;
+            }
+
             computed = true;
         }
 
@@ -249,14 +305,52 @@ namespace osgEarth
 
             ++totalGeometries;
 
-            totalPrimitiveSets += geometry.getNumPrimitiveSets();
+            for (auto& primitiveSet : geometry.getPrimitiveSetList())
+            {
+                addPrimitiveSet(primitiveSet.get());
+            }
+
+            addDrawableShape(geometry.getShape());
         }
 
         std::map< osg::Drawable::AttributeTypes, ArrayStats > arrayStats;
-        unsigned int totalDataSize = 0;
+        unsigned long long totalArrayDataSize = 0;
+        unsigned long long totalPrimitiveSetDataSize = 0;
+        unsigned long long totalKdTreeDataSize = 0;
+        unsigned long long totalDataSize = 0;
         unsigned int totalGeometries = 0;
         unsigned int totalPrimitiveSets = 0;
+        unsigned long long totalPrimitiveSetIndices = 0;
+        unsigned int totalKdTrees = 0;
+        unsigned long long totalKdTreePrimitiveIndices = 0;
+        unsigned long long totalKdTreeVertexIndices = 0;
+        unsigned long long totalKdTreeNodes = 0;
         bool computed = false;
+
+    private:
+        unsigned int getPrimitiveSetDataSize(const osg::PrimitiveSet* primitiveSet) const
+        {
+            auto size = primitiveSet->getTotalDataSize();
+
+            if (size == 0)
+            {
+                if (auto* lengths = dynamic_cast<const osg::DrawArrayLengths*>(primitiveSet))
+                {
+                    size = static_cast<unsigned int>(
+                        lengths->size() * sizeof(osg::DrawArrayLengths::vector_type::value_type));
+                }
+#ifdef OSG_HAS_MULTIDRAWARRAYS
+                else if (auto* multiDraw = dynamic_cast<const osg::MultiDrawArrays*>(primitiveSet))
+                {
+                    size = static_cast<unsigned int>(
+                        multiDraw->getFirsts().size() * sizeof(osg::MultiDrawArrays::Firsts::value_type) +
+                        multiDraw->getCounts().size() * sizeof(osg::MultiDrawArrays::Counts::value_type));
+                }
+#endif
+            }
+
+            return size;
+        }
     };
 
     class ComputeMemoryStatsVisitor : public osg::NodeVisitor
@@ -1034,7 +1128,15 @@ namespace osgEarth
                 {
                     ImGui::Text("Geometry Count: %d", _memoryStats.totalGeometries);
                     ImGui::Text("PrimitiveSets: %d", _memoryStats.totalPrimitiveSets);
-                    ImGui::Text("Total Data Size %dkb", (unsigned int)(_memoryStats.totalDataSize / 1024.0f));
+                    ImGui::Text("PrimitiveSet Indices: %llu", _memoryStats.totalPrimitiveSetIndices);
+                    ImGui::Text("KdTrees: %d", _memoryStats.totalKdTrees);
+                    ImGui::Text("KdTree Primitive Indices: %llu", _memoryStats.totalKdTreePrimitiveIndices);
+                    ImGui::Text("KdTree Vertex Indices: %llu", _memoryStats.totalKdTreeVertexIndices);
+                    ImGui::Text("KdTree Nodes: %llu", _memoryStats.totalKdTreeNodes);
+                    ImGui::Text("Array Data Size %llukb", _memoryStats.totalArrayDataSize / 1024ull);
+                    ImGui::Text("PrimitiveSet Data Size %llukb", _memoryStats.totalPrimitiveSetDataSize / 1024ull);
+                    ImGui::Text("KdTree Data Size %llukb", _memoryStats.totalKdTreeDataSize / 1024ull);
+                    ImGui::Text("Total Data Size %llukb", _memoryStats.totalDataSize / 1024ull);
                     if (ImGui::BeginTable("Memory", 4, ImGuiTableFlags_Borders))
                     {
                         ImGui::TableSetupColumn("Attribute");
@@ -1048,7 +1150,7 @@ namespace osgEarth
                             ImGui::TableNextColumn(); ImGui::Text("%s", attributeTypeToString((osg::Drawable::AttributeType)a.first));
                             ImGui::TableNextColumn(); ImGui::Text("%d", a.second.arrayCount);
                             ImGui::TableNextColumn(); ImGui::Text("%d", a.second.elementCount);
-                            ImGui::TableNextColumn(); ImGui::Text("%dkb", (unsigned int)(a.second.size / 1024.0f));
+                            ImGui::TableNextColumn(); ImGui::Text("%llukb", a.second.size / 1024ull);
                         }
                         ImGui::EndTable();
                     }
@@ -1415,7 +1517,24 @@ namespace osgEarth
 
                 for (auto& p : geometry->getPrimitiveSetList())
                 {
-                    ImGui::Text("%s Mode=%s Primitives=%d Instances=%d", typeid(*p.get()).name(), GLModeToString(p->getMode()), p->getNumPrimitives(), p->getNumInstances());
+                    ImGui::Text(
+                        "%s Mode=%s Primitives=%d Instances=%d Size=%ukb",
+                        typeid(*p.get()).name(),
+                        GLModeToString(p->getMode()),
+                        p->getNumPrimitives(),
+                        p->getNumInstances(),
+                        p->getTotalDataSize() / 1024u);
+                }
+
+                const osg::KdTree* kdTree = dynamic_cast<const osg::KdTree*>(geometry->getShape());
+                if (kdTree)
+                {
+                    ImGui::Text(
+                        "KdTree PrimitiveIndices=%llu VertexIndices=%llu Nodes=%llu Size=%llukb",
+                        (unsigned long long)kdTree->getPrimitiveIndices().size(),
+                        (unsigned long long)kdTree->getVertexIndices().size(),
+                        (unsigned long long)kdTree->getNodes().size(),
+                        getKdTreeDataSize(kdTree) / 1024ull);
                 }
             }
 
