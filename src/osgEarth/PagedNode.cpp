@@ -78,6 +78,8 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
         {
             bool inRange = false;
 
+            _lastTime = nv.getFrameStamp() ? nv.getFrameStamp()->getReferenceTime() : 0.0;
+
             if (_lodMethod == LODMethod::CAMERA_DISTANCE)
             {
                 float range = std::max(0.0f, nv.getDistanceToViewPoint(getBound().center(), true) - getBound().radius());
@@ -405,6 +407,7 @@ PagingManager::traverse(osg::NodeVisitor& nv)
 
     osg::Group::traverse(nv);
 
+#ifdef KEEP_NODES_THAT_ARE_CULLED_BUT_IN_RANGE
     if (nv.getVisitorType() == nv.CULL_VISITOR)
     {
         // After culling is complete, update all of the metrics for all of the nodes
@@ -414,7 +417,6 @@ PagingManager::traverse(osg::NodeVisitor& nv)
         {
             if (entry._data.valid())
             {         
-#ifdef KEEP_NODES_THAT_ARE_CULLED_BUT_IN_RANGE
                 if (entry._data->_lodMethod == LODMethod::CAMERA_DISTANCE)
                 {
                     //float range = std::max(0.0f, nv.getDistanceToViewPoint(entry._data->getBound().center(), false) - entry._data->getBound().radius());
@@ -426,11 +428,11 @@ PagingManager::traverse(osg::NodeVisitor& nv)
                     float pixels = Util::getPixelSize(nv.asCullStack(), entry._data->getBound().center(), entry._data->getBound().radius()) / nv.asCullStack()->getLODScale();
                     entry._data->_lastPixelSize = std::max(entry._data->_lastPixelSize, pixels);
                 }
-#endif
-                entry._data->_lastTime = nv.getFrameStamp() ? nv.getFrameStamp()->getReferenceTime() : 0.0;
+                //entry._data->_lastTime = nv.getFrameStamp() ? nv.getFrameStamp()->getReferenceTime() : 0.0;
             }
         }
     }
+#endif
 }
 
 void
@@ -450,42 +452,44 @@ PagingManager::update(osg::NodeVisitor* nv)
 
         double now = nv && nv->getFrameStamp() ? nv->getFrameStamp()->getReferenceTime() : 0.0;
 
-        _tracker.flush(_mergesPerFrame, [this, now](osg::ref_ptr<PagedNode2>& node)
+        auto checkForDispoal = [this, now](osg::ref_ptr<PagedNode2>& node)
+        {
+            // if the node is no longer in the scene graph, expunge it
+            if (node->referenceCount() == 1)
             {
-                // if the node is no longer in the scene graph, expunge it
-                if (node->referenceCount() == 1)
-                {
-                    return true;
-                }
+                return true;
+            }
 
 #ifdef KEEP_NODES_THAT_ARE_CULLED_BUT_IN_RANGE
-                // Don't expire nodes that are still within range even if they haven't passed cull.
-                if (node->getLODMethod() == LODMethod::CAMERA_DISTANCE && 
-                    node->_lastRange < node->getMaxRange())
-                {
-                    return false;
-                }
-                else if (node->getLODMethod() == LODMethod::SCREEN_SPACE && 
-                    node->_lastPixelSize >= node->getMinPixels() + _sse && node->_lastPixelSize < node->getMaxPixels() + _sse)
-                {
-                    return false;
-                }
+            // Don't expire nodes that are still within range even if they haven't passed cull.
+            if (node->getLODMethod() == LODMethod::CAMERA_DISTANCE &&
+                node->_lastRange < node->getMaxRange())
+            {
+                return false;
+            }
+            else if (node->getLODMethod() == LODMethod::SCREEN_SPACE &&
+                node->_lastPixelSize >= node->getMinPixels() + _sse && node->_lastPixelSize < node->getMaxPixels() + _sse)
+            {
+                return false;
+            }
 #endif
 
-                // respect the min lifespan of the node to prevent thrashing
-                if (now > 0.0 && now - node->_lastTime < node->getTimeoutSeconds())
-                {
-                    return false;
-                }
-
-                if (node->getAutoUnload())
-                {
-                    node->unload();
-                    return true;
-                }
-
+            // respect the min lifespan of the node to prevent thrashing
+            if (now > 0.0 && now - node->_lastTime < node->getTimeoutSeconds())
+            {
                 return false;
-            });
+            }
+
+            if (node->getAutoUnload())
+            {
+                node->unload();
+                return true;
+            }
+
+            return false;
+        };
+
+        _tracker.flush(_mergesPerFrame, checkForDispoal);
 
         // Reset the lastRange on the nodes for the next frame.
         for (auto& entry : _tracker._list)
