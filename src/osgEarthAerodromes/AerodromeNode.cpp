@@ -29,3 +29,8 @@ AerodromeNode::AerodromeNode(const std::string& icao)
 {
     setName("Aerodrome " + icao);
 }
+
+AerodromeNode::~AerodromeNode()
+{
+    OE_INFO << "[AerodromeNode] Destroying " << _icao << std::endl;
+}

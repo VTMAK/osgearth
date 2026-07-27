@@ -37,7 +37,7 @@ namespace osgEarth { namespace Aerodrome
 
         AerodromeNode(const std::string& icao);
 
-        virtual ~AerodromeNode() { }
+        virtual ~AerodromeNode();
 
     public: // properties
 
