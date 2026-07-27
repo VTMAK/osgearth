@@ -56,12 +56,6 @@ using namespace osgEarth::Threading;
 
 #define MAKE_SHADER_ID(X) osgEarth::hashString( X )
 
-
-//#ifdef USE_POLYSHADER_CACHE
-std::mutex VirtualProgram::PolyShader::_cacheMutex;
-VirtualProgram::PolyShader::PolyShaderCache VirtualProgram::PolyShader::_polyShaderCache;
-//#endif
-
 //------------------------------------------------------------------------
 
 namespace
@@ -86,6 +80,20 @@ namespace
             }
         }
         return false;
+    }
+
+    using PolyShaderCache = std::map<
+        std::pair<std::string, std::string>,
+        osg::ref_ptr<VirtualProgram::PolyShader>>;
+
+    std::mutex& getPolyShaderCacheMutex() {
+        static std::mutex _cacheMutex;
+        return _cacheMutex;
+    }
+
+    PolyShaderCache& getPolyShaderCache() {
+        static PolyShaderCache _cache;
+        return _cache;
     }
 }
 
@@ -2055,13 +2063,13 @@ VirtualProgram::PolyShader::lookUpShader(
 
 #ifdef USE_POLYSHADER_CACHE
 
-    std::lock_guard<std::mutex> lock(_cacheMutex);
+    std::lock_guard<std::mutex> lock(getPolyShaderCacheMutex());
 
     std::pair<std::string, std::string> hashKey(functionName, shaderSource);
 
-    PolyShaderCache::iterator iter = _polyShaderCache.find(hashKey);
+    PolyShaderCache::iterator iter = getPolyShaderCache().find(hashKey);
 
-    if (iter != _polyShaderCache.end())
+    if (iter != getPolyShaderCache().end())
     {
         shader = iter->second.get();
     }
@@ -2079,7 +2087,7 @@ VirtualProgram::PolyShader::lookUpShader(
         shader->prepare();
 
 #ifdef USE_POLYSHADER_CACHE
-        _polyShaderCache[hashKey] = shader;
+        getPolyShaderCache()[hashKey] = shader;
 #endif
     }
 
@@ -2090,16 +2098,16 @@ VirtualProgram::PolyShader::lookUpShader(
 void
 VirtualProgram::PolyShader::clearShaderCache()
 {
-    _cacheMutex.lock();
+    std::lock_guard<std::mutex> lock(getPolyShaderCacheMutex());
+
     // Erase our PolyShaders from the static _shaderCache
-    PolyShaderCache::iterator shadeEnd = _polyShaderCache.end();
-    PolyShaderCache::iterator shadeItr = _polyShaderCache.begin();
+    PolyShaderCache::iterator shadeEnd = getPolyShaderCache().end();
+    PolyShaderCache::iterator shadeItr = getPolyShaderCache().begin();
 
     for (; shadeItr != shadeEnd; ++shadeItr)
     {
-        shadeItr->second = NULL;
+        shadeItr->second = nullptr;
     }
-    _cacheMutex.unlock();
 }
 
 //.......................................................................

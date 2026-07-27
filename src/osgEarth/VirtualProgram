@@ -280,12 +280,6 @@ namespace osgEarth
             osg::ref_ptr<osg::Shader> _tessevalShader;
 
             bool _dirty;
-
-            static std::mutex _cacheMutex;
-            using PolyShaderCache = std::map<
-                std::pair<std::string, std::string>,
-                osg::ref_ptr<PolyShader>>;
-            static PolyShaderCache _polyShaderCache;
         };
 
     public:
