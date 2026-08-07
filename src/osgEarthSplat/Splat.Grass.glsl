@@ -1,5 +1,4 @@
 #version 430
-$GLSL_DEFAULT_PRECISION_FLOAT
 
 #pragma vp_name       GroundCover vertex shader
 #pragma vp_entryPoint oe_Grass_VS
@@ -218,8 +217,7 @@ void oe_Grass_VS(inout vec4 vertex)
 
 [break]
 
-#version $GLSL_VERSION_STR
-$GLSL_DEFAULT_PRECISION_FLOAT
+#version 430
 
 #pragma vp_name GroundCover frag shader
 #pragma vp_entryPoint oe_Grass_FS

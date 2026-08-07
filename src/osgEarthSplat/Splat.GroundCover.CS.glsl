@@ -62,6 +62,7 @@ uniform int oe_gc_zone;
 uniform vec2 oe_tile_elevTexelCoeff;
 uniform sampler2D oe_tile_elevationTex;
 uniform mat4 oe_tile_elevationTexMatrix;
+uniform vec2 oe_tile_elevMinMax;
 uniform float oe_GroundCover_colorMinSaturation;
 
 #pragma import_defines(OE_LANDCOVER_TEX)
@@ -134,11 +135,20 @@ bool inFrustum(in vec4 vertex_view)
 
 float getElevation(in vec2 tilec)
 {
-    vec2 elevc = tilec
-        * oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[0][0] // scale
-        + oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[3].st // bias
-        + oe_tile_elevTexelCoeff.y;
-    return texture(oe_tile_elevationTex, elevc).r;
+    vec2 elevc = (oe_tile_elevationTexMatrix * vec4(tilec, 0, 1)).st;
+
+    if (oe_tile_elevTexelCoeff.x > 0.0)
+    {
+        elevc = tilec
+           * oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[0][0] // scale
+           + oe_tile_elevTexelCoeff.x * oe_tile_elevationTexMatrix[3].st // bias
+           + oe_tile_elevTexelCoeff.y;
+    }
+
+    float encoded = textureLod(oe_tile_elevationTex, elevc, 0.0).r;
+    float minh = oe_tile_elevMinMax[0];
+    float maxh = oe_tile_elevMinMax[1];
+    return minh > maxh ? encoded : mix(minh, maxh, encoded);
 }
 
 void main()
