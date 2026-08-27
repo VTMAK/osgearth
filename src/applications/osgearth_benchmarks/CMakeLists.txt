@@ -1,7 +1,8 @@
 find_package(benchmark CONFIG REQUIRED)
 
 set(TARGET_SRC
-    main.cpp)
+    main.cpp
+    CacheBenchmarks.cpp)
 
 add_osgearth_app(
     TARGET osgearth_benchmarks

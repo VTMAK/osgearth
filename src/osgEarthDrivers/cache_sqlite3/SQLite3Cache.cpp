@@ -4,6 +4,7 @@
  */
 #include "SQLite3Cache"
 #include <osgEarth/Cache>
+#include <osgEarth/CacheStats>
 #include <osgEarth/StringUtils>
 #include <osgEarth/Threading>
 #include <osgEarth/URI>
@@ -24,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -329,10 +331,11 @@ namespace
             bool separate,
             const SQLite3CacheOptions& options,
             jobs::jobpool* pool,
+            const std::shared_ptr<CacheStatistics>& stats,
             std::string& error)
         {
             auto result = std::shared_ptr<DatabaseState>(
-                new DatabaseState(path, separate, options, pool));
+                new DatabaseState(path, separate, options, pool, stats));
             if (!result->initialize(error))
                 return nullptr;
             return result;
@@ -451,6 +454,7 @@ namespace
 
         ReaderLease acquireReader()
         {
+            CacheStatsScope waitScope(_stats, CacheStatistics::Metric::ReaderWait);
             std::unique_lock<std::mutex> lock(_readerMutex);
             while (_idleReaders.empty() && _readerCount >= _maxReaders)
                 _readerCV.wait(lock);
@@ -459,6 +463,7 @@ namespace
             {
                 auto connection = std::move(_idleReaders.back());
                 _idleReaders.pop_back();
+                waitScope.success();
                 return ReaderLease(this, std::move(connection));
             }
 
@@ -474,9 +479,11 @@ namespace
                 --_readerCount;
                 lock.unlock();
                 _readerCV.notify_one();
+                waitScope.error();
                 return ReaderLease();
             }
 
+            waitScope.success();
             return ReaderLease(this, std::move(connection));
         }
 
@@ -573,11 +580,13 @@ namespace
             const std::string& path,
             bool separate,
             const SQLite3CacheOptions& options,
-            jobs::jobpool* pool) :
+            jobs::jobpool* pool,
+            const std::shared_ptr<CacheStatistics>& stats) :
             _path(path),
             _separate(separate),
             _options(options),
             _pool(pool),
+            _stats(stats),
             _flushGroup(jobs::jobgroup::create()),
             _maxReaders(std::max(1u, options.readerConnections().get())),
             _maxQueueBytes(static_cast<std::size_t>(options.maxQueueMB().get()) * 1024u * 1024u),
@@ -612,9 +621,35 @@ namespace
             sqlite3_extended_result_codes(rawDb, 1);
             sqlite3_busy_timeout(rawDb, static_cast<int>(_options.busyTimeout().get()));
 
+            auto retryPause = [](const std::chrono::steady_clock::time_point& deadline)
+            {
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                return true;
+            };
+
+            auto execWithRetry = [&](const char* sql, char** errMsg) -> int
+            {
+                const auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(_options.busyTimeout().get());
+                int result = SQLITE_OK;
+                do
+                {
+                    if (errMsg && *errMsg)
+                    {
+                        sqlite3_free(*errMsg);
+                        *errMsg = nullptr;
+                    }
+                    result = sqlite3_exec(rawDb, sql, nullptr, nullptr, errMsg);
+                }
+                while (isRetryable(result) && retryPause(deadline));
+                return result;
+            };
+
             if (newDatabase)
             {
-                rc = sqlite3_exec(rawDb, "PRAGMA page_size=8192", nullptr, nullptr, nullptr);
+                rc = execWithRetry("PRAGMA page_size=8192", nullptr);
                 if (rc != SQLITE_OK)
                 {
                     error = Stringify() << "Failed to set SQLite page size: " << sqlite3_errmsg(rawDb);
@@ -623,15 +658,23 @@ namespace
                 }
             }
 
-            sqlite3_stmt* journalStmt = nullptr;
-            rc = sqlite3_prepare_v2(rawDb, "PRAGMA journal_mode=WAL", -1, &journalStmt, nullptr);
-            if (rc == SQLITE_OK)
-                rc = sqlite3_step(journalStmt);
+            bool walEnabled = false;
+            const auto journalDeadline = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(_options.busyTimeout().get());
+            do
+            {
+                sqlite3_stmt* journalStmt = nullptr;
+                rc = sqlite3_prepare_v2(
+                    rawDb, "PRAGMA journal_mode=WAL", -1, &journalStmt, nullptr);
+                if (rc == SQLITE_OK)
+                    rc = sqlite3_step(journalStmt);
 
-            const char* journalMode = rc == SQLITE_ROW ?
-                reinterpret_cast<const char*>(sqlite3_column_text(journalStmt, 0)) : nullptr;
-            const bool walEnabled = journalMode && osgEarth::ciEquals(journalMode, "wal");
-            sqlite3_finalize(journalStmt);
+                const char* journalMode = rc == SQLITE_ROW ?
+                    reinterpret_cast<const char*>(sqlite3_column_text(journalStmt, 0)) : nullptr;
+                walEnabled = journalMode && osgEarth::ciEquals(journalMode, "wal");
+                sqlite3_finalize(journalStmt);
+            }
+            while (!walEnabled && isRetryable(rc) && retryPause(journalDeadline));
 
             if (!walEnabled)
             {
@@ -668,8 +711,7 @@ namespace
                 "DROP INDEX IF EXISTS idx_cache_timestamp;";
 
             char* errMsg = nullptr;
-            rc = sqlite3_exec(rawDb, _separate ? separateSchema : sharedSchema,
-                nullptr, nullptr, &errMsg);
+            rc = execWithRetry(_separate ? separateSchema : sharedSchema, &errMsg);
             if (rc != SQLITE_OK)
             {
                 error = Stringify() << "Failed to create SQLite cache schema: "
@@ -797,6 +839,8 @@ namespace
 
                 _queuedBytes += mutationSize;
                 _queue.push_back(std::move(mutation));
+                if (_stats)
+                    _stats->updateQueueHighWater(_queuedBytes, _queue.size());
                 synchronous = _pool == nullptr;
                 if (!synchronous && !_flushScheduled)
                 {
@@ -933,9 +977,9 @@ namespace
             std::lock_guard<std::mutex> flushLock(_flushMutex);
 
             std::list<Mutation> batch;
+            std::size_t batchBytes = 0u;
             {
                 std::lock_guard<std::mutex> lock(_queueMutex);
-                std::size_t batchBytes = 0u;
                 while (!_queue.empty() && batch.size() < _maxBatchEntries)
                 {
                     const std::size_t nextBytes = _queue.front().storageSize();
@@ -953,6 +997,10 @@ namespace
                 return;
 
             OE_PROFILING_ZONE_NAMED("OE SQLite3 Cache Flush");
+            CacheStatsScope transactionScope(_stats, CacheStatistics::Metric::Transaction);
+            CacheStatsScope backendScope(_stats, CacheStatistics::Metric::BackendWrite);
+            if (_stats)
+                _stats->addTransactionMutations(batch.size());
 
             int rc = sqlite3_exec(_writer->db(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
             const bool transactionOpen = rc == SQLITE_OK;
@@ -975,6 +1023,10 @@ namespace
 
             if (!success && isRetryable(rc) && batch.front().retries < MAX_TRANSACTION_RETRIES)
             {
+                if (_stats)
+                    _stats->addBusyRetry();
+                transactionScope.error();
+                backendScope.error();
                 for (auto& mutation : batch)
                     ++mutation.retries;
 
@@ -988,8 +1040,15 @@ namespace
 
             if (!success)
             {
+                transactionScope.error();
+                backendScope.error();
                 OE_WARN << LC << "SQLite transaction failed for \"" << _path << "\": "
                     << sqlite3_errmsg(_writer->db()) << std::endl;
+            }
+            else
+            {
+                transactionScope.success(batchBytes);
+                backendScope.success(batchBytes);
             }
 
             std::vector<std::shared_ptr<Completion>> completions;
@@ -1037,6 +1096,7 @@ namespace
         bool _separate = true;
         SQLite3CacheOptions _options;
         std::unique_ptr<SQLiteConnection> _writer;
+        std::shared_ptr<CacheStatistics> _stats;
 
         mutable std::mutex _queueMutex;
         std::condition_variable _spaceCV;
@@ -1091,6 +1151,7 @@ namespace
         std::string _rootPath;
         SQLite3CacheOptions _options;
         jobs::jobpool* _pool = nullptr;
+        std::shared_ptr<CacheStatistics> _stats;
         std::shared_ptr<DatabaseState> _sharedState;
         mutable std::mutex _binMutex;
         mutable std::mutex _statesMutex;
@@ -1103,10 +1164,12 @@ namespace
         SQLite3CacheBin(
             const std::string& binID,
             const std::shared_ptr<DatabaseState>& state,
-            const SQLite3CacheOptions& options) :
+            const SQLite3CacheOptions& options,
+            const std::shared_ptr<CacheStatistics>& stats) :
             CacheBin(binID, options.enableNodeCaching().get()),
             _state(state),
-            _options(options)
+            _options(options),
+            _stats(stats)
         {
             initReaderWriter();
         }
@@ -1129,19 +1192,28 @@ namespace
 
         bool remove(const std::string& key) override
         {
-            return _ok && _state && _state->remove(getID(), key);
+            CacheStatsScope scope(_stats, CacheStatistics::Metric::Remove);
+            const bool result = _ok && _state && _state->remove(getID(), key);
+            result ? scope.success() : scope.error();
+            return result;
         }
 
         bool touch(const std::string& key) override
         {
-            return _ok && _state && _state->touch(getID(), key);
+            CacheStatsScope scope(_stats, CacheStatistics::Metric::Touch);
+            const bool result = _ok && _state && _state->touch(getID(), key);
+            result ? scope.success() : scope.error();
+            return result;
         }
 
         RecordStatus getRecordStatus(const std::string& key) override;
 
         bool clear() override
         {
-            return _ok && _state && _state->clearBin(getID());
+            CacheStatsScope scope(_stats, CacheStatistics::Metric::Clear);
+            const bool result = _ok && _state && _state->clearBin(getID());
+            result ? scope.success() : scope.error();
+            return result;
         }
 
         bool compact() override
@@ -1161,6 +1233,7 @@ namespace
 
         std::shared_ptr<DatabaseState> _state;
         SQLite3CacheOptions _options;
+        std::shared_ptr<CacheStatistics> _stats;
         osg::ref_ptr<osgDB::ReaderWriter> _rw;
         osg::ref_ptr<osgDB::Options> _rwOptions;
         std::string _compressorName;
@@ -1192,13 +1265,15 @@ namespace
             return;
         }
 
+        _stats = CacheStatistics::create(_options, "sqlite3", _rootPath);
+
         setNumThreads(_options.threads().get());
 
         if (!_options.separateBins().get())
         {
             std::string error;
             const std::string path = osgDB::concatPaths(_rootPath, "osgearth_cache.db");
-            _sharedState = DatabaseState::create(path, false, _options, _pool, error);
+            _sharedState = DatabaseState::create(path, false, _options, _pool, _stats, error);
             if (!_sharedState)
             {
                 _status.set(Status::ResourceUnavailable, error);
@@ -1299,7 +1374,7 @@ namespace
 
         std::string error;
         const std::string path = binDatabasePath(binID);
-        auto state = DatabaseState::create(path, true, _options, _pool, error);
+        auto state = DatabaseState::create(path, true, _options, _pool, _stats, error);
         if (!state)
         {
             OE_WARN << LC << error << std::endl;
@@ -1323,7 +1398,7 @@ namespace
         if (!state)
             return nullptr;
 
-        return _bins.getOrCreate(name, new SQLite3CacheBin(name, state, _options));
+        return _bins.getOrCreate(name, new SQLite3CacheBin(name, state, _options, _stats));
     }
 
     CacheBin* SQLite3Cache::getOrCreateDefaultBin()
@@ -1336,7 +1411,7 @@ namespace
         {
             auto state = createStateForBin("__default");
             if (state)
-                _defaultBin = new SQLite3CacheBin("__default", state, _options);
+                _defaultBin = new SQLite3CacheBin("__default", state, _options, _stats);
         }
         return _defaultBin.get();
     }
@@ -1401,13 +1476,20 @@ namespace
         const osgDB::Options* dbo,
         bool isImage)
     {
+        CacheStatsScope readScope(_stats, CacheStatistics::Metric::Read);
         if (!_ok || !_state)
+        {
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
         PendingRecord pending;
         const PendingStatus pendingStatus = _state->getPending(getID(), key, pending);
         if (pendingStatus == PendingStatus::Absent)
+        {
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
         if (pendingStatus == PendingStatus::Present)
         {
@@ -1416,12 +1498,18 @@ namespace
                     dynamic_cast<const osg::Image*>(pending.object.get())), pending.meta) :
                 ReadResult(const_cast<osg::Object*>(pending.object.get()), pending.meta);
             result.setLastModifiedTime(pending.timestamp);
+            readScope.success();
             return result;
         }
 
+        CacheStatsScope backendScope(_stats, CacheStatistics::Metric::BackendRead);
         auto reader = _state->acquireReader();
         if (!reader)
+        {
+            backendScope.error();
+            readScope.error();
             return ReadResult(ReadResult::RESULT_READER_ERROR);
+        }
 
         sqlite3_stmt* stmt = reader->statements().selectStmt;
         sqlite3_reset(stmt);
@@ -1460,11 +1548,17 @@ namespace
         sqlite3_reset(stmt);
 
         if (rc == SQLITE_DONE)
+        {
+            backendScope.miss();
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
         if (rc != SQLITE_ROW)
         {
             OE_WARN << LC << "SQLite read failed for key \"" << key << "\" in bin ["
                 << getID() << "]: " << sqlite3_errmsg(reader->db()) << std::endl;
+            backendScope.error();
+            readScope.error();
             return ReadResult(ReadResult::RESULT_READER_ERROR);
         }
 
@@ -1472,10 +1566,16 @@ namespace
         // before the comparatively expensive OSG deserialization so other readers
         // do not wait on the bounded connection pool.
         reader = DatabaseState::ReaderLease();
+        backendScope.success(data.size());
+        backendScope.finish();
 
         if (data.empty())
+        {
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
+        CacheStatsScope deserializeScope(_stats, CacheStatistics::Metric::Deserialize);
         std::istringstream datastream(data);
         osg::ref_ptr<const osgDB::Options> options = mergeOptions(dbo);
         osgDB::ReaderWriter::ReadResult result = isImage ?
@@ -1486,8 +1586,12 @@ namespace
         {
             OE_WARN << LC << "Failed to deserialize cached object for key \"" << key
                 << "\" in bin [" << getID() << "]: " << result.message() << std::endl;
+            deserializeScope.error();
+            readScope.error();
             return ReadResult(ReadResult::RESULT_READER_ERROR);
         }
+        deserializeScope.success(data.size());
+        deserializeScope.finish();
 
         Config meta;
         if (!metaJSON.empty())
@@ -1495,6 +1599,7 @@ namespace
 
         ReadResult output(result.getObject(), meta);
         output.setLastModifiedTime(timestamp);
+        readScope.success(data.size());
         return output;
     }
 
@@ -1536,13 +1641,21 @@ namespace
         const Config& meta,
         const osgDB::Options* writeOptions)
     {
+        CacheStatsScope writeScope(_stats, CacheStatistics::Metric::Write);
         if (!_ok || !_state || !object)
+        {
+            writeScope.error();
             return false;
+        }
 
         const bool isNode = dynamic_cast<const osg::Node*>(object) != nullptr;
         if (isNode && !_options.enableNodeCaching().get())
+        {
+            writeScope.success();
             return true;
+        }
 
+        CacheStatsScope serializeScope(_stats, CacheStatistics::Metric::Serialize);
         osgDB::ReaderWriter::WriteResult result;
         std::stringstream datastream;
         osg::ref_ptr<const osgDB::Options> options = mergeOptions(writeOptions);
@@ -1566,11 +1679,19 @@ namespace
         {
             OE_WARN << LC << "Failed to serialize object for key \"" << key
                 << "\" in bin [" << getID() << "]: " << result.message() << std::endl;
+            serializeScope.error();
+            writeScope.error();
             return false;
         }
 
-        return _state->enqueuePut(
-            getID(), key, datastream.str(), meta.toJSON(), meta, object);
+        std::string data = datastream.str();
+        serializeScope.success(data.size());
+        serializeScope.finish();
+        const std::size_t size = data.size();
+        const bool success = _state->enqueuePut(
+            getID(), key, std::move(data), meta.toJSON(), meta, object);
+        success ? writeScope.success(size) : writeScope.error();
+        return success;
     }
 
     CacheBin::RecordStatus SQLite3CacheBin::getRecordStatus(const std::string& key)

@@ -26,6 +26,9 @@ CacheOptions::getConfig() const
 {
     Config conf = ConfigOptions::getConfig();
     conf.set("enable_node_caching", enableNodeCaching());
+    conf.set("stats", collectStats());
+    conf.set("stats_path", statsPath());
+    conf.set("stats_interval", statsInterval());
     return conf;
 }
 
@@ -33,7 +36,12 @@ void
 CacheOptions::fromConfig(const Config& conf)
 {
     enableNodeCaching().setDefault(false);
+    collectStats().setDefault(false);
+    statsInterval().setDefault(30u);
     conf.get("enable_node_caching", enableNodeCaching());
+    conf.get("stats", collectStats());
+    conf.get("stats_path", statsPath());
+    conf.get("stats_interval", statsInterval());
 }
 
 //------------------------------------------------------------------------

@@ -229,6 +229,41 @@ namespace
         return CacheFactory::create(options);
     }
 
+    osg::ref_ptr<Cache> createFileSystemCache(
+        const fs::path& path,
+        unsigned threads,
+        bool stats = false,
+        const fs::path& statsPath = fs::path())
+    {
+        Config config;
+        config.set("path", path.u8string());
+        config.set("threads", threads);
+        config.set("stats", stats);
+        config.set("stats_interval", 0u);
+        if (!statsPath.empty())
+            config.set("stats_path", statsPath.u8string());
+        CacheOptions options(config);
+        options.setDriver("filesystem");
+        return CacheFactory::create(options);
+    }
+
+    osg::ref_ptr<Cache> createInstrumentedCache(
+        const std::string& driver,
+        const fs::path& path,
+        const fs::path& statsPath)
+    {
+        Config config;
+        config.set("path", path.u8string());
+        config.set("threads", 0u);
+        config.set("separate_bins", false);
+        config.set("stats", true);
+        config.set("stats_path", statsPath.u8string());
+        config.set("stats_interval", 0u);
+        CacheOptions options(config);
+        options.setDriver(driver);
+        return CacheFactory::create(options);
+    }
+
     bool writeString(CacheBin* bin, const std::string& key, const std::string& value)
     {
         osg::ref_ptr<StringObject> object = new StringObject(value);
@@ -601,6 +636,60 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
         requireCachePathCanBeRemoved(root.path);
     }
 
+    SECTION("shared and separate database layouts isolate and persist multiple bins")
+    {
+        for (const bool separateBins : { false, true })
+        {
+            TemporaryCachePath root;
+            osg::ref_ptr<Cache> cache = createSQLiteCache(root.path, 2u, separateBins);
+            REQUIRE(cache.valid());
+            REQUIRE_FALSE(cache->getStatus().isError());
+
+            osg::ref_ptr<CacheBin> first = cache->addBin("layer-a");
+            osg::ref_ptr<CacheBin> second = cache->addBin("layer-b");
+            REQUIRE(first.valid());
+            REQUIRE(second.valid());
+
+            REQUIRE(writeString(first.get(), "same-key", "from-a"));
+            REQUIRE(writeString(second.get(), "same-key", "from-b"));
+            for (unsigned i = 0u; i < 50u; ++i)
+            {
+                REQUIRE(writeString(first.get(), "a-" + std::to_string(i), "a"));
+                REQUIRE(writeString(second.get(), "b-" + std::to_string(i), "b"));
+            }
+
+            first = nullptr;
+            second = nullptr;
+            cache = nullptr;
+
+            cache = createSQLiteCache(root.path, 0u, separateBins);
+            REQUIRE(cache.valid());
+            first = cache->addBin("layer-a");
+            second = cache->addBin("layer-b");
+            REQUIRE(readStringEquals(first.get(), "same-key", "from-a"));
+            REQUIRE(readStringEquals(second.get(), "same-key", "from-b"));
+            for (unsigned i = 0u; i < 50u; ++i)
+            {
+                REQUIRE(readStringEquals(first.get(), "a-" + std::to_string(i), "a"));
+                REQUIRE(readStringEquals(second.get(), "b-" + std::to_string(i), "b"));
+            }
+
+            first = nullptr;
+            second = nullptr;
+            cache = nullptr;
+
+            unsigned databaseCount = 0u;
+            for (const auto& entry : fs::directory_iterator(root.path))
+            {
+                if (entry.path().extension() == ".db")
+                    ++databaseCount;
+            }
+            INFO("separate_bins=" << separateBins);
+            REQUIRE(databaseCount == (separateBins ? 2u : 1u));
+            requireCachePathCanBeRemoved(root.path);
+        }
+    }
+
     SECTION("unsafe bin identifiers cannot escape the cache directory")
     {
         TemporaryCachePath parent;
@@ -629,6 +718,110 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
         REQUIRE(databaseCount == 2u);
         requireCachePathCanBeRemoved(parent.path);
     }
+}
+
+TEST_CASE("Filesystem cache concurrency and lifetime", "[cache][filesystem]")
+{
+    SECTION("zero writer threads is synchronous and destruction is safe")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createFileSystemCache(root.path, 0u);
+        REQUIRE(cache.valid());
+        REQUIRE_FALSE(cache->getStatus().isError());
+        osg::ref_ptr<CacheBin> bin = cache->getOrCreateDefaultBin();
+        REQUIRE(bin.valid());
+        REQUIRE(writeString(bin.get(), "sync", "value"));
+        REQUIRE(readStringEquals(bin.get(), "sync", "value"));
+        bin = nullptr;
+        cache = nullptr;
+
+        cache = createFileSystemCache(root.path, 0u);
+        REQUIRE(cache.valid());
+        bin = cache->getOrCreateDefaultBin();
+        REQUIRE(readStringEquals(bin.get(), "sync", "value"));
+        bin = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("latest queued overwrite wins and is durable")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createFileSystemCache(root.path, 4u);
+        REQUIRE(cache.valid());
+        osg::ref_ptr<CacheBin> bin = cache->getOrCreateDefaultBin();
+        REQUIRE(bin.valid());
+
+        for (unsigned i = 0u; i < 200u; ++i)
+            REQUIRE(writeString(bin.get(), "hot-key", std::to_string(i)));
+        REQUIRE(readStringEquals(bin.get(), "hot-key", "199"));
+
+        bin = nullptr;
+        cache = nullptr;
+        cache = createFileSystemCache(root.path, 0u);
+        bin = cache->getOrCreateDefaultBin();
+        REQUIRE(readStringEquals(bin.get(), "hot-key", "199"));
+        bin = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("a bin safely outlives its cache")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createFileSystemCache(root.path, 2u);
+        osg::ref_ptr<CacheBin> bin = cache->getOrCreateDefaultBin();
+        REQUIRE(bin.valid());
+
+        cache = nullptr;
+        REQUIRE(writeString(bin.get(), "survivor", "yes"));
+        REQUIRE(readStringEquals(bin.get(), "survivor", "yes"));
+        bin = nullptr;
+
+        cache = createFileSystemCache(root.path, 0u);
+        bin = cache->getOrCreateDefaultBin();
+        REQUIRE(readStringEquals(bin.get(), "survivor", "yes"));
+        bin = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+}
+
+TEST_CASE("Cache runtime statistics emit comparable JSON", "[cache][stats]")
+{
+    auto verify = [](const std::string& driver)
+    {
+        TemporaryCachePath root;
+        const fs::path statsPath = root.path / "reports" / (driver + ".jsonl");
+        osg::ref_ptr<Cache> cache = createInstrumentedCache(
+            driver, root.path / "cache", statsPath);
+        REQUIRE(cache.valid());
+        REQUIRE_FALSE(cache->getStatus().isError());
+        osg::ref_ptr<CacheBin> bin = cache->getOrCreateDefaultBin();
+        REQUIRE(bin.valid());
+        REQUIRE(writeString(bin.get(), "hit", "value"));
+        REQUIRE(readStringEquals(bin.get(), "hit", "value"));
+        REQUIRE(bin->readString("miss", nullptr).failed());
+        bin = nullptr;
+        cache = nullptr;
+
+        REQUIRE(fs::exists(statsPath));
+        std::ifstream input(statsPath);
+        std::string json((std::istreambuf_iterator<char>(input)),
+            std::istreambuf_iterator<char>());
+        INFO(json);
+        REQUIRE(json.find("\"schema\":1") != std::string::npos);
+        REQUIRE(json.find("\"final\":true") != std::string::npos);
+        REQUIRE(json.find("\"driver\":\"" + driver + "\"") != std::string::npos);
+        REQUIRE(json.find("\"read\":{\"count\":2") != std::string::npos);
+        REQUIRE(json.find("\"write\":{\"count\":1") != std::string::npos);
+        REQUIRE(json.find("\"success\":1,\"miss\":1,\"error\":0") != std::string::npos);
+        input.close();
+        requireCachePathCanBeRemoved(root.path);
+    };
+
+    SECTION("filesystem") { verify("filesystem"); }
+    SECTION("sqlite3") { verify("sqlite3"); }
 }
 
 TEST_CASE("LRUCache")

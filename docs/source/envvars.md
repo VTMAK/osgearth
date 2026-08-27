@@ -25,13 +25,20 @@
 ### Caching
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
-| OSGEARTH_CACHE_DRIVER | Name of the cache implemenetation to use. Options are `filesystem` and `rocksdb`. | `filesystem` |
+| OSGEARTH_CACHE_DRIVER | Name of the cache implementation to use. Options include `filesystem` and `sqlite3`. | `filesystem` |
 | OSGEARTH_CACHE_PATH | Path of a local folder in which to cache data. Setting this variable will automatically activate caching. ||
+| OSGEARTH_CACHE_STATS | Enable cumulative cache telemetry. Set to `1` to write JSON to the osgEarth log, or set to a filename to append JSON Lines reports. Filenames may contain `{driver}` and `{pid}` placeholders. | disabled |
 | OSGEARTH_NO_CACHE | Set this to `1` and osgEarth will ignore any configured cache setup, and force all requests to go directly to source. ||
 | OSGEARTH_CACHE_ONLY | Set this to `1` and osgEarth will only attempt to read data from a configured cache, and will not attempt to read data from the source for remote layers. ||
 | OSGEARTH_CACHE_MAX_AGE | Maximum age (in seconds) of valid cache entries. ||
 | OSGEARTH_CACHE_MAX_SIZE_MB | Maximum size of the disk cache in MB. This only applies to the `rocksdb` cache driver, and is only a general target and NOT a guarantee. ||
 |||
+
+Cache telemetry can also be enabled in a cache configuration with `stats=true`,
+`stats_path=<filename>`, and `stats_interval=<seconds>`. Reports are cumulative
+JSON Lines snapshots containing hit/miss/error counts, latency percentiles,
+bytes, queue high-water marks, and backend-specific measurements. An interval
+of zero emits only the final shutdown report.
 
 ### Security & Networking
 | Variable | Description | Default |

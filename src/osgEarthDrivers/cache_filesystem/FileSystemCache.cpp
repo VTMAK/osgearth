@@ -4,6 +4,7 @@
  */
 #include "FileSystemCache"
 #include <osgEarth/Cache>
+#include <osgEarth/CacheStats>
 #include <osgEarth/StringUtils>
 #include <osgEarth/Threading>
 #include <osgEarth/XmlUtils>
@@ -64,11 +65,13 @@ namespace
         std::string _rootPath;
         FileSystemCacheOptions _options;
         jobs::jobpool* _pool = nullptr;
+        std::shared_ptr<CacheStatistics> _stats;
     };
 
     struct WriteCacheRecord {
         Config meta;
         osg::ref_ptr<const osg::Object> object;
+        std::uint64_t generation = 0u;
     };
     typedef std::unordered_map<std::string, WriteCacheRecord> WriteCache;
 
@@ -83,7 +86,10 @@ namespace
             const std::string& name,
             const std::string& rootPath,
             const FileSystemCacheOptions& options,
-            jobs::jobpool* pool);
+            jobs::jobpool* pool,
+            const std::shared_ptr<CacheStatistics>& stats);
+
+        ~FileSystemCacheBin() override;
 
         static bool _s_debug;
 
@@ -124,6 +130,9 @@ namespace
 
         // pool for asynchronous writes
         jobs::jobpool* _pool = nullptr;
+        std::shared_ptr<jobs::jobgroup> _writeGroup;
+        std::shared_ptr<CacheStatistics> _stats;
+        std::atomic<std::uint64_t> _nextGeneration{ 0u };
 
     public:
         // cache for objects waiting to be written; this supports reading from
@@ -201,15 +210,13 @@ namespace
         }
         OE_INFO << LC << "Opened a filesystem cache at \"" << _rootPath << "\"" << std::endl;
 
+        _stats = CacheStatistics::create(_options, "filesystem", _rootPath);
+
         // create a thread pool dedicated to asynchronous cache writes
         setNumThreads(_options.threads().get());
     }
 
-    FileSystemCache::~FileSystemCache()
-    {
-        // Wait for all jobs to finish
-        _pool->finish_work();
-    }
+    FileSystemCache::~FileSystemCache() = default;
 
     void
     FileSystemCache::setNumThreads(unsigned num)
@@ -232,7 +239,7 @@ namespace
         if (getStatus().isError())
             return NULL;
 
-        return _bins.getOrCreate(name, new FileSystemCacheBin(name, _rootPath, _options, _pool));
+        return _bins.getOrCreate(name, new FileSystemCacheBin(name, _rootPath, _options, _pool, _stats));
     }
 
     CacheBin*
@@ -247,7 +254,7 @@ namespace
             std::lock_guard<std::mutex> lock( s_defaultBinMutex );
             if ( !_defaultBin.valid() ) // double-check
             {
-                _defaultBin = new FileSystemCacheBin("__default", _rootPath, _options, _pool);
+                _defaultBin = new FileSystemCacheBin("__default", _rootPath, _options, _pool, _stats);
             }
         }
         return _defaultBin.get();
@@ -319,10 +326,13 @@ namespace
         const std::string& binID,
         const std::string& rootPath,
         const FileSystemCacheOptions& options,
-        jobs::jobpool* pool) :
+        jobs::jobpool* pool,
+        const std::shared_ptr<CacheStatistics>& stats) :
 
         CacheBin(binID, options.enableNodeCaching().get()),
         _pool(pool),
+        _writeGroup(jobs::jobgroup::create()),
+        _stats(stats),
         _binPathExists(false),
         _options(options),
         _ok(true)
@@ -351,6 +361,12 @@ namespace
         _s_debug = ::getenv("OSGEARTH_CACHE_DEBUG") != 0L;
     }
 
+    FileSystemCacheBin::~FileSystemCacheBin()
+    {
+        if (_writeGroup)
+            _writeGroup->join();
+    }
+
     const osgDB::Options*
     FileSystemCacheBin::mergeOptions(const osgDB::Options* dbo)
     {
@@ -376,8 +392,12 @@ namespace
     ReadResult
     FileSystemCacheBin::readImage(const std::string& key, const osgDB::Options* readOptions)
     {
+        CacheStatsScope readScope(_stats, CacheStatistics::Metric::Read);
         if ( !binValidForReading() )
+        {
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
         // mangle "key" into a legal path name
         URI fileURI( key, _metaPath );
@@ -406,13 +426,17 @@ namespace
 
                 rr.setLastModifiedTime(DateTime().asTimeStamp());        
 
+                readScope.success();
                 return rr;
             }
         }        
 
         // Not in the pool, now check the file system
+        CacheStatsScope backendScope(_stats, CacheStatistics::Metric::BackendRead);
         if (!osgDB::fileExists(path))
         {
+            backendScope.miss();
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
         }
 
@@ -424,13 +448,19 @@ namespace
             osgDB::Registry::instance()->getReaderWriterForExtension(_options.format().get());
 
         if (!image_rw.valid())
+        {
+            backendScope.error();
+            readScope.error();
             return ReadResult(Stringify() << "Unknown image format \"" << _options.format().get() << "\"");
+        }
 
         osgDB::ReaderWriter::ReadResult r = image_rw->readImage(path, dbo.get());
         //osgDB::ReaderWriter::ReadResult r = _rw->readImage(path, dbo.get());
         if (!r.success())
         {
             NetworkMonitor::end(handle, "failed");
+            backendScope.error();
+            readScope.error();
             return ReadResult(r.message());
         }
         else
@@ -455,6 +485,8 @@ namespace
             rr.getImage() == nullptr || rr.getImage()->isCompressed() == false, 
             ReadResult());
 
+        backendScope.success();
+        readScope.success();
         return rr;
     }
     
@@ -462,9 +494,13 @@ namespace
     FileSystemCacheBin::readObject(const std::string& key, const osgDB::Options* readOptions)
     {
         OE_PROFILING_ZONE;
+        CacheStatsScope readScope(_stats, CacheStatistics::Metric::Read);
 
         if ( !binValidForReading() )
+        {
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
+        }
 
         // mangle "key" into a legal path name
         URI fileURI(osgDB::concatPaths(_binPath, key));
@@ -492,13 +528,17 @@ namespace
 
                 rr.setLastModifiedTime(DateTime().asTimeStamp());
 
+                readScope.success();
                 return rr;
             }
         }
 
         // Not in the pool, now check the file system
+        CacheStatsScope backendScope(_stats, CacheStatistics::Metric::BackendRead);
         if (!osgDB::fileExists(path))
         {            
+            backendScope.miss();
+            readScope.miss();
             return ReadResult(ReadResult::RESULT_NOT_FOUND);
         }
 
@@ -509,6 +549,8 @@ namespace
         if (!r.success())
         {
             NetworkMonitor::end(handle, "failed");
+            backendScope.error();
+            readScope.error();
             return ReadResult(r.message());
         }
         else
@@ -528,6 +570,8 @@ namespace
         if (_s_debug)
             OE_NOTICE << LC << "Read object \"" << key << "\" from cache bin [" << getID() << "] path=" << fileURI.full() << "." << OSG_EXT << std::endl;
 
+        backendScope.success();
+        readScope.success();
         return rr;
     }
 
@@ -563,9 +607,13 @@ namespace
         const osgDB::Options* raw_writeOptions)
     {
         OE_PROFILING_ZONE;
+        CacheStatsScope writeScope(_stats, CacheStatistics::Metric::Write);
 
         if ( !binValidForWriting() || !raw_object)
+        {
+            writeScope.error();
             return false;
+        }
 
         // convert the key into a legal filename:
         URI fileURI(osgDB::concatPaths(_binPath, key));        
@@ -581,18 +629,38 @@ namespace
         // This is not typical a big deal since most node geometry comes
         // from a URI anyway and the URI data will get cached.
         if (isNode && _options.enableNodeCaching() == false)
+        {
+            writeScope.success();
             return true;
+        }
 
         // Wrap input objects in ref_ptrs so they will persist in our write functor lambda
         osg::ref_ptr<const osg::Object> object(raw_object);
         osg::ref_ptr<const osgDB::Options> writeOptions(dbo);
+        const bool asynchronous = _pool != nullptr;
+        const std::uint64_t generation = asynchronous ?
+            _nextGeneration.fetch_add(1u, std::memory_order_relaxed) + 1u : 0u;
 
         auto write_op = [=]()
         {
             OE_PROFILING_ZONE_NAMED("OE FS Cache Write");
+            CacheStatsScope backendScope(_stats, CacheStatistics::Metric::BackendWrite);
 
             // prevent more than one thread from writing to the same key at the same time
             ScopedGate<std::string> lockFile(_fileGate, fileURI.full());
+
+            // Coalesce superseded writes. This also guarantees that an older queued
+            // write can never overwrite the newest value for the same key.
+            if (asynchronous)
+            {
+                ScopedReadLock lock(_writeCacheRWM);
+                auto i = _writeCache.find(fileURI.full());
+                if (i == _writeCache.end() || i->second.generation != generation)
+                {
+                    backendScope.success();
+                    return;
+                }
+            }
 
             // make a home for it..
             if (!osgDB::fileExists(osgDB::getFilePath(fileURI.full())))
@@ -640,6 +708,7 @@ namespace
 
             if (!writeOK)
             {
+                backendScope.error();
                 OE_WARN << LC << "FAILED to write \"" << fileURI.full() << "\" to cache bin \"" <<
                     getID() << "\"; msg = \"" << r.message() << "\"" << std::endl;
             }
@@ -651,8 +720,13 @@ namespace
             // remove it from the write cache now that we're done.
             {
                 ScopedWriteLock lock(_writeCacheRWM);
-                _writeCache.erase(fileURI.full());
+                auto i = _writeCache.find(fileURI.full());
+                if (i != _writeCache.end() && i->second.generation == generation)
+                    _writeCache.erase(i);
             }
+
+            if (writeOK)
+                backendScope.success();
         };
 
         if (_pool != nullptr)
@@ -664,10 +738,15 @@ namespace
             WriteCacheRecord& record = _writeCache[fileURI.full()];
             record.meta = meta;
             record.object = object;
+            record.generation = generation;
+            const std::size_t pendingItems = _writeCache.size();
             _writeCacheRWM.unlock();
 
+            if (_stats)
+                _stats->updateQueueHighWater(0u, pendingItems);
+
             // asynchronous write
-            jobs::dispatch(write_op, jobs::context{ fileURI.full(), _pool });
+            jobs::dispatch(write_op, jobs::context{ fileURI.full(), _pool, {}, _writeGroup });
         }
 
         else
@@ -676,6 +755,7 @@ namespace
             write_op();
         }
 
+        writeScope.success();
         return true;
     }
 
@@ -696,25 +776,31 @@ namespace
     bool
     FileSystemCacheBin::remove(const std::string& key)
     {
-        if ( !binValidForReading() ) return false;
+        CacheStatsScope scope(_stats, CacheStatistics::Metric::Remove);
+        if ( !binValidForReading() ) { scope.error(); return false; }
         URI fileURI( key, _metaPath );
         std::string path( fileURI.full() + OSG_EXT );
 
         // exclusive file access:
         ScopedGate<std::string> lockFile(_fileGate, fileURI.full());
-        return ::unlink( path.c_str() ) == 0;
+        const bool result = ::unlink( path.c_str() ) == 0;
+        result ? scope.success() : scope.error();
+        return result;
     }
 
     bool
     FileSystemCacheBin::touch(const std::string& key)
     {
-        if ( !binValidForReading() ) return false;
+        CacheStatsScope scope(_stats, CacheStatistics::Metric::Touch);
+        if ( !binValidForReading() ) { scope.error(); return false; }
         URI fileURI( key, _metaPath );
         std::string path( fileURI.full() + OSG_EXT );
 
         // exclusive file access:
         ScopedGate<std::string> lockFile(_fileGate, fileURI.full());
-        return osgEarth::touchFile( path );
+        const bool result = osgEarth::touchFile( path );
+        result ? scope.success() : scope.error();
+        return result;
     }
 
     bool
@@ -763,11 +849,17 @@ namespace
     bool
     FileSystemCacheBin::clear()
     {
+        CacheStatsScope scope(_stats, CacheStatistics::Metric::Clear);
         if ( !binValidForReading() )
+        {
+            scope.error();
             return false;
+        }
 
         std::string binDir = osgDB::getFilePath( _metaPath );
-        return purgeDirectory( binDir );
+        const bool result = purgeDirectory( binDir );
+        result ? scope.success() : scope.error();
+        return result;
     }
 }
 

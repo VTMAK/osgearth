@@ -19,6 +19,7 @@
 #define OSGEARTH_ENV_CACHE_DRIVER  "OSGEARTH_CACHE_DRIVER"
 #define OSGEARTH_ENV_CACHE_PATH    "OSGEARTH_CACHE_PATH"
 #define OSGEARTH_ENV_CACHE_ONLY    "OSGEARTH_CACHE_ONLY"
+#define OSGEARTH_ENV_CACHE_STATS   "OSGEARTH_CACHE_STATS"
 #define OSGEARTH_ENV_DEFAULT_COMPRESSOR "OSGEARTH_DEFAULT_COMPRESSOR"
 
 #define OSGEARTH_ENV_NO_CACHE      "OSGEARTH_NO_CACHE"
@@ -116,6 +117,18 @@ namespace osgEarth
         optional<bool>& enableNodeCaching() { return _enableNodeCaching; }
         const optional<bool>& enableNodeCaching() const { return _enableNodeCaching; }
 
+        /** Collect aggregate cache timing and outcome statistics. */
+        optional<bool>& collectStats() { return _collectStats; }
+        const optional<bool>& collectStats() const { return _collectStats; }
+
+        /** JSON-lines output file. Empty means write reports to the osgEarth log. */
+        optional<std::string>& statsPath() { return _statsPath; }
+        const optional<std::string>& statsPath() const { return _statsPath; }
+
+        /** Seconds between cumulative reports; zero reports only at shutdown. */
+        optional<unsigned>& statsInterval() { return _statsInterval; }
+        const optional<unsigned>& statsInterval() const { return _statsInterval; }
+
         /** dtor */
         virtual ~CacheOptions();
 
@@ -130,6 +143,9 @@ namespace osgEarth
     private:
         void fromConfig(const Config& conf);
         optional<bool> _enableNodeCaching;
+        optional<bool> _collectStats;
+        optional<std::string> _statsPath;
+        optional<unsigned> _statsInterval;
     };
 }
 
