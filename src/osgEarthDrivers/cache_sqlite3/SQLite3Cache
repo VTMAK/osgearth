@@ -34,11 +34,26 @@ namespace osgEarth { namespace Drivers
         //! Number of threads to devote to background cache writing
         OE_OPTION(unsigned, threads, 1u);
 
-        //! Tiemout (milliseconds) when trying to local a db
+        //! Timeout (milliseconds) when trying to lock a database
         OE_OPTION(unsigned, busyTimeout, 5000u);
 
         //! Whether to use a separate .db for each CacheBin
         OE_OPTION(bool, separateBins, true);
+
+        //! Maximum number of concurrent reader connections per database
+        OE_OPTION(unsigned, readerConnections, 4u);
+
+        //! SQLite page-cache budget, in MiB, for each open connection
+        OE_OPTION(unsigned, cacheSizeMB, 8u);
+
+        //! Maximum amount of serialized data waiting for the writer, in MiB
+        OE_OPTION(unsigned, maxQueueMB, 256u);
+
+        //! Maximum number of mutations in one transaction
+        OE_OPTION(unsigned, batchSize, 256u);
+
+        //! Maximum serialized payload in one transaction, in MiB
+        OE_OPTION(unsigned, batchSizeMB, 32u);
 
     public:
         virtual Config getConfig() const {
@@ -47,6 +62,11 @@ namespace osgEarth { namespace Drivers
             conf.set("threads", threads() );
             conf.set("busy_timeout", busyTimeout() );
             conf.set("separate_bins", separateBins() );
+            conf.set("reader_connections", readerConnections() );
+            conf.set("cache_size_mb", cacheSizeMB() );
+            conf.set("max_queue_mb", maxQueueMB() );
+            conf.set("batch_size", batchSize() );
+            conf.set("batch_size_mb", batchSizeMB() );
             return conf;
         }
         virtual void mergeConfig( const Config& conf ) {
@@ -60,6 +80,11 @@ namespace osgEarth { namespace Drivers
             conf.get("threads", threads() );
             conf.get("busy_timeout", busyTimeout() );
             conf.get("separate_bins", separateBins() );
+            conf.get("reader_connections", readerConnections() );
+            conf.get("cache_size_mb", cacheSizeMB() );
+            conf.get("max_queue_mb", maxQueueMB() );
+            conf.get("batch_size", batchSize() );
+            conf.get("batch_size_mb", batchSizeMB() );
         }
     };
 

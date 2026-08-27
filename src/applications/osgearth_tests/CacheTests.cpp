@@ -8,8 +8,298 @@
 #include <osgEarth/Registry>
 #include <osgEarth/MemCache>
 #include <osgEarth/Containers>  // For osgEarth::LRUCache
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <vector>
+
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#else
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#  include <unistd.h>
+#endif
 
 using namespace osgEarth;
+
+namespace osgEarth::Tests
+{
+    extern std::filesystem::path executablePath;
+}
+
+namespace
+{
+    namespace fs = std::filesystem;
+
+    constexpr const char* SQLITE_PROCESS_TEST_ROOT = "OSGEARTH_SQLITE_PROCESS_TEST_ROOT";
+    constexpr unsigned PROCESS_PRODUCERS = 2u;
+    constexpr unsigned PROCESS_RECORDS_PER_PRODUCER = 150u;
+
+    class ScopedProcessTestEnvironment
+    {
+    public:
+        explicit ScopedProcessTestEnvironment(const fs::path& path)
+        {
+#ifdef _WIN32
+            _valid = SetEnvironmentVariableW(
+                L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT", path.c_str()) != FALSE;
+#else
+            const std::string value = path.u8string();
+            _valid = ::setenv(SQLITE_PROCESS_TEST_ROOT, value.c_str(), 1) == 0;
+#endif
+        }
+
+        ~ScopedProcessTestEnvironment()
+        {
+#ifdef _WIN32
+            SetEnvironmentVariableW(L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT", nullptr);
+#else
+            ::unsetenv(SQLITE_PROCESS_TEST_ROOT);
+#endif
+        }
+
+        bool valid() const { return _valid; }
+
+    private:
+        bool _valid = false;
+    };
+
+    fs::path processTestRoot()
+    {
+#ifdef _WIN32
+        const wchar_t* value = ::_wgetenv(L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT");
+        return value ? fs::path(value) : fs::path();
+#else
+        const char* value = ::getenv(SQLITE_PROCESS_TEST_ROOT);
+        return value ? fs::u8path(value) : fs::path();
+#endif
+    }
+
+    class TestProcess
+    {
+    public:
+        ~TestProcess()
+        {
+            if (_running)
+                wait();
+        }
+
+        TestProcess(const TestProcess&) = delete;
+        TestProcess& operator=(const TestProcess&) = delete;
+        TestProcess() = default;
+
+        bool start(const fs::path& executable, const std::string& testFilter)
+        {
+#ifdef _WIN32
+            const std::wstring wideFilter(testFilter.begin(), testFilter.end());
+            std::wstring commandLine = L"\"" + executable.wstring() + L"\" \"" +
+                wideFilter + L"\" --reporter compact";
+            std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+            mutableCommand.push_back(L'\0');
+
+            STARTUPINFOW startup{};
+            startup.cb = sizeof(startup);
+            PROCESS_INFORMATION process{};
+            if (!CreateProcessW(
+                executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, 0,
+                nullptr, nullptr, &startup, &process))
+            {
+                return false;
+            }
+
+            CloseHandle(process.hThread);
+            _process = process.hProcess;
+            _running = true;
+            return true;
+#else
+            _pid = ::fork();
+            if (_pid == 0)
+            {
+                const std::string executableString = executable.string();
+                ::execl(executableString.c_str(), executableString.c_str(),
+                    testFilter.c_str(), "--reporter", "compact",
+                    static_cast<char*>(nullptr));
+                ::_exit(127);
+            }
+            _running = _pid > 0;
+            return _running;
+#endif
+        }
+
+        int wait()
+        {
+            if (!_running)
+                return _exitCode;
+
+#ifdef _WIN32
+            WaitForSingleObject(_process, INFINITE);
+            DWORD exitCode = 1u;
+            GetExitCodeProcess(_process, &exitCode);
+            CloseHandle(_process);
+            _process = nullptr;
+            _exitCode = static_cast<int>(exitCode);
+#else
+            int status = 0;
+            if (::waitpid(_pid, &status, 0) < 0)
+                _exitCode = 1;
+            else if (WIFEXITED(status))
+                _exitCode = WEXITSTATUS(status);
+            else if (WIFSIGNALED(status))
+                _exitCode = 128 + WTERMSIG(status);
+            else
+                _exitCode = 1;
+            _pid = -1;
+#endif
+            _running = false;
+            return _exitCode;
+        }
+
+    private:
+        bool _running = false;
+        int _exitCode = 1;
+#ifdef _WIN32
+        HANDLE _process = nullptr;
+#else
+        pid_t _pid = -1;
+#endif
+    };
+
+    bool createMarker(const fs::path& path)
+    {
+        std::ofstream output(path, std::ios::binary | std::ios::trunc);
+        output << "ready";
+        return output.good();
+    }
+
+    bool waitForProcessWriters(const fs::path& root)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (fs::exists(root / "writer-a.ready") &&
+                fs::exists(root / "writer-b.ready"))
+            {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
+    }
+
+    struct TemporaryCachePath
+    {
+        TemporaryCachePath()
+        {
+            static std::atomic_uint s_counter{ 0u };
+            const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+            path = fs::temp_directory_path() /
+                ("osgearth_sqlite_cache_test_" + std::to_string(ticks) + "_" +
+                 std::to_string(s_counter.fetch_add(1u)));
+        }
+
+        ~TemporaryCachePath()
+        {
+            std::error_code ignored;
+            fs::remove_all(path, ignored);
+        }
+
+        fs::path path;
+    };
+
+    osg::ref_ptr<Cache> createSQLiteCache(
+        const fs::path& path,
+        unsigned threads,
+        bool separateBins)
+    {
+        Config config;
+        config.set("path", path.u8string());
+        config.set("threads", threads);
+        config.set("separate_bins", separateBins);
+        config.set("reader_connections", 4u);
+        config.set("batch_size", 32u);
+        CacheOptions options(config);
+        options.setDriver("sqlite3");
+        return CacheFactory::create(options);
+    }
+
+    bool writeString(CacheBin* bin, const std::string& key, const std::string& value)
+    {
+        osg::ref_ptr<StringObject> object = new StringObject(value);
+        return bin->write(key, object.get(), nullptr);
+    }
+
+    bool readStringEquals(CacheBin* bin, const std::string& key, const std::string& expected)
+    {
+        ReadResult result = bin->readString(key, nullptr);
+        return result.succeeded() && result.getString() == expected;
+    }
+
+    void requireCachePathCanBeRemoved(const fs::path& path)
+    {
+        std::error_code error;
+        fs::remove_all(path, error);
+        REQUIRE_FALSE(error);
+        REQUIRE_FALSE(fs::exists(path));
+    }
+
+    void runSQLiteProcessWriter(const std::string& workerName)
+    {
+        const fs::path root = processTestRoot();
+        REQUIRE_FALSE(root.empty());
+
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root / "cache", 2u, false);
+        REQUIRE(cache.valid());
+        REQUIRE_FALSE(cache->getStatus().isError());
+        osg::ref_ptr<CacheBin> bin = cache->addBin("process-shared");
+        REQUIRE(bin.valid());
+
+        REQUIRE(createMarker(root / (workerName + ".ready")));
+        const fs::path startMarker = root / "start";
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (!fs::exists(startMarker) && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        REQUIRE(fs::exists(startMarker));
+
+        std::atomic_bool succeeded{ true };
+        std::vector<std::thread> producers;
+        for (unsigned producer = 0u; producer < PROCESS_PRODUCERS; ++producer)
+        {
+            producers.emplace_back([&, producer]()
+            {
+                for (unsigned record = 0u; record < PROCESS_RECORDS_PER_PRODUCER; ++record)
+                {
+                    const std::string key = workerName + "-" + std::to_string(producer) +
+                        "-" + std::to_string(record);
+                    if (!writeString(bin.get(), key, key))
+                        succeeded = false;
+                }
+            });
+        }
+        for (auto& producer : producers)
+            producer.join();
+        REQUIRE(succeeded.load());
+
+        bin = nullptr;
+        cache = nullptr; // drain and commit before the process reports success
+    }
+}
+
+TEST_CASE("SQLite3 process writer A", "[.sqlite3-process-writer-a]")
+{
+    runSQLiteProcessWriter("writer-a");
+}
+
+TEST_CASE("SQLite3 process writer B", "[.sqlite3-process-writer-b]")
+{
+    runSQLiteProcessWriter("writer-b");
+}
 
 TEST_CASE("Cache")
 {
@@ -62,6 +352,282 @@ TEST_CASE("Cache")
         // Confirm removal
         ReadResult r2 = bin->readImage(key, 0L);
         REQUIRE(r2.failed());
+    }
+}
+
+TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
+{
+    SECTION("zero writer threads is synchronous and closes all SQLite resources")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root.path, 0u, false);
+        REQUIRE(cache.valid());
+        REQUIRE_FALSE(cache->getStatus().isError());
+
+        osg::ref_ptr<CacheBin> bin = cache->addBin("sync");
+        REQUIRE(bin.valid());
+        REQUIRE(writeString(bin.get(), "answer", "forty-two"));
+        REQUIRE(readStringEquals(bin.get(), "answer", "forty-two"));
+
+        bin = nullptr;
+        cache = nullptr;
+
+        cache = createSQLiteCache(root.path, 0u, false);
+        REQUIRE(cache.valid());
+        bin = cache->addBin("sync");
+        REQUIRE(readStringEquals(bin.get(), "answer", "forty-two"));
+        REQUIRE(bin->remove("answer"));
+        REQUIRE(bin->readString("answer", nullptr).failed());
+
+        bin = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("asynchronous mutations remain ordered and immediately visible")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root.path, 4u, false);
+        REQUIRE(cache.valid());
+        osg::ref_ptr<CacheBin> bin = cache->addBin("ordered");
+        REQUIRE(bin.valid());
+
+        for (unsigned i = 0u; i < 100u; ++i)
+            REQUIRE(writeString(bin.get(), "same-key", std::to_string(i)));
+
+        REQUIRE(readStringEquals(bin.get(), "same-key", "99"));
+        REQUIRE(bin->remove("same-key"));
+        REQUIRE(bin->readString("same-key", nullptr).failed());
+
+        REQUIRE(writeString(bin.get(), "after-remove", "present"));
+        REQUIRE(bin->clear());
+        REQUIRE(bin->readString("after-remove", nullptr).failed());
+
+        bin = nullptr;
+        cache = nullptr;
+
+        cache = createSQLiteCache(root.path, 2u, false);
+        bin = cache->addBin("ordered");
+        REQUIRE(bin->readString("same-key", nullptr).failed());
+        REQUIRE(bin->readString("after-remove", nullptr).failed());
+        bin = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("many threads share one database without losing writes")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root.path, 4u, false);
+        REQUIRE(cache.valid());
+        osg::ref_ptr<CacheBin> bins[] = {
+            cache->addBin("concurrent-a"),
+            cache->addBin("concurrent-b")
+        };
+        REQUIRE(bins[0].valid());
+        REQUIRE(bins[1].valid());
+
+        std::atomic_bool succeeded{ true };
+        std::vector<std::thread> workers;
+        for (unsigned thread = 0u; thread < 8u; ++thread)
+        {
+            workers.emplace_back([&, thread]()
+            {
+                CacheBin* bin = bins[thread % 2u].get();
+                for (unsigned item = 0u; item < 50u; ++item)
+                {
+                    const std::string key =
+                        "thread-" + std::to_string(thread) + "-" + std::to_string(item);
+                    if (!writeString(bin, key, key) || !readStringEquals(bin, key, key))
+                        succeeded = false;
+                }
+            });
+        }
+        for (auto& worker : workers)
+            worker.join();
+        REQUIRE(succeeded.load());
+
+        bins[0] = nullptr;
+        bins[1] = nullptr;
+        cache = nullptr;
+
+        cache = createSQLiteCache(root.path, 4u, false);
+        bins[0] = cache->addBin("concurrent-a");
+        bins[1] = cache->addBin("concurrent-b");
+        for (unsigned thread = 0u; thread < 8u; ++thread)
+        {
+            CacheBin* bin = bins[thread % 2u].get();
+            for (unsigned item = 0u; item < 50u; ++item)
+            {
+                const std::string key =
+                    "thread-" + std::to_string(thread) + "-" + std::to_string(item);
+                REQUIRE(readStringEquals(bin, key, key));
+            }
+        }
+
+        bins[0] = nullptr;
+        bins[1] = nullptr;
+        cache = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("independent cache instances coordinate through WAL locking")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> caches[] = {
+            createSQLiteCache(root.path, 2u, false),
+            createSQLiteCache(root.path, 2u, false)
+        };
+        REQUIRE(caches[0].valid());
+        REQUIRE(caches[1].valid());
+        osg::ref_ptr<CacheBin> bins[] = {
+            caches[0]->addBin("multiprocess"),
+            caches[1]->addBin("multiprocess")
+        };
+
+        std::atomic_bool succeeded{ true };
+        std::thread first([&]()
+        {
+            for (unsigned i = 0u; i < 100u; ++i)
+            {
+                const std::string key = "first-" + std::to_string(i);
+                if (!writeString(bins[0].get(), key, key))
+                    succeeded = false;
+            }
+        });
+        std::thread second([&]()
+        {
+            for (unsigned i = 0u; i < 100u; ++i)
+            {
+                const std::string key = "second-" + std::to_string(i);
+                if (!writeString(bins[1].get(), key, key))
+                    succeeded = false;
+            }
+        });
+        first.join();
+        second.join();
+        REQUIRE(succeeded.load());
+
+        bins[0] = nullptr;
+        bins[1] = nullptr;
+        caches[0] = nullptr;
+        caches[1] = nullptr;
+
+        osg::ref_ptr<Cache> verifier = createSQLiteCache(root.path, 0u, false);
+        osg::ref_ptr<CacheBin> bin = verifier->addBin("multiprocess");
+        for (unsigned i = 0u; i < 100u; ++i)
+        {
+            REQUIRE(readStringEquals(bin.get(), "first-" + std::to_string(i),
+                "first-" + std::to_string(i)));
+            REQUIRE(readStringEquals(bin.get(), "second-" + std::to_string(i),
+                "second-" + std::to_string(i)));
+        }
+
+        bin = nullptr;
+        verifier = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("separate operating-system processes write one WAL database")
+    {
+        TemporaryCachePath root;
+        std::error_code error;
+        REQUIRE(fs::create_directories(root.path, error));
+        REQUIRE_FALSE(error);
+
+        ScopedProcessTestEnvironment environment(root.path);
+        REQUIRE(environment.valid());
+        REQUIRE_FALSE(osgEarth::Tests::executablePath.empty());
+
+        TestProcess first;
+        TestProcess second;
+        const bool firstStarted = first.start(
+            osgEarth::Tests::executablePath, "[.sqlite3-process-writer-a]");
+        const bool secondStarted = second.start(
+            osgEarth::Tests::executablePath, "[.sqlite3-process-writer-b]");
+
+        bool writersReady = false;
+        if (firstStarted && secondStarted)
+            writersReady = waitForProcessWriters(root.path);
+
+        const bool startCreated = createMarker(root.path / "start");
+        const int firstExitCode = firstStarted ? first.wait() : 1;
+        const int secondExitCode = secondStarted ? second.wait() : 1;
+
+        INFO("first child exit code: " << firstExitCode);
+        INFO("second child exit code: " << secondExitCode);
+        REQUIRE(firstStarted);
+        REQUIRE(secondStarted);
+        REQUIRE(writersReady);
+        REQUIRE(startCreated);
+        REQUIRE(firstExitCode == 0);
+        REQUIRE(secondExitCode == 0);
+
+        osg::ref_ptr<Cache> verifier = createSQLiteCache(root.path / "cache", 0u, false);
+        REQUIRE(verifier.valid());
+        osg::ref_ptr<CacheBin> bin = verifier->addBin("process-shared");
+        REQUIRE(bin.valid());
+        for (const std::string worker : { "writer-a", "writer-b" })
+        {
+            for (unsigned producer = 0u; producer < PROCESS_PRODUCERS; ++producer)
+            {
+                for (unsigned record = 0u; record < PROCESS_RECORDS_PER_PRODUCER; ++record)
+                {
+                    const std::string key = worker + "-" + std::to_string(producer) +
+                        "-" + std::to_string(record);
+                    REQUIRE(readStringEquals(bin.get(), key, key));
+                }
+            }
+        }
+
+        bin = nullptr;
+        verifier = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("a bin safely outlives its cache")
+    {
+        TemporaryCachePath root;
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root.path, 2u, false);
+        osg::ref_ptr<CacheBin> bin = cache->addBin("survivor");
+        REQUIRE(bin.valid());
+
+        cache = nullptr;
+        REQUIRE(writeString(bin.get(), "still-alive", "yes"));
+        REQUIRE(readStringEquals(bin.get(), "still-alive", "yes"));
+        REQUIRE(bin->remove("still-alive"));
+
+        bin = nullptr;
+        requireCachePathCanBeRemoved(root.path);
+    }
+
+    SECTION("unsafe bin identifiers cannot escape the cache directory")
+    {
+        TemporaryCachePath parent;
+        const fs::path root = parent.path / "cache";
+        const fs::path escaped = parent.path / "escaped.db";
+        osg::ref_ptr<Cache> cache = createSQLiteCache(root, 0u, true);
+        REQUIRE(cache.valid());
+        osg::ref_ptr<CacheBin> bin = cache->addBin("../escaped");
+        REQUIRE(bin.valid());
+        REQUIRE(writeString(bin.get(), "key", "value"));
+        bin = nullptr;
+
+        bin = cache->addBin("CON");
+        REQUIRE(bin.valid());
+        REQUIRE(writeString(bin.get(), "key", "value"));
+        bin = nullptr;
+        cache = nullptr;
+
+        REQUIRE_FALSE(fs::exists(escaped));
+        unsigned databaseCount = 0u;
+        for (const auto& entry : fs::directory_iterator(root))
+        {
+            if (entry.path().extension() == ".db")
+                ++databaseCount;
+        }
+        REQUIRE(databaseCount == 2u);
+        requireCachePathCanBeRemoved(parent.path);
     }
 }
 

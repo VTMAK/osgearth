@@ -339,7 +339,7 @@ static void BM_SQLite3SingleThreadedRead(benchmark::State& state)
     Config config;
     config.fromJSON("{ \"path\": \"" + CACHE_PATH + "\" }");
     CacheOptions cacheOptions(config);
-    cacheOptions.setDriver("filesystem");
+    cacheOptions.setDriver("sqlite3");
 
     osg::ref_ptr<Cache> cache = CacheFactory::create(cacheOptions);
     osg::ref_ptr<CacheBin> cacheBin = cache->getOrCreateDefaultBin();
@@ -372,6 +372,73 @@ static void BM_SQLite3SingleThreadedRead(benchmark::State& state)
     fs::remove_all(CACHE_PATH);
 }
 BENCHMARK(BM_SQLite3SingleThreadedRead)->Iterations(1);
+
+namespace
+{
+    struct SQLite3ConcurrentReadFixture
+    {
+        SQLite3ConcurrentReadFixture()
+        {
+            path = "sqlite_concurrent_read_cache";
+            fs::remove_all(path);
+
+            Config config;
+            config.fromJSON("{ \"path\": \"" + path + "\" }");
+            CacheOptions cacheOptions(config);
+            cacheOptions.setDriver("sqlite3");
+
+            osg::ref_ptr<Cache> writerCache = CacheFactory::create(cacheOptions);
+            osg::ref_ptr<CacheBin> writerBin = writerCache->getOrCreateDefaultBin();
+            osg::ref_ptr<osg::Image> image = osgDB::readRefImageFile(CACHE_IMAGE);
+            for (unsigned i = 0u; i < NUM_CACHE_IMAGES; ++i)
+            {
+                writerBin->write("image_" + std::to_string(i), image.get(), nullptr);
+            }
+
+            writerBin = nullptr;
+            writerCache = nullptr; // drain all writes before opening the read fixture
+
+            cache = CacheFactory::create(cacheOptions);
+            bin = cache->getOrCreateDefaultBin();
+        }
+
+        ~SQLite3ConcurrentReadFixture()
+        {
+            bin = nullptr;
+            cache = nullptr;
+            fs::remove_all(path);
+        }
+
+        std::string path;
+        osg::ref_ptr<Cache> cache;
+        osg::ref_ptr<CacheBin> bin;
+    };
+
+    SQLite3ConcurrentReadFixture& sqlite3ConcurrentReadFixture()
+    {
+        static SQLite3ConcurrentReadFixture s_fixture;
+        return s_fixture;
+    }
+}
+
+static void BM_SQLite3ConcurrentRead(benchmark::State& state)
+{
+    auto& fixture = sqlite3ConcurrentReadFixture();
+    std::uint64_t index = static_cast<std::uint64_t>(state.thread_index());
+
+    for (auto _ : state)
+    {
+        const std::string key = "image_" + std::to_string(index++ % NUM_CACHE_IMAGES);
+        ReadResult result = fixture.bin->readImage(key, nullptr);
+        if (!result.succeeded())
+        {
+            state.SkipWithError("SQLite3 benchmark failed to read cached image");
+            return;
+        }
+        benchmark::DoNotOptimize(result.getImage());
+    }
+}
+BENCHMARK(BM_SQLite3ConcurrentRead)->ThreadRange(1, 8)->UseRealTime()->Unit(benchmark::kMicrosecond);
 
 static void BM_SQLite3SystemSingleThreadedWrite(benchmark::State& state)
 {
