@@ -330,7 +330,12 @@ namespace
                 }
                 else if ( value.isArray() )
                 {
-                    if ( endsWith(*i, "__array__") )
+                    if (depth == 0 && members.size() == 1)
+                    {
+                        conf.key() = *i;
+                        json2conf(value, conf, depth + 1);
+                    }
+                    else if ( endsWith(*i, "__array__") )
                     {
                         std::string key = i->substr(0, i->length()-9);
                         for( Json::Value::const_iterator j = value.begin(); j != value.end(); ++j )
@@ -391,7 +396,12 @@ namespace
                 Config child;
                 json2conf( *j, child, depth+1 );
                 if ( !child.empty() )
-                    conf.add( child );
+                {
+                    if (child.key().empty() && child.value().empty())
+                        conf.add(child.children());
+                    else
+                        conf.add(child);
+                }
             }
         }
         else if ( json.type() != Json::nullValue )

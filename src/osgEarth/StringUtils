@@ -20,6 +20,10 @@
 #include <unordered_map>
 #include <set>
 #include <cctype>
+#include <cerrno>
+#include <cstdlib>
+#include <limits>
+#include <type_traits>
 
 namespace osgEarth {
     namespace Util
@@ -196,41 +200,252 @@ namespace osgEarth {
         //------------------------------------------------------------------------
         // conversion templates
 
-        // converts a string to primitive using serialization
+        namespace string_detail
+        {
+            inline bool isAsciiWhitespace(char c)
+            {
+                return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+            }
+
+            inline void skipAsciiWhitespace(const char*& current, const char* end)
+            {
+                while (current != end && isAsciiWhitespace(*current))
+                    ++current;
+            }
+
+            template<typename T>
+            inline bool parseDecimalInteger(const char*& current, const char* end, T& output)
+            {
+                const char* cursor = current;
+                skipAsciiWhitespace(cursor, end);
+                if (cursor == end)
+                    return false;
+
+                bool negative = false;
+                if (*cursor == '-' || *cursor == '+')
+                {
+                    negative = *cursor == '-';
+                    ++cursor;
+                }
+
+                if (cursor == end || *cursor < '0' || *cursor > '9')
+                    return false;
+
+                if (negative && !std::numeric_limits<T>::is_signed)
+                    return false;
+
+                using Unsigned = typename std::make_unsigned<T>::type;
+                const Unsigned positiveLimit = static_cast<Unsigned>((std::numeric_limits<T>::max)());
+                const Unsigned limit = negative ? positiveLimit + Unsigned(1) : positiveLimit;
+                Unsigned value = 0;
+
+                while (cursor != end && *cursor >= '0' && *cursor <= '9')
+                {
+                    const Unsigned digit = static_cast<Unsigned>(*cursor - '0');
+                    if (value > (limit - digit) / Unsigned(10))
+                        return false;
+                    value = value * Unsigned(10) + digit;
+                    ++cursor;
+                }
+
+                if (negative)
+                {
+                    if (value == positiveLimit + Unsigned(1))
+                        output = (std::numeric_limits<T>::min)();
+                    else
+                        output = static_cast<T>(-static_cast<T>(value));
+                }
+                else
+                {
+                    output = static_cast<T>(value);
+                }
+
+                current = cursor;
+                return true;
+            }
+
+            template<typename T>
+            struct FloatingParser;
+
+            template<> struct FloatingParser<float>
+            {
+                static float parse(const char* input, char** end) { return std::strtof(input, end); }
+            };
+
+            template<> struct FloatingParser<double>
+            {
+                static double parse(const char* input, char** end) { return std::strtod(input, end); }
+            };
+
+            template<> struct FloatingParser<long double>
+            {
+                static long double parse(const char* input, char** end) { return std::strtold(input, end); }
+            };
+
+            template<typename T>
+            inline bool parseFloatingPoint(const char*& current, const char* end, T& output)
+            {
+                const char* cursor = current;
+                skipAsciiWhitespace(cursor, end);
+                if (cursor == end)
+                    return false;
+
+                char* parsedEnd = nullptr;
+                errno = 0;
+                const T value = FloatingParser<T>::parse(cursor, &parsedEnd);
+                if (parsedEnd == cursor || parsedEnd > end || errno == ERANGE)
+                    return false;
+
+                output = value;
+                current = parsedEnd;
+                return true;
+            }
+
+            template<typename T, typename Enable = void>
+            struct CursorValueReader
+            {
+                static bool read(const char*& current, const char* end, T& output)
+                {
+                    const char* begin = current;
+                    skipAsciiWhitespace(begin, end);
+                    const char* tokenEnd = begin;
+                    while (tokenEnd != end && !isAsciiWhitespace(*tokenEnd))
+                        ++tokenEnd;
+                    if (begin == tokenEnd)
+                        return false;
+
+                    std::istringstream input{ std::string(begin, tokenEnd) };
+                    T value = output;
+                    if (!(input >> value))
+                        return false;
+
+                    output = value;
+                    current = tokenEnd;
+                    return true;
+                }
+            };
+
+            template<typename T>
+            struct CursorValueReader<T, typename std::enable_if<
+                std::is_integral<T>::value && !std::is_same<T, bool>::value>::type>
+            {
+                static bool read(const char*& current, const char* end, T& output)
+                {
+                    return parseDecimalInteger(current, end, output);
+                }
+            };
+
+            template<typename T>
+            struct CursorValueReader<T, typename std::enable_if<std::is_floating_point<T>::value>::type>
+            {
+                static bool read(const char*& current, const char* end, T& output)
+                {
+                    return parseFloatingPoint(current, end, output);
+                }
+            };
+
+            template<typename T, typename Enable = void>
+            struct StringValueConverter
+            {
+                static T convert(const std::string& input, const T& fallback)
+                {
+                    std::istringstream stream(input);
+                    T value = fallback;
+                    return (stream >> value) ? value : fallback;
+                }
+            };
+
+            template<typename T>
+            struct StringValueConverter<T, typename std::enable_if<
+                std::is_integral<T>::value && std::numeric_limits<T>::is_signed && !std::is_same<T, bool>::value>::type>
+            {
+                static T convert(const std::string& input, const T& fallback)
+                {
+                    const char* begin = input.c_str();
+                    char* end = nullptr;
+                    errno = 0;
+                    const long long value = std::strtoll(begin, &end, 0);
+                    if (begin == end || errno == ERANGE ||
+                        value < static_cast<long long>((std::numeric_limits<T>::min)()) ||
+                        value > static_cast<long long>((std::numeric_limits<T>::max)()))
+                        return fallback;
+                    return static_cast<T>(value);
+                }
+            };
+
+            template<typename T>
+            struct StringValueConverter<T, typename std::enable_if<
+                std::is_integral<T>::value && !std::numeric_limits<T>::is_signed && !std::is_same<T, bool>::value>::type>
+            {
+                static T convert(const std::string& input, const T& fallback)
+                {
+                    const char* begin = input.c_str();
+                    while (*begin != '\0' && isAsciiWhitespace(*begin))
+                        ++begin;
+                    if (*begin == '-')
+                        return fallback;
+
+                    char* end = nullptr;
+                    errno = 0;
+                    const unsigned long long value = std::strtoull(begin, &end, 0);
+                    if (begin == end || errno == ERANGE ||
+                        value > static_cast<unsigned long long>((std::numeric_limits<T>::max)()))
+                        return fallback;
+                    return static_cast<T>(value);
+                }
+            };
+
+            template<typename T>
+            struct StringValueConverter<T, typename std::enable_if<std::is_floating_point<T>::value>::type>
+            {
+                static T convert(const std::string& input, const T& fallback)
+                {
+                    const char* current = input.c_str();
+                    const char* end = current + input.size();
+                    T value = fallback;
+                    return parseFloatingPoint(current, end, value) ? value : fallback;
+                }
+            };
+        }
+
+        /**
+         * Allocation-free cursor for reading whitespace-separated values from a string.
+         * The input string must outlive the cursor and remain unchanged while reading.
+         */
+        class StringCursor
+        {
+        public:
+            explicit StringCursor(const std::string& input) :
+                _current(input.c_str()),
+                _end(input.c_str() + input.size())
+            {
+            }
+
+            StringCursor(std::string&&) = delete;
+            StringCursor(const std::string&&) = delete;
+
+            template<typename T>
+            bool read(T& output)
+            {
+                return string_detail::CursorValueReader<T>::read(_current, _end, output);
+            }
+
+            bool atEnd() const
+            {
+                const char* cursor = _current;
+                string_detail::skipAsciiWhitespace(cursor, _end);
+                return cursor == _end;
+            }
+
+        private:
+            const char* _current;
+            const char* _end;
+        };
+
+        // Converts a string to a primitive, returning the fallback on conversion failure.
         template<typename T> inline T as(const std::string& str, const T& default_value)
         {
-            T temp = default_value;
-            std::istringstream strin(str);
-            if (!strin.eof()) strin >> temp;
-            return temp;
-        }
-
-        template<> inline long long as<long long>(const std::string& str, const long long& defaultValue) {
-            char* end = nullptr;
-            auto value = std::strtoll(str.c_str(), &end, 0);
-            return (str.c_str() == end) ? defaultValue : value;
-        }
-
-        template<> inline int as<int>(const std::string& str, const int& defaultValue) {
-            return static_cast<int>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline unsigned as<unsigned>(const std::string& str, const unsigned& defaultValue) {
-            return static_cast<unsigned>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline short as<short>(const std::string& str, const short& defaultValue) {
-            return static_cast<short>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline unsigned short as<unsigned short>(const std::string& str, const unsigned short& defaultValue) {
-            return static_cast<unsigned short>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline long as<long>(const std::string& str, const long& defaultValue) {
-            return static_cast<long>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline unsigned long as<unsigned long>(const std::string& str, const unsigned long& defaultValue) {
-            return static_cast<unsigned long>(as<long long>(str, static_cast<long long>(defaultValue)));
-        }
-        template<> inline unsigned long long as<unsigned long long>(const std::string& str, const unsigned long long& defaultValue) {
-            return static_cast<unsigned long long>(as<long long>(str, static_cast<unsigned long long>(defaultValue)));
+            return string_detail::StringValueConverter<T>::convert(str, default_value);
         }
 
         // template specialization for a bool

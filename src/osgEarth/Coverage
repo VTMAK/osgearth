@@ -7,6 +7,7 @@
 
 #include <osgEarth/GeoData>
 #include <osgEarth/ImageUtils>
+#include <algorithm>
 #include <array>
 #include <bitset>
 #include <cstdint>
@@ -248,7 +249,7 @@ namespace osgEarth
             root.get("height", h);
             allocate(w, h);
 
-            Config values = root.child("values");
+            const Config& values = root.child("values");
             for (auto& value_conf : values.children())
             {
                 T value(value_conf);
@@ -264,18 +265,33 @@ namespace osgEarth
                 }
             }
 
-            std::string pixels_string = root.value("pixels");
-            std::istringstream pixels_stream(pixels_string);
-            int count, pixel;
-            int ptr = 0;
-            while (!pixels_stream.eof() && ptr < (int)(w*h))
+            const Config* pixelsConfig = root.child_ptr("pixels");
+            if (!pixelsConfig)
+                return;
+
+            Util::StringCursor pixels(pixelsConfig->value());
+            const std::size_t capacity = _pixels.size();
+            std::size_t ptr = 0u;
+            while (ptr < capacity)
             {
-                pixels_stream >> count >> pixel;
-                for (int i = 0; i < count; ++i) {
-                    _pixels[ptr++] = pixel;
-                    if (pixel > 0)
-                        ++_valid_count;
-                }
+                int count = 0;
+                int pixel = 0;
+                if (!pixels.read(count) || !pixels.read(pixel))
+                    break;
+                if (count < 0 || pixel < static_cast<int>(NoData) || pixel > static_cast<int>(MaxIndex))
+                    break;
+
+                const std::size_t runLength = std::min(
+                    static_cast<std::size_t>(count),
+                    capacity - ptr);
+                const Index index = static_cast<Index>(pixel);
+                std::fill_n(_pixels.begin() + ptr, runLength, index);
+                if (index != NoData)
+                    _valid_count += static_cast<unsigned>(runLength);
+                ptr += runLength;
+
+                if (runLength < static_cast<std::size_t>(count))
+                    break;
             }
         }
 

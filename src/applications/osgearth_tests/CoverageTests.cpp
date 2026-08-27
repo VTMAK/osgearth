@@ -142,6 +142,65 @@ TEST_CASE("Coverage config round-trip preserves dimensions and pixels")
     }
 }
 
+TEST_CASE("Coverage config decoder handles whitespace and malformed runs safely")
+{
+    SECTION("trailing whitespace")
+    {
+        Config conf("coverage");
+        conf.set("width", 4u);
+        conf.set("height", 1u);
+        conf.add("pixels", "2 1 2 0   \t\n");
+
+        auto cov = Coverage<TestCoverageValue>::create();
+        cov->setConfig(conf);
+
+        REQUIRE(cov->nodataCount() == 2u);
+        REQUIRE(cov->hasDataAt(0, 0));
+        REQUIRE(cov->hasDataAt(1, 0));
+        REQUIRE_FALSE(cov->hasDataAt(2, 0));
+        REQUIRE_FALSE(cov->hasDataAt(3, 0));
+    }
+
+    SECTION("oversized runs are clamped to the allocation")
+    {
+        Config conf("coverage");
+        conf.set("width", 4u);
+        conf.set("height", 1u);
+        conf.add("pixels", "10 1");
+
+        auto cov = Coverage<TestCoverageValue>::create();
+        cov->setConfig(conf);
+
+        REQUIRE(cov->nodataCount() == 0u);
+    }
+
+    SECTION("invalid indices stop decoding")
+    {
+        Config conf("coverage");
+        conf.set("width", 4u);
+        conf.set("height", 1u);
+        conf.add("pixels", "2 256 2 1");
+
+        auto cov = Coverage<TestCoverageValue>::create();
+        cov->setConfig(conf);
+
+        REQUIRE(cov->nodataCount() == 4u);
+    }
+
+    SECTION("negative run lengths stop decoding")
+    {
+        Config conf("coverage");
+        conf.set("width", 4u);
+        conf.set("height", 1u);
+        conf.add("pixels", "-1 1 4 1");
+
+        auto cov = Coverage<TestCoverageValue>::create();
+        cov->setConfig(conf);
+
+        REQUIRE(cov->nodataCount() == 4u);
+    }
+}
+
 TEST_CASE("GeoCoverage readAtCoords maps world coords to raster values")
 {
     Coverage<TestCoverageValue>::Ptr cov = Coverage<TestCoverageValue>::create();

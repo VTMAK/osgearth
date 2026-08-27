@@ -12,6 +12,8 @@
 #include <osgEarth/SpatialReference>
 #include <osgEarth/StringUtils>
 #include <osgEarth/Cache>
+#include <osgEarth/Config>
+#include <osgEarth/Coverage>
 #include <osgEarth/ImageUtils>
 #include <osgDB/ReadFile>
 #include <filesystem>
@@ -21,6 +23,47 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    struct BenchmarkCoverageValue
+    {
+        BenchmarkCoverageValue() = default;
+        explicit BenchmarkCoverageValue(const Config&) { }
+
+        bool valid() const { return true; }
+        bool operator<(const BenchmarkCoverageValue&) const { return false; }
+        Config getConfig() const { return Config("value"); }
+    };
+
+    std::string makeDelimitedInput(std::size_t count)
+    {
+        std::string input;
+        input.reserve(count * 16u);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (i > 0u)
+                input.push_back(',');
+            input += (i % 8u == 0u) ? "\"quoted,value\"" : "plain_value";
+        }
+        return input;
+    }
+
+    Config makeCoverageConfig(unsigned width, unsigned height, unsigned runLength)
+    {
+        Config config("coverage");
+        config.set("width", width);
+        config.set("height", height);
+
+        std::ostringstream pixels;
+        const unsigned size = width * height;
+        for (unsigned offset = 0u; offset < size; offset += runLength)
+        {
+            if (offset > 0u)
+                pixels << ' ';
+            pixels << std::min(runLength, size - offset) << ' ' << ((offset / runLength) % 4u);
+        }
+        config.add("pixels", pixels.str());
+        return config;
+    }
+
     class ConstantElevationLayer : public ElevationLayer
     {
     public:
@@ -74,6 +117,56 @@ namespace
         return map;
     }
 }
+
+static void BM_StringTokenizerDelimited(benchmark::State& state)
+{
+    const std::string input = makeDelimitedInput(static_cast<std::size_t>(state.range(0)));
+    const StringTokenizer tokenizer = StringTokenizer().delim(",").standardQuotes();
+
+    for (auto _ : state)
+    {
+        auto output = tokenizer.tokenize(input);
+        benchmark::DoNotOptimize(output.data());
+        benchmark::DoNotOptimize(output.size());
+    }
+}
+BENCHMARK(BM_StringTokenizerDelimited)->Arg(4096);
+
+static void BM_ConfigGetNumeric(benchmark::State& state)
+{
+    Config config;
+    config.set("integer", 123456789);
+    config.set("single", 12345.625f);
+    config.set("double", 123456789.125);
+
+    for (auto _ : state)
+    {
+        int integer = 0;
+        float single = 0.0f;
+        double doubleValue = 0.0;
+        config.get("integer", integer);
+        config.get("single", single);
+        config.get("double", doubleValue);
+        benchmark::DoNotOptimize(integer);
+        benchmark::DoNotOptimize(single);
+        benchmark::DoNotOptimize(doubleValue);
+    }
+}
+BENCHMARK(BM_ConfigGetNumeric);
+
+static void BM_CoverageSetConfig(benchmark::State& state)
+{
+    const Config config = makeCoverageConfig(256u, 256u, static_cast<unsigned>(state.range(0)));
+
+    for (auto _ : state)
+    {
+        auto coverage = Coverage<BenchmarkCoverageValue>::create();
+        coverage->setConfig(config);
+        benchmark::DoNotOptimize(coverage.get());
+        benchmark::DoNotOptimize(coverage->nodataCount());
+    }
+}
+BENCHMARK(BM_CoverageSetConfig)->Arg(1)->Arg(8)->Arg(256);
 
 static void BM_GeoPointTransform(benchmark::State& state)
 {

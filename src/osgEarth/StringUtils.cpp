@@ -61,7 +61,7 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
 
     std::vector<std::string> output;
 
-    std::stringstream buf;
+    std::string buffer;
     bool inside_quote = false;
     char quote_opener = '\0';
     char quote_closer = '\0';
@@ -80,11 +80,11 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
                 inside_quote = false;
 
                 if (keep_quote_char)
-                    buf << c;
+                    buffer.push_back(c);
             }
             else
             {
-                buf << c;
+                buffer.push_back(c);
             }
         }
         else
@@ -99,7 +99,7 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
                 quote_opener_offset = i;
 
                 if (keep_quote_char)
-                    buf << c;
+                    buffer.push_back(c);
             }
             else
             {
@@ -113,17 +113,16 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
                         is_delimiter = true;
 
                         // end the current token, clean it up, and push it
-                        auto token = buf.str();
                         if (_trimTokens)
-                            trim2(token);
+                            trim2(buffer);
 
-                        if (_keepEmptyTokens || !token.empty())
-                            output.push_back(token);
+                        if (_keepEmptyTokens || !buffer.empty())
+                            output.push_back(buffer);
 
                         if (d.second == true) // keep the delimiter itself as a token?
                             output.push_back(d.first);
 
-                        buf.str("");
+                        buffer.clear();
 
                         // advance over the delimiter
                         i += d.first.size() - 1;
@@ -133,74 +132,11 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
 
                 if (!is_delimiter)
                 {
-                    buf << c;
+                    buffer.push_back(c);
                 }
             }
         }
     }
-
-#if 0
-
-    for (auto& c : input)
-    {
-        ++offset;
-        auto q = _quotes.find(c);
-
-        if (inside_quote)
-        {
-            if (c == quote_closer)
-            {
-                inside_quote = false;
-                if (keep_quote_char)
-                    buf << c;
-            }
-            else
-            {
-                buf << c;
-            }
-        }
-        else
-        {
-            if (q != _quotes.end())
-            {
-                // start a new quoted region
-                inside_quote = true;
-                quote_opener = c;
-                quote_closer = q->second.first;
-                keep_quote_char = q->second.second;
-                quote_opener_offset = offset - 1;
-
-                if (keep_quote_char)
-                    buf << c;
-            }
-            else
-            {
-                auto d = _delims.find(c);
-                if (d == _delims.end())
-                {
-                    buf << c;
-                }
-                else
-                {
-                    // found a delimiter. end the current token.
-                    std::string token = buf.str();
-                    if (_trimTokens)
-                        trim2(token);
-
-                    if (_allowEmpties || !token.empty())
-                        output.push_back(token);
-
-                    if (d->second == true) // keep the delimiter itself as a token?
-                    {
-                        output.push_back(std::string(1, c));
-                    }
-
-                    buf.str("");
-                }
-            }
-        }
-    }
-#endif
 
     if (inside_quote && !_ignoreDanglingQuotes)
     {
@@ -212,11 +148,10 @@ StringTokenizer::operator()(const std::string& input, bool* error) const
             *error = true;
     }
 
-    std::string bufstr = buf.str();
     if (_trimTokens)
-        trim2(bufstr);
-    if (!bufstr.empty())
-        output.push_back(bufstr);
+        trim2(buffer);
+    if (!buffer.empty())
+        output.push_back(buffer);
 
     return output;
 }
@@ -371,18 +306,27 @@ osgEarth::Util::htmlColorToVec4f(const std::string& html)
 {
     std::string t = osgEarth::Util::toLower(html);
     osg::Vec4ub c(0, 0, 0, 255);
-    if (t.length() >= 7) {
-        c.r() |= t[1] <= '9' ? (t[1] - '0') << 4 : (10 + (t[1] - 'a')) << 4;
-        c.r() |= t[2] <= '9' ? (t[2] - '0') : (10 + (t[2] - 'a'));
-        c.g() |= t[3] <= '9' ? (t[3] - '0') << 4 : (10 + (t[3] - 'a')) << 4;
-        c.g() |= t[4] <= '9' ? (t[4] - '0') : (10 + (t[4] - 'a'));
-        c.b() |= t[5] <= '9' ? (t[5] - '0') << 4 : (10 + (t[5] - 'a')) << 4;
-        c.b() |= t[6] <= '9' ? (t[6] - '0') : (10 + (t[6] - 'a'));
-        if (t.length() == 9) {
-            c.a() = 0;
-            c.a() |= t[7] <= '9' ? (t[7] - '0') << 4 : (10 + (t[7] - 'a')) << 4;
-            c.a() |= t[8] <= '9' ? (t[8] - '0') : (10 + (t[8] - 'a'));
+    if ((t.length() == 7 || t.length() == 9) && t[0] == '#')
+    {
+        auto hexValue = [](char value) {
+            return value >= '0' && value <= '9' ? value - '0' :
+                value >= 'a' && value <= 'f' ? value - 'a' + 10 : -1;
+        };
+
+        int values[8];
+        const std::size_t count = t.length() - 1;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            values[i] = hexValue(t[i + 1]);
+            if (values[i] < 0)
+                return osg::Vec4f(0.0f, 0.0f, 0.0f, 1.0f);
         }
+
+        c.r() = static_cast<unsigned char>((values[0] << 4) | values[1]);
+        c.g() = static_cast<unsigned char>((values[2] << 4) | values[3]);
+        c.b() = static_cast<unsigned char>((values[4] << 4) | values[5]);
+        if (count == 8)
+            c.a() = static_cast<unsigned char>((values[6] << 4) | values[7]);
     }
     return osg::Vec4f(((float)c.r()) / 255.0f, ((float)c.g()) / 255.0f, ((float)c.b()) / 255.0f, ((float)c.a()) / 255.0f);
 }
@@ -436,16 +380,14 @@ osg::Vec3f
 osgEarth::Util::stringToVec3f(const std::string& str, const osg::Vec3f& default_value)
 {
     std::stringstream buf(str);
-    osg::Vec3f out = default_value;
-    buf >> out.x();
-    if (!buf.eof()) {
-        buf >> out.y() >> out.z();
-    }
-    else {
-        out.y() = out.x();
-        out.z() = out.x();
-    }
-    return out;
+    float x, y, z;
+    if (!(buf >> x))
+        return default_value;
+    if (!(buf >> y))
+        return osg::Vec3f(x, x, x);
+    if (!(buf >> z))
+        return default_value;
+    return osg::Vec3f(x, y, z);
 }
 
 /** Converts a vec3f to a string */

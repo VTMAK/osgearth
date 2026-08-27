@@ -58,6 +58,16 @@ namespace osgEarth
             return ci_equals(lhs, rhs);
         }
 
+        static bool has_non_whitespace(const std::string& value)
+        {
+            for (char c : value)
+            {
+                if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v')
+                    return true;
+            }
+            return false;
+        }
+
     public:
         Config() = default;
 
@@ -297,10 +307,10 @@ namespace osgEarth
             if (opt.isSet()) {
                 Config conf(key, opt.get());
                 auto str = conf.value(key);
-                if (is_percentage.isSetTo(true)) {
-                    conf.set(key, str + '%');
-                }
-                set(std::move(conf));
+                if (is_percentage.isSetTo(true))
+                    set(key, str + '%');
+                else
+                    set(std::move(conf));
             }
             return *this;
         }
@@ -311,10 +321,10 @@ namespace osgEarth
             if (opt.isSet()) {
                 Config conf(key, opt.get());
                 auto str = conf.value(key);
-                if (is_percentage.isSetTo(true)) {
-                    conf.set(key, str + '%');
-                }
-                set(std::move(conf));
+                if (is_percentage.isSetTo(true))
+                    set(key, str + '%');
+                else
+                    set(std::move(conf));
             }
             return *this;
         }
@@ -360,7 +370,8 @@ namespace osgEarth
         Config& set_with_function(const std::string& key, CALLABLE&& f) {
             Config conf(key);
             f(conf);
-            if (!conf.empty()) set(std::move(conf));
+            if (!conf.value().empty() || !conf.children().empty())
+                set(std::move(conf));
             return *this;
         }
 
@@ -373,7 +384,10 @@ namespace osgEarth
 
         /** Whether this object has the key OR has a child with the key */
         bool hasValue(const std::string& key) const {
-            return !value(key).empty();
+            const Config* conf = child_ptr(key);
+            if (conf && has_non_whitespace(conf->value()))
+                return true;
+            return keys_equal(_key, key) && !_defaultValue.empty();
         }
 
         /** The value of this object (if the key matches) or a matching child object */
@@ -393,20 +407,16 @@ namespace osgEarth
         /** Value cast to a particular primitive type (with fallback in case casting fails) */
         template<typename T>
         T value(const std::string& key, T fallback) const {
-            std::string r;
-            if (hasChild(key))
-                r = child(key).value();
-            return osgEarth::Util::as<T>(r, fallback);
+            const Config* conf = child_ptr(key);
+            return osgEarth::Util::as<T>(conf ? conf->value() : EMPTY_STRING, fallback);
         }
 
         /** Populates the output value iff the Config exists. */
         template<typename T>
         bool get(const std::string& key, optional<T>& output) const {
-            std::string r;
-            if (hasChild(key))
-                r = child(key).value();
-            if (!r.empty()) {
-                output = osgEarth::Util::as<T>(r, output.defaultValue());
+            const Config* conf = child_ptr(key);
+            if (conf && !conf->value().empty()) {
+                output = osgEarth::Util::as<T>(conf->value(), output.defaultValue());
                 return true;
             }
             else
@@ -448,10 +458,13 @@ namespace osgEarth
         /** Populates the ouptut value iff the Config exists. */
         template<typename T>
         bool get(const std::string& key, T& output) const {
-            if (hasValue(key)) {
-                output = value<T>(key, output);
+            const Config* conf = child_ptr(key);
+            if (conf && has_non_whitespace(conf->value())) {
+                output = osgEarth::Util::as<T>(conf->value(), output);
                 return true;
             }
+            if (keys_equal(_key, key) && !_defaultValue.empty())
+                return true;
             return false;
         }
 
@@ -684,7 +697,8 @@ namespace osgEarth
 
             output = StringTokenizer()
                 .delim(",")
-                .standardQuotes()
+                .quote('\'', false)
+                .quote('"', false)
                 .tokenize(value(key));
                 
             return true;

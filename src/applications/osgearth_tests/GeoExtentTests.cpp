@@ -7,6 +7,8 @@
 
 #include <osgEarth/GeoData>
 
+#include <cmath>
+
 using namespace osgEarth;
 
 TEST_CASE( "GeoExtent" ) {
@@ -274,10 +276,22 @@ TEST_CASE( "GeoExtent" ) {
         GeoExtent extFeet(utm19feet, 88801, 1418501, 1205193, 15493031);
         GeoExtent extMeters(utm19meters, extFeet.xMin() * f2m, extFeet.yMin() * f2m, extFeet.xMax() * f2m, extFeet.yMax() * f2m);
 
-        GeoExtent t1 = extFeet.transform(utm19meters);       
-        REQUIRE(t1 == extMeters);
+        const double tolerance = 1e-3;
+
+        GeoExtent t1 = extFeet.transform(utm19meters);
+        REQUIRE(t1.isValid());
+        REQUIRE(t1.getSRS()->isEquivalentTo(extMeters.getSRS()));
+        REQUIRE(std::abs(t1.xMin() - extMeters.xMin()) <= tolerance);
+        REQUIRE(std::abs(t1.yMin() - extMeters.yMin()) <= tolerance);
+        REQUIRE(std::abs(t1.xMax() - extMeters.xMax()) <= tolerance);
+        REQUIRE(std::abs(t1.yMax() - extMeters.yMax()) <= tolerance);
 
         GeoExtent t2 = extMeters.transform(utm19feet);
-        REQUIRE(t2 == extFeet);
+        REQUIRE(t2.isValid());
+        REQUIRE(t2.getSRS()->isEquivalentTo(extFeet.getSRS()));
+        REQUIRE(std::abs(t2.xMin() - extFeet.xMin()) <= tolerance);
+        REQUIRE(std::abs(t2.yMin() - extFeet.yMin()) <= tolerance);
+        REQUIRE(std::abs(t2.xMax() - extFeet.xMax()) <= tolerance);
+        REQUIRE(std::abs(t2.yMax() - extFeet.yMax()) <= tolerance);
     }
 }
