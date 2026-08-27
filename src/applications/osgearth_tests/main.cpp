@@ -5,7 +5,9 @@
 
 #define CATCH_CONFIG_RUNNER
 #include <osgEarth/catch.hpp>
-#include <filesystem>
+#include <osgEarth/FileUtils>
+#include <osgDB/ConvertUTF>
+#include <string>
 #include <vector>
 
 #ifdef _WIN32
@@ -17,10 +19,10 @@
 #  include <mach-o/dyld.h>
 #endif
 
-namespace osgEarth::Tests
+namespace osgEarth { namespace Tests
 {
-    std::filesystem::path executablePath;
-}
+    std::string executablePath;
+} }
 
 int main(int argc, char* argv[])
 {
@@ -29,32 +31,26 @@ int main(int argc, char* argv[])
     const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
         static_cast<DWORD>(buffer.size()));
     if (length > 0u && length < buffer.size())
-        osgEarth::Tests::executablePath = std::filesystem::path(
-            std::wstring(buffer.data(), length));
+        osgEarth::Tests::executablePath = osgDB::convertUTF16toUTF8(
+            buffer.data(), length);
 #elif defined(__linux__)
     std::vector<char> buffer(4096u, '\0');
     const ssize_t length = ::readlink("/proc/self/exe", buffer.data(), buffer.size() - 1u);
     if (length > 0)
-        osgEarth::Tests::executablePath = std::filesystem::path(
-            std::string(buffer.data(), static_cast<std::size_t>(length)));
+        osgEarth::Tests::executablePath.assign(
+            buffer.data(), static_cast<std::size_t>(length));
 #elif defined(__APPLE__)
     uint32_t size = 0u;
     if (_NSGetExecutablePath(nullptr, &size) == -1)
     {
         std::vector<char> buffer(size, '\0');
         if (_NSGetExecutablePath(buffer.data(), &size) == 0)
-            osgEarth::Tests::executablePath = std::filesystem::path(buffer.data());
+            osgEarth::Tests::executablePath = buffer.data();
     }
 #endif
 
     if (osgEarth::Tests::executablePath.empty())
-    {
-        std::error_code error;
-        osgEarth::Tests::executablePath = std::filesystem::absolute(
-            std::filesystem::u8path(argv[0]), error);
-        if (error)
-            osgEarth::Tests::executablePath = std::filesystem::u8path(argv[0]);
-    }
+        osgEarth::Tests::executablePath = osgEarth::Util::getAbsolutePath(argv[0]);
 
     return Catch::Session().run(argc, argv);
 }

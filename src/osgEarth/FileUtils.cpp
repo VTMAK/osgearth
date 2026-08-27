@@ -108,6 +108,10 @@
 #  define S_ISDIR(mode)    (mode&__S_IFDIR)
 #endif
 
+#if !defined(S_ISREG) && defined(_S_IFREG)
+#  define S_ISREG(mode)    (mode&_S_IFREG)
+#endif
+
 
 #define LC "[FileUtils] "
 
@@ -518,6 +522,62 @@ bool
 osgEarth::Util::makeDirectoryForFile( const std::string &path )
 {
     return makeDirectory( osgDB::getFilePath( path ));
+}
+
+
+std::uint64_t
+osgEarth::Util::getFileSize(const std::string& path)
+{
+    struct stat64 stbuf;
+#ifdef OSG_USE_UTF8_FILENAME
+    const int result = _wstat64(OSGDB_STRING_TO_FILENAME(path).c_str(), &stbuf);
+#else
+    const int result = stat64(path.c_str(), &stbuf);
+#endif
+    return result == 0 && S_ISREG(stbuf.st_mode) ?
+        static_cast<std::uint64_t>(stbuf.st_size) : 0u;
+}
+
+
+bool
+osgEarth::Util::removeDirectory(const std::string& path)
+{
+    if (!osgDB::fileExists(path))
+        return true;
+
+    if (osgDB::fileType(path) != osgDB::DIRECTORY)
+        return false;
+
+    const osgDB::DirectoryContents contents = osgDB::getDirectoryContents(path);
+    for (osgDB::DirectoryContents::const_iterator i = contents.begin(); i != contents.end(); ++i)
+    {
+        if (*i == "." || *i == "..")
+            continue;
+
+        const std::string child = osgDB::concatPaths(path, *i);
+        bool removed = false;
+        if (osgDB::fileType(child) == osgDB::DIRECTORY)
+        {
+            removed = removeDirectory(child);
+        }
+        else
+        {
+#ifdef OSG_USE_UTF8_FILENAME
+            removed = _wunlink(OSGDB_STRING_TO_FILENAME(child).c_str()) == 0;
+#else
+            removed = ::unlink(child.c_str()) == 0;
+#endif
+        }
+
+        if (!removed)
+            return false;
+    }
+
+#ifdef OSG_USE_UTF8_FILENAME
+    return _wrmdir(OSGDB_STRING_TO_FILENAME(path).c_str()) == 0;
+#else
+    return ::rmdir(path.c_str()) == 0;
+#endif
 }
 
 

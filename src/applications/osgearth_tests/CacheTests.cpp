@@ -8,9 +8,12 @@
 #include <osgEarth/Registry>
 #include <osgEarth/MemCache>
 #include <osgEarth/Containers>  // For osgEarth::LRUCache
+#include <osgEarth/FileUtils>
+#include <osgDB/ConvertUTF>
+#include <osgDB/FileNameUtils>
+#include <osgDB/FileUtils>
 #include <atomic>
 #include <chrono>
-#include <filesystem>
 #include <fstream>
 #include <thread>
 #include <vector>
@@ -29,15 +32,13 @@
 
 using namespace osgEarth;
 
-namespace osgEarth::Tests
+namespace osgEarth { namespace Tests
 {
-    extern std::filesystem::path executablePath;
-}
+    extern std::string executablePath;
+} }
 
 namespace
 {
-    namespace fs = std::filesystem;
-
     constexpr const char* SQLITE_PROCESS_TEST_ROOT = "OSGEARTH_SQLITE_PROCESS_TEST_ROOT";
     constexpr unsigned PROCESS_PRODUCERS = 2u;
     constexpr unsigned PROCESS_RECORDS_PER_PRODUCER = 150u;
@@ -45,14 +46,14 @@ namespace
     class ScopedProcessTestEnvironment
     {
     public:
-        explicit ScopedProcessTestEnvironment(const fs::path& path)
+        explicit ScopedProcessTestEnvironment(const std::string& path)
         {
 #ifdef _WIN32
+            const std::wstring value = osgDB::convertUTF8toUTF16(path);
             _valid = SetEnvironmentVariableW(
-                L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT", path.c_str()) != FALSE;
+                L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT", value.c_str()) != FALSE;
 #else
-            const std::string value = path.u8string();
-            _valid = ::setenv(SQLITE_PROCESS_TEST_ROOT, value.c_str(), 1) == 0;
+            _valid = ::setenv(SQLITE_PROCESS_TEST_ROOT, path.c_str(), 1) == 0;
 #endif
         }
 
@@ -71,15 +72,32 @@ namespace
         bool _valid = false;
     };
 
-    fs::path processTestRoot()
+    std::string processTestRoot()
     {
 #ifdef _WIN32
         const wchar_t* value = ::_wgetenv(L"OSGEARTH_SQLITE_PROCESS_TEST_ROOT");
-        return value ? fs::path(value) : fs::path();
+        return value ? osgDB::convertUTF16toUTF8(value) : std::string();
 #else
         const char* value = ::getenv(SQLITE_PROCESS_TEST_ROOT);
-        return value ? fs::u8path(value) : fs::path();
+        return value ? value : std::string();
 #endif
+    }
+
+    std::string childPath(const std::string& parent, const std::string& child)
+    {
+        return osgDB::concatPaths(parent, child);
+    }
+
+    unsigned countDatabaseFiles(const std::string& path)
+    {
+        unsigned result = 0u;
+        const osgDB::DirectoryContents contents = osgDB::getDirectoryContents(path);
+        for (osgDB::DirectoryContents::const_iterator i = contents.begin(); i != contents.end(); ++i)
+        {
+            if (osgDB::getFileExtension(*i) == "db")
+                ++result;
+        }
+        return result;
     }
 
     class TestProcess
@@ -95,11 +113,12 @@ namespace
         TestProcess& operator=(const TestProcess&) = delete;
         TestProcess() = default;
 
-        bool start(const fs::path& executable, const std::string& testFilter)
+        bool start(const std::string& executable, const std::string& testFilter)
         {
 #ifdef _WIN32
-            const std::wstring wideFilter(testFilter.begin(), testFilter.end());
-            std::wstring commandLine = L"\"" + executable.wstring() + L"\" \"" +
+            const std::wstring wideExecutable = osgDB::convertUTF8toUTF16(executable);
+            const std::wstring wideFilter = osgDB::convertUTF8toUTF16(testFilter);
+            std::wstring commandLine = L"\"" + wideExecutable + L"\" \"" +
                 wideFilter + L"\" --reporter compact";
             std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
             mutableCommand.push_back(L'\0');
@@ -108,7 +127,7 @@ namespace
             startup.cb = sizeof(startup);
             PROCESS_INFORMATION process{};
             if (!CreateProcessW(
-                executable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, 0,
+                wideExecutable.c_str(), mutableCommand.data(), nullptr, nullptr, FALSE, 0,
                 nullptr, nullptr, &startup, &process))
             {
                 return false;
@@ -122,8 +141,7 @@ namespace
             _pid = ::fork();
             if (_pid == 0)
             {
-                const std::string executableString = executable.string();
-                ::execl(executableString.c_str(), executableString.c_str(),
+                ::execl(executable.c_str(), executable.c_str(),
                     testFilter.c_str(), "--reporter", "compact",
                     static_cast<char*>(nullptr));
                 ::_exit(127);
@@ -171,20 +189,20 @@ namespace
 #endif
     };
 
-    bool createMarker(const fs::path& path)
+    bool createMarker(const std::string& path)
     {
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
         output << "ready";
         return output.good();
     }
 
-    bool waitForProcessWriters(const fs::path& root)
+    bool waitForProcessWriters(const std::string& root)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
         {
-            if (fs::exists(root / "writer-a.ready") &&
-                fs::exists(root / "writer-b.ready"))
+            if (osgDB::fileExists(childPath(root, "writer-a.ready")) &&
+                osgDB::fileExists(childPath(root, "writer-b.ready")))
             {
                 return true;
             }
@@ -199,27 +217,26 @@ namespace
         {
             static std::atomic_uint s_counter{ 0u };
             const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-            path = fs::temp_directory_path() /
+            path = childPath(Util::getTempPath(),
                 ("osgearth_sqlite_cache_test_" + std::to_string(ticks) + "_" +
-                 std::to_string(s_counter.fetch_add(1u)));
+                 std::to_string(s_counter.fetch_add(1u))));
         }
 
         ~TemporaryCachePath()
         {
-            std::error_code ignored;
-            fs::remove_all(path, ignored);
+            Util::removeDirectory(path);
         }
 
-        fs::path path;
+        std::string path;
     };
 
     osg::ref_ptr<Cache> createSQLiteCache(
-        const fs::path& path,
+        const std::string& path,
         unsigned threads,
         bool separateBins)
     {
         Config config;
-        config.set("path", path.u8string());
+        config.set("path", path);
         config.set("threads", threads);
         config.set("separate_bins", separateBins);
         config.set("reader_connections", 4u);
@@ -230,18 +247,18 @@ namespace
     }
 
     osg::ref_ptr<Cache> createFileSystemCache(
-        const fs::path& path,
+        const std::string& path,
         unsigned threads,
         bool stats = false,
-        const fs::path& statsPath = fs::path())
+        const std::string& statsPath = std::string())
     {
         Config config;
-        config.set("path", path.u8string());
+        config.set("path", path);
         config.set("threads", threads);
         config.set("stats", stats);
         config.set("stats_interval", 0u);
         if (!statsPath.empty())
-            config.set("stats_path", statsPath.u8string());
+            config.set("stats_path", statsPath);
         CacheOptions options(config);
         options.setDriver("filesystem");
         return CacheFactory::create(options);
@@ -249,15 +266,15 @@ namespace
 
     osg::ref_ptr<Cache> createInstrumentedCache(
         const std::string& driver,
-        const fs::path& path,
-        const fs::path& statsPath)
+        const std::string& path,
+        const std::string& statsPath)
     {
         Config config;
-        config.set("path", path.u8string());
+        config.set("path", path);
         config.set("threads", 0u);
         config.set("separate_bins", false);
         config.set("stats", true);
-        config.set("stats_path", statsPath.u8string());
+        config.set("stats_path", statsPath);
         config.set("stats_interval", 0u);
         CacheOptions options(config);
         options.setDriver(driver);
@@ -276,31 +293,29 @@ namespace
         return result.succeeded() && result.getString() == expected;
     }
 
-    void requireCachePathCanBeRemoved(const fs::path& path)
+    void requireCachePathCanBeRemoved(const std::string& path)
     {
-        std::error_code error;
-        fs::remove_all(path, error);
-        REQUIRE_FALSE(error);
-        REQUIRE_FALSE(fs::exists(path));
+        REQUIRE(Util::removeDirectory(path));
+        REQUIRE_FALSE(osgDB::fileExists(path));
     }
 
     void runSQLiteProcessWriter(const std::string& workerName)
     {
-        const fs::path root = processTestRoot();
+        const std::string root = processTestRoot();
         REQUIRE_FALSE(root.empty());
 
-        osg::ref_ptr<Cache> cache = createSQLiteCache(root / "cache", 2u, false);
+        osg::ref_ptr<Cache> cache = createSQLiteCache(childPath(root, "cache"), 2u, false);
         REQUIRE(cache.valid());
         REQUIRE_FALSE(cache->getStatus().isError());
         osg::ref_ptr<CacheBin> bin = cache->addBin("process-shared");
         REQUIRE(bin.valid());
 
-        REQUIRE(createMarker(root / (workerName + ".ready")));
-        const fs::path startMarker = root / "start";
+        REQUIRE(createMarker(childPath(root, workerName + ".ready")));
+        const std::string startMarker = childPath(root, "start");
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (!fs::exists(startMarker) && std::chrono::steady_clock::now() < deadline)
+        while (!osgDB::fileExists(startMarker) && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        REQUIRE(fs::exists(startMarker));
+        REQUIRE(osgDB::fileExists(startMarker));
 
         std::atomic_bool succeeded{ true };
         std::vector<std::thread> producers;
@@ -566,9 +581,7 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
     SECTION("separate operating-system processes write one WAL database")
     {
         TemporaryCachePath root;
-        std::error_code error;
-        REQUIRE(fs::create_directories(root.path, error));
-        REQUIRE_FALSE(error);
+        REQUIRE(Util::makeDirectory(root.path));
 
         ScopedProcessTestEnvironment environment(root.path);
         REQUIRE(environment.valid());
@@ -585,7 +598,7 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
         if (firstStarted && secondStarted)
             writersReady = waitForProcessWriters(root.path);
 
-        const bool startCreated = createMarker(root.path / "start");
+        const bool startCreated = createMarker(childPath(root.path, "start"));
         const int firstExitCode = firstStarted ? first.wait() : 1;
         const int secondExitCode = secondStarted ? second.wait() : 1;
 
@@ -598,7 +611,8 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
         REQUIRE(firstExitCode == 0);
         REQUIRE(secondExitCode == 0);
 
-        osg::ref_ptr<Cache> verifier = createSQLiteCache(root.path / "cache", 0u, false);
+        osg::ref_ptr<Cache> verifier = createSQLiteCache(
+            childPath(root.path, "cache"), 0u, false);
         REQUIRE(verifier.valid());
         osg::ref_ptr<CacheBin> bin = verifier->addBin("process-shared");
         REQUIRE(bin.valid());
@@ -678,12 +692,7 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
             second = nullptr;
             cache = nullptr;
 
-            unsigned databaseCount = 0u;
-            for (const auto& entry : fs::directory_iterator(root.path))
-            {
-                if (entry.path().extension() == ".db")
-                    ++databaseCount;
-            }
+            const unsigned databaseCount = countDatabaseFiles(root.path);
             INFO("separate_bins=" << separateBins);
             REQUIRE(databaseCount == (separateBins ? 2u : 1u));
             requireCachePathCanBeRemoved(root.path);
@@ -693,8 +702,8 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
     SECTION("unsafe bin identifiers cannot escape the cache directory")
     {
         TemporaryCachePath parent;
-        const fs::path root = parent.path / "cache";
-        const fs::path escaped = parent.path / "escaped.db";
+        const std::string root = childPath(parent.path, "cache");
+        const std::string escaped = childPath(parent.path, "escaped.db");
         osg::ref_ptr<Cache> cache = createSQLiteCache(root, 0u, true);
         REQUIRE(cache.valid());
         osg::ref_ptr<CacheBin> bin = cache->addBin("../escaped");
@@ -708,13 +717,8 @@ TEST_CASE("SQLite3 cache concurrency and lifetime", "[cache][sqlite3]")
         bin = nullptr;
         cache = nullptr;
 
-        REQUIRE_FALSE(fs::exists(escaped));
-        unsigned databaseCount = 0u;
-        for (const auto& entry : fs::directory_iterator(root))
-        {
-            if (entry.path().extension() == ".db")
-                ++databaseCount;
-        }
+        REQUIRE_FALSE(osgDB::fileExists(escaped));
+        const unsigned databaseCount = countDatabaseFiles(root);
         REQUIRE(databaseCount == 2u);
         requireCachePathCanBeRemoved(parent.path);
     }
@@ -792,9 +796,10 @@ TEST_CASE("Cache runtime statistics emit comparable JSON", "[cache][stats]")
     auto verify = [](const std::string& driver)
     {
         TemporaryCachePath root;
-        const fs::path statsPath = root.path / "reports" / (driver + ".jsonl");
+        const std::string statsPath = childPath(
+            childPath(root.path, "reports"), driver + ".jsonl");
         osg::ref_ptr<Cache> cache = createInstrumentedCache(
-            driver, root.path / "cache", statsPath);
+            driver, childPath(root.path, "cache"), statsPath);
         REQUIRE(cache.valid());
         REQUIRE_FALSE(cache->getStatus().isError());
         osg::ref_ptr<CacheBin> bin = cache->getOrCreateDefaultBin();
@@ -805,7 +810,7 @@ TEST_CASE("Cache runtime statistics emit comparable JSON", "[cache][stats]")
         bin = nullptr;
         cache = nullptr;
 
-        REQUIRE(fs::exists(statsPath));
+        REQUIRE(osgDB::fileExists(statsPath));
         std::ifstream input(statsPath);
         std::string json((std::istreambuf_iterator<char>(input)),
             std::istreambuf_iterator<char>());

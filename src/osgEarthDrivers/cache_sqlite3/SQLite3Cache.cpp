@@ -5,6 +5,7 @@
 #include "SQLite3Cache"
 #include <osgEarth/Cache>
 #include <osgEarth/CacheStats>
+#include <osgEarth/FileUtils>
 #include <osgEarth/StringUtils>
 #include <osgEarth/Threading>
 #include <osgEarth/URI>
@@ -19,7 +20,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cctype>
-#include <filesystem>
 #include <list>
 #include <limits>
 #include <memory>
@@ -42,7 +42,6 @@ using namespace osgEarth::Drivers;
 
 namespace
 {
-    namespace fs = std::filesystem;
 
     constexpr unsigned MAX_TRANSACTION_RETRIES = 3u;
 
@@ -564,14 +563,8 @@ namespace
         std::uintmax_t diskSize() const
         {
             std::uintmax_t result = 0u;
-            std::error_code ec;
             for (const auto& filename : { _path, _path + "-wal", _path + "-shm" })
-            {
-                const auto size = fs::file_size(fs::u8path(filename), ec);
-                if (!ec)
-                    result += size;
-                ec.clear();
-            }
+                result += Util::getFileSize(filename);
             return result;
         }
 
@@ -1398,7 +1391,8 @@ namespace
         if (!state)
             return nullptr;
 
-        return _bins.getOrCreate(name, new SQLite3CacheBin(name, state, _options, _stats));
+        osg::ref_ptr<CacheBin> bin = new SQLite3CacheBin(name, state, _options, _stats);
+        return _bins.getOrCreate(name, bin.get());
     }
 
     CacheBin* SQLite3Cache::getOrCreateDefaultBin()

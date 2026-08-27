@@ -10,6 +10,7 @@
 #include <osgEarth/DateTime>
 #include <vector>
 #include <map>
+#include <cstdint>
 
 namespace osgEarth { namespace Util
 {
@@ -99,6 +100,17 @@ namespace osgEarth { namespace Util
       * Note:  This is adapted from osg's makeDirectoryForFile to call our custom makeDirectory function.
      */
      extern OSGEARTH_EXPORT bool makeDirectoryForFile( const std::string &filePath );
+
+     /**
+      * Gets the size of a regular file in bytes, or zero if the file cannot be read.
+      */
+     extern OSGEARTH_EXPORT std::uint64_t getFileSize(const std::string& filePath);
+
+     /**
+      * Recursively removes a directory and its contents. Returns true when the path
+      * no longer exists (including when it did not exist in the first place).
+      */
+     extern OSGEARTH_EXPORT bool removeDirectory(const std::string& directoryPath);
 
      /**
       * Utility class that processes files and directories recursively.

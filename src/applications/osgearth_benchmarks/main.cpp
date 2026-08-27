@@ -15,11 +15,11 @@
 #include <osgEarth/Config>
 #include <osgEarth/Coverage>
 #include <osgEarth/ImageUtils>
+#include <osgEarth/MBTiles>
+#include <osgEarth/FileUtils>
 #include <osgDB/ReadFile>
-#include <filesystem>
 
 using namespace osgEarth;
-namespace fs = std::filesystem;
 
 namespace
 {
@@ -115,6 +115,61 @@ namespace
         map->getElevationPool()->setMap(map.get());
 
         return map;
+    }
+
+    struct MBTilesReadBenchmarkData
+    {
+        MBTiles::Driver driver;
+        osg::ref_ptr<const Profile> profile;
+        TileKey key = TileKey::INVALID;
+        bool ready = false;
+        std::string error;
+
+        MBTilesReadBenchmarkData()
+        {
+            MBTiles::Options options;
+            options.url() = "../data/world_countries.mbtiles";
+
+            DataExtentList dataExtents;
+            Status status = driver.open(
+                "world_countries",
+                options,
+                false,
+                options.format(),
+                profile,
+                dataExtents,
+                nullptr);
+
+            if (status.isError())
+            {
+                error = status.toString();
+                return;
+            }
+
+            if (!profile.valid())
+            {
+                error = "MBTiles benchmark failed to establish a profile";
+                return;
+            }
+
+            // Largest PNG tile in the bundled fixture: z=3, x=4, MBTiles row=4.
+            key = TileKey(3u, 4u, 3u, profile.get());
+
+            ReadResult warmup = driver.read(key, nullptr, nullptr);
+            if (!warmup.succeeded())
+            {
+                error = "MBTiles benchmark failed to read warmup tile";
+                return;
+            }
+
+            ready = true;
+        }
+    };
+
+    MBTilesReadBenchmarkData& getMBTilesReadBenchmarkData()
+    {
+        static MBTilesReadBenchmarkData data;
+        return data;
     }
 }
 
@@ -260,6 +315,29 @@ static void BM_ElevationPoolSampleMapCoordsFixedResolution(benchmark::State& sta
 }
 BENCHMARK(BM_ElevationPoolSampleMapCoordsFixedResolution)->Arg(4096);
 
+static void BM_MBTilesImageRead_PNG(benchmark::State& state)
+{
+    MBTilesReadBenchmarkData& data = getMBTilesReadBenchmarkData();
+    if (!data.ready)
+    {
+        state.SkipWithError(data.error.c_str());
+        return;
+    }
+
+    for (auto _ : state)
+    {
+        ReadResult result = data.driver.read(data.key, nullptr, nullptr);
+        if (!result.succeeded())
+        {
+            state.SkipWithError("MBTiles benchmark failed to read tile");
+            return;
+        }
+
+        benchmark::DoNotOptimize(result.getImage());
+    }
+}
+BENCHMARK(BM_MBTilesImageRead_PNG)->ThreadRange(1, 8)->UseRealTime()->Unit(benchmark::kMicrosecond);
+
 
 
 const int NUM_CACHE_IMAGES = 1000;
@@ -302,7 +380,7 @@ static void BM_FileSystemSingleThreadedRead(benchmark::State& state)
     }
 
     // Remove the CACHE_PATH directory after the benchmark to clean up the generated files
-    fs::remove_all(CACHE_PATH);
+    Util::removeDirectory(CACHE_PATH);
 }
 // Superseded by the controlled Cache/* benchmark matrix in CacheBenchmarks.cpp.
 
@@ -329,7 +407,7 @@ static void BM_FileSystemSingleThreadedWrite(benchmark::State& state)
     }
 
     // Remove the CACHE_PATH directory after the benchmark to clean up the generated files
-    fs::remove_all(CACHE_PATH);
+    Util::removeDirectory(CACHE_PATH);
 }
 
 
@@ -368,7 +446,7 @@ static void BM_SQLite3SingleThreadedRead(benchmark::State& state)
     }
 
     // Remove the CACHE_PATH directory after the benchmark to clean up the generated files
-    fs::remove_all(CACHE_PATH);
+    Util::removeDirectory(CACHE_PATH);
 }
 
 namespace
@@ -378,7 +456,7 @@ namespace
         SQLite3ConcurrentReadFixture()
         {
             path = "sqlite_concurrent_read_cache";
-            fs::remove_all(path);
+            Util::removeDirectory(path);
 
             Config config;
             config.fromJSON("{ \"path\": \"" + path + "\" }");
@@ -404,7 +482,7 @@ namespace
         {
             bin = nullptr;
             cache = nullptr;
-            fs::remove_all(path);
+            Util::removeDirectory(path);
         }
 
         std::string path;
@@ -460,7 +538,7 @@ static void BM_SQLite3SystemSingleThreadedWrite(benchmark::State& state)
     }
 
     // Remove the CACHE_PATH directory after the benchmark to clean up the generated files
-    fs::remove_all(CACHE_PATH);
+    Util::removeDirectory(CACHE_PATH);
 }
 
 
@@ -540,5 +618,21 @@ static void BM_ResizeImage_BilinearRGBA8(benchmark::State& state)
     }
 }
 BENCHMARK(BM_ResizeImage_BilinearRGBA8)->Args({768, 768})->Unit(benchmark::kMillisecond);
+
+static void BM_MipmapImage_RGBA8(benchmark::State& state)
+{
+    osg::ref_ptr<osg::Image> image = createResizeBenchmarkImage(
+        static_cast<unsigned int>(state.range(0)),
+        static_cast<unsigned int>(state.range(1)));
+
+    for (auto _ : state)
+    {
+        osg::ref_ptr<const osg::Image> mipmapped = ImageUtils::mipmapImage(image.get(), 4);
+        benchmark::DoNotOptimize(mipmapped.get());
+        benchmark::DoNotOptimize(mipmapped->getNumMipmapLevels());
+        benchmark::ClobberMemory();
+    }
+}
+BENCHMARK(BM_MipmapImage_RGBA8)->Args({1024, 1024})->Args({2048, 2048})->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();
