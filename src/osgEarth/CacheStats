@@ -1,0 +1,89 @@
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
+ */
+#ifndef OSGEARTH_CACHE_STATS_H
+#define OSGEARTH_CACHE_STATS_H 1
+
+#include <osgEarth/Common>
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <string>
+
+namespace osgEarth
+{
+    class CacheOptions;
+
+    /** Aggregate, low-overhead measurements for a cache instance. */
+    class OSGEARTH_EXPORT CacheStatistics
+    {
+    public:
+        enum class Metric
+        {
+            Read,
+            Write,
+            BackendRead,
+            BackendWrite,
+            Serialize,
+            Deserialize,
+            ReaderWait,
+            Transaction,
+            Remove,
+            Touch,
+            Clear,
+            Count
+        };
+
+        enum class Outcome { Success, Miss, Error };
+
+        static std::shared_ptr<CacheStatistics> create(
+            const CacheOptions& options,
+            const std::string& driver,
+            const std::string& cachePath);
+
+        ~CacheStatistics();
+
+        void record(Metric, Outcome, std::uint64_t nanoseconds, std::uint64_t bytes = 0u);
+        void addBusyRetry(std::uint64_t count = 1u);
+        void addTransactionMutations(std::uint64_t count);
+        void updateQueueHighWater(std::uint64_t bytes, std::uint64_t items);
+
+        /** Return a cumulative JSON snapshot. */
+        std::string toJSON(bool finalReport = false) const;
+
+        /** Emit a cumulative JSON-lines report to the configured destination. */
+        void report(bool finalReport = false);
+
+    private:
+        struct Impl;
+        explicit CacheStatistics(std::unique_ptr<Impl>);
+        std::unique_ptr<Impl> _impl;
+    };
+
+    /** Times one cache operation; disabled instances cost only a null check. */
+    class OSGEARTH_EXPORT CacheStatsScope
+    {
+    public:
+        CacheStatsScope(
+            const std::shared_ptr<CacheStatistics>& stats,
+            CacheStatistics::Metric metric);
+        ~CacheStatsScope();
+
+        void success(std::uint64_t bytes = 0u) { _outcome = CacheStatistics::Outcome::Success; _bytes = bytes; }
+        void miss() { _outcome = CacheStatistics::Outcome::Miss; }
+        void error() { _outcome = CacheStatistics::Outcome::Error; }
+
+        /** Record immediately; the destructor becomes a no-op. */
+        void finish();
+
+    private:
+        std::shared_ptr<CacheStatistics> _stats;
+        CacheStatistics::Metric _metric;
+        CacheStatistics::Outcome _outcome = CacheStatistics::Outcome::Error;
+        std::uint64_t _bytes = 0u;
+        std::chrono::steady_clock::time_point _start;
+    };
+}
+
+#endif
