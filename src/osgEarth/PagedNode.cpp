@@ -114,7 +114,8 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
             else
             {
                 // child out of range; just accept static children
-                auto paged_child = _merged.has_value(true) ? _loaded.value() : nullptr;
+                //auto paged_child = _merged.has_value(true) ? _loaded.value() : nullptr;
+                auto paged_child = _merged.has_value(true) ? _payload.get() : nullptr;
 
                 for (auto& child : _children)
                 {
