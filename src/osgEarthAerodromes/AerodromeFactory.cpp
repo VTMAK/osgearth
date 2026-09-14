@@ -590,8 +590,9 @@ AerodromeFactory::seedAerodromes(AerodromeCatalog* catalog, const osgDB::Options
                     GeoPoint center = circle.getCenter();
 
 #if 1 // Attempt to get the bounding sphere more accurate
-                    GeoPoint centerER = center.transform(ElevationRanges::getProfile()->getSRS());
-                    TileKey rangeKey = ElevationRanges::getProfile()->createTileKey(centerER.x(), centerER.y(), maxRangesLevel);
+                    auto rangeProfile = ElevationRanges::getProfile();
+                    GeoPoint centerER = center.transform(rangeProfile->getSRS());
+                    TileKey rangeKey = rangeProfile->createTileKey(centerER.x(), centerER.y(), maxRangesLevel);
                     short lo, hi;
                     ElevationRanges::getElevationRange(maxRangesLevel, rangeKey.getTileX(), rangeKey.getTileY(), lo, hi);
                     center.z() = (lo + hi) / 2.0;
