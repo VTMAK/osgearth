@@ -12,8 +12,6 @@
 #include <osgEarth/FeatureModelGraph>
 
 #include <iterator>
-#include <atomic>
-#include <iomanip>
 
 using namespace osgEarth;
 
@@ -457,20 +455,12 @@ namespace
         osg::Vec3d next;
     };
 
-    // Approximate meters-per-SRS-unit, so epsilons authored in meters work
-    // for both projected (meters) and geographic (degrees) feature data.
-    double unitsPerMeter(const SpatialReference* srs)
-    {
-        return (srs && srs->isGeographic()) ? 1.0 / 111319.49 : 1.0;
-    }
-
     // Map that ignores elevation component of points
     struct CompPoints
     {
-        double E;
-        explicit CompPoints(double e = 0.1) : E(e) {}
         bool operator()(const osg::Vec3d& lhs, const osg::Vec3d& rhs) const
         {
+            const double E = 0.1;
             double dx = rhs.x() - lhs.x(), dy = rhs.y() - lhs.y();
             if (dx < -E) return true;
             if (dx > +E) return false;
@@ -493,11 +483,8 @@ namespace
 
     void preparePowerFeatures(FeatureList& input, FilterContext& context, bool combineLines)
     {
-        const double u2m = unitsPerMeter(context.featureProfile() ? context.featureProfile()->getSRS() : nullptr);
-        const double pointEps = 0.1 * u2m;
-
         // collect all point features (towers and poles).
-        PointMap pointMap{ CompPoints(pointEps) };
+        PointMap pointMap;
         FeatureList points;
         for (auto& feature : input)
         {
@@ -552,7 +539,7 @@ namespace
                         {
                             auto* other_geom = other->getGeometry();
 
-                            if (eq2d(geom->back(), other_geom->front(), pointEps))
+                            if (eq2d(geom->back(), other_geom->front()))
                             {
                                 geom->resize(geom->size() - 1);
                                 geom->insert(geom->end(), other_geom->begin(), other_geom->end());
@@ -560,7 +547,7 @@ namespace
                                 other = nullptr;
                             }
 
-                            else if (eq2d(geom->back(), other_geom->back(), pointEps))
+                            else if (eq2d(geom->back(), other_geom->back()))
                             {
                                 geom->resize(geom->size() - 1);
                                 geom->insert(geom->end(), other_geom->rbegin(), other_geom->rend());
@@ -568,7 +555,7 @@ namespace
                                 other = nullptr;
                             }
 
-                            else if (eq2d(other_geom->back(), geom->front(), pointEps))
+                            else if (eq2d(other_geom->back(), geom->front()))
                             {
                                 other_geom->resize(other_geom->size() - 1);
                                 other_geom->insert(other_geom->end(), geom->begin(), geom->end());
@@ -577,7 +564,7 @@ namespace
                                 break;
                             }
 
-                            else if (eq2d(other_geom->back(), geom->back(), pointEps))
+                            else if (eq2d(other_geom->back(), geom->back()))
                             {
                                 other_geom->resize(other_geom->size() - 1);
                                 other_geom->insert(other_geom->end(), geom->rbegin(), geom->rend());
@@ -613,7 +600,7 @@ namespace
                             osg::Vec3d point = (*geom)[i];
 
                             // skip duplicates.
-                            if (i == 0 || !eq2d(point, (*geom)[i - 1], pointEps))
+                            if (i == 0 || !eq2d(point, (*geom)[i - 1], 0.1)) // local data (mercator)
                             {
                                 auto ptItr = pointMap.find(point);
                                 if (ptItr != pointMap.end())
@@ -735,7 +722,7 @@ namespace
         }
         const osg::Vec3d P1(0.0, 0.0, 0.0), P2(d, 0.0, h);
         double begin, inc;
-        int numSteps = std::max(1, (int)ceil(p2local.length() / tessellationSize));
+        int numSteps = ceil(p2local.length() / tessellationSize);
         std::vector<osg::Vec3d> cablePts;
         if (swapped)
         {
@@ -950,7 +937,7 @@ PowerlineFeatureNodeFactory::makeCableFeatures(
 
     // the map against which we'll be doing elevation clamping
     osg::ref_ptr<const Map> map = session->getMap();
-    if (!map.valid() || ((_renderData.empty() || _renderData[0].attachment_points().empty()) && !_towerExpr.isSet()))
+    if (!map.valid() || (_renderData[0].attachment_points().empty() && !_towerExpr.isSet()))
         return result;
 
     const SpatialReference* mapSRS = map->getSRS();
@@ -960,7 +947,7 @@ PowerlineFeatureNodeFactory::makeCableFeatures(
     // SRS. XXX This should be based on the style sheet option
 
     ElevationQuery eq(map.get());
-    PointMap pointMap{ CompPoints(0.1 * unitsPerMeter(featureSRS.get())) };
+    PointMap pointMap;
 
     for(auto& feature : towerFeatures)
     {
@@ -1002,19 +989,9 @@ PowerlineFeatureNodeFactory::makeCableFeatures(
                 }
                 else
                 {
-                    OE_WARN << LC << "tower not found! vtx=(" << std::setprecision(12)
-                        << (*geom)[i].x() << ", " << (*geom)[i].y() << ")" << std::endl;
+                    OE_NOTICE << LC << "tower not found!" << std::endl;
                     //break;
                 }
-            }
-
-            // Guard against unresolved tower frames; towerMats must parallel
-            // the line vertices or the cable pairing below reads out of bounds.
-            if (towerMats.size() < 2 || towerMats.size() != size)
-            {
-                OE_WARN << LC << "Skipping cable generation; only " << towerMats.size()
-                    << " of " << size << " tower frames resolved." << std::endl;
-                continue;
             }
 
             PowerlineLayer::ModelOptions featureRenderData = evalTowerModel(feature, cx);
@@ -1177,15 +1154,7 @@ bool PowerlineFeatureNodeFactory::createOrUpdateNode(
                     {
                         auto point = new Point();
                         point->push_back(p);
-                        auto* towerFeature = new Feature(point, feature->getSRS());
-                        // Inherit the line feature's attributes so that per-feature
-                        // tower model expressions (tower_expr) can evaluate against
-                        // the synthesized tower point features.
-                        for (auto& attr : feature->getAttrs())
-                        {
-                            towerFeature->set(attr.first, attr.second);
-                        }
-                        towerFeatures.push_back(towerFeature);
+                        towerFeatures.push_back(new Feature(point, feature->getSRS()));
                     }
                 });
         }
@@ -1340,12 +1309,6 @@ bool PowerlineFeatureNodeFactory::createOrUpdateNode(
     }
     else
     {
-        if (_powerlineOptions.towerModels().empty())
-        {
-            // No tower models and no tower expression; nothing to render.
-            return false;
-        }
-
         PowerlineLayer::ModelOptions modelOptions = _powerlineOptions.towerModels().front();
         const Style* sessionTowerStyle = context.session()->styles()->getStyle("towers", false);
 
