@@ -35,14 +35,17 @@ namespace osgEarth_std
 
 #else
 
+#include <variant>
+#include <optional>
+
 namespace osgEarth_std
 {
-    using variant = std::variant;
+    template<class... T> using variant = std::variant<T...>;
     using monostate = std::monostate;
-    using visit = std::visit;
-    using get = std::get;
-    using get_if = std::get_if;
-    using holds_alternative = std::holds_alternative;
+    using std::visit;
+    using std::get;
+    using std::get_if;
+    using std::holds_alternative;
 
     template<class T> using optional = std::optional<T>;
     using nullopt_t = std::nullopt_t;
