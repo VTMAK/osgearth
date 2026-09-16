@@ -14,7 +14,7 @@
 
 #include <osgEarth/tl_optional.hpp>
 #include <osgEarth/mpark_variant.hpp>
-#include <osgEarth/polyfill_string_view.hpp>
+//#include <osgEarth/polyfill_string_view.hpp>
 
 namespace osgEarth_std
 {
