@@ -77,7 +77,7 @@ namespace osgEarth { namespace Buildings
 
     protected:
 
-        std::optional<Building> cloneBuildingTemplate(Feature*, const TagSet& tags, float height, float area) const;
+        osgEarth_std::optional<Building> cloneBuildingTemplate(Feature*, const TagSet& tags, float height, float area) const;
         
         bool parseElevations(const Config&, Building*, Elevation*, ElevationVector&, SkinSymbol*, ProgressCallback*);
 

@@ -287,7 +287,7 @@ namespace osgEarth { namespace Buildings
         float               _xoffset;
         float               _yoffset;
         Color               _color;
-        std::optional<Roof> _roof;
+        osgEarth_std::optional<Roof> _roof;
         Vector              _elevations;
         osg::BoundingBox    _aabb;
         float               _cosR, _sinR;
