@@ -1116,6 +1116,17 @@ BridgeLayer::createTileImplementation(const TileKey& key, ProgressCallback* prog
 
     auto run = [&](const Style& in_style, FeatureList& features, ProgressCallback* progress)
         {    
+            if (!_session.valid())
+                return;
+
+            auto map = _session->getMap();
+            if (!map)
+                return;
+
+            auto* pool = map->getElevationPool();
+            if (!pool)
+                return;
+
             FilterContext context(_session.get(), key.getExtent(), index);
 
             // remove any features not culled to the extent:
@@ -1134,7 +1145,7 @@ BridgeLayer::createTileImplementation(const TileKey& key, ProgressCallback* prog
             //OE_NOTICE << "Style name " << in_style.getName() << std::endl;
 
             // clamp ground-connection points to the terrain and interpolate midpoints:
-            clampRoads(network, in_style, key.getExtent(), _session->getMap()->getElevationPool(), progress);
+            clampRoads(network, in_style, key.getExtent(), pool, progress);
 
             // tessellate the lines:
             TessellateOperator filter;
