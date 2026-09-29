@@ -157,6 +157,7 @@ namespace osgEarth { namespace Util
 
         //! Pre- and post-merge callbacks for the async data
         void setSceneGraphCallbacks(SceneGraphCallbacks* value) {
+            std::lock_guard<Mutex> lock(_mutex);
             _callbacks = value;
         }
 
@@ -167,11 +168,13 @@ namespace osgEarth { namespace Util
 
         //! Whether to pre-compile GL objects before merging
         void setPreCompileGLObjects(bool value) {
+            std::lock_guard<Mutex> lock(_mutex);
             _preCompile = value;
         }
 
         //! Whether to pre-compile GL objects before merging
         bool getPreCompileGLObjects() const {
+            std::lock_guard<Mutex> lock(_mutex);
             return _preCompile;
         }
 
@@ -210,6 +213,7 @@ namespace osgEarth { namespace Util
     public: // LoadableNode API
 
         void load() override;
+        //! Discards the current load; call on the update thread, serialized with scene graph traversal.
         void unload() override;
         bool isLoadComplete() const override;
         bool isHighestResolution() const override;
@@ -234,7 +238,7 @@ namespace osgEarth { namespace Util
 
         virtual ~PagedNode2();
 
-        //! Starts the content loading for this node
+        //! Starts at most one load per revision. Reads host user data synchronously before dispatch.
         void startLoad(const osg::Object* host);
 
     private:
@@ -251,7 +255,9 @@ namespace osgEarth { namespace Util
         jobs::future<osg::ref_ptr<osg::Node>> _loaded;
         jobs::future<bool> _merged;
 
-        Mutex _mutex;
+        // Protects future handles, the manager observer, and load configuration snapshots.
+        // When also taking the manager's tracker mutex, take the tracker mutex first.
+        mutable Mutex _mutex;
         optional<osg::BoundingSphere> _userBS;
         float _minRange = 0.0f;
         float _maxRange = FLT_MAX;
@@ -265,15 +271,19 @@ namespace osgEarth { namespace Util
         bool _autoUnload = true;
         float _lastRange = FLT_MAX;
         float _lastPixelSize = 0.0f;
-        double _lastTime = 0.0;
-        mutable float _priority = 0.0f;
+        std::atomic<double> _lastTime = { 0.0 };
+        std::atomic<float> _priority = { 0.0f };
         RefinePolicy _refinePolicy = REFINE_REPLACE;
         std::string _jobpoolName;
         PagedNodeManager* _owner = nullptr;
         double _timeoutSeconds = 0.0;
         osg::ref_ptr<osg::Group> _payload;
 
-        bool merge(int revision);
+        //! Merges on the update thread and resolves only this load's promise, including on failure.
+        bool merge(int revision, jobs::promise<bool> promise);
+        //! Reads the current merge result while protecting the future handle from replacement.
+        bool isMerged() const;
+        //! Traverses the selected children; scene graph changes must remain on the update thread.
         void traverseChildren(osg::NodeVisitor& nv);
     };
 
@@ -349,13 +359,14 @@ namespace osgEarth { namespace Util
         struct ToMerge {
             osg::observer_ptr<PagedNode2> _node;
             int _revision;
-            float _radius;
+            jobs::promise<bool> _promise;
         };
         std::queue<ToMerge> _mergeQueue;
         unsigned _mergesPerFrame = ~0u;
         std::atomic_bool _newFrame = { false };
 
-        inline void merge(PagedNode2* host);
+        //! Enqueues a completion from any thread without accessing live scene graph bounds.
+        void merge(PagedNode2* host, int revision, jobs::promise<bool> promise);
 
         friend class PagedNode2;
     };

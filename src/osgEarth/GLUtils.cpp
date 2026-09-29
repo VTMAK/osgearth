@@ -2148,6 +2148,21 @@ GLObjectsCompiler::requestIncrementalCompile(
     osg::observer_ptr<const osg::Object> host_weak,
     jobs::promise<osg::ref_ptr<osg::Node>> promise) const
 {
+    osg::ref_ptr<const osg::Object> host;
+    osg::ref_ptr<ICO> ico;
+    if (node.valid() && state != nullptr && !state->empty() && host_weak.lock(host))
+        ObjectStorage::get(host.get(), ico);
+
+    requestIncrementalCompileWithICO(node, state, osg::observer_ptr<ICO>(ico), promise);
+}
+
+void
+GLObjectsCompiler::requestIncrementalCompileWithICO(
+    const osg::ref_ptr<osg::Node>& node,
+    osgUtil::StateToCompile* state,
+    osg::observer_ptr<osgUtil::IncrementalCompileOperation> ico_weak,
+    jobs::promise<osg::ref_ptr<osg::Node>> promise) const
+{
     if (!node.valid())
     {
         promise.resolve();
@@ -2159,9 +2174,8 @@ GLObjectsCompiler::requestIncrementalCompile(
 
     if (state != nullptr && !state->empty())
     {
-        osg::ref_ptr<const osg::Object> host;
         osg::ref_ptr<ICO> ico;
-        if (host_weak.lock(host) && ObjectStorage::get(host.get(), ico) && ico->isActive())
+        if (ico_weak.lock(ico) && ico->isActive())
         {
             auto compileSet = new osgUtil::IncrementalCompileOperation::CompileSet();
             compileSet->buildCompileMap(ico->getContextSet(), *state);
