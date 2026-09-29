@@ -7,6 +7,7 @@
 #include "NodeUtils"
 #include "Progress"
 #include "MapNode"
+#include <osgUtil/IncrementalCompileOperation>
 
 #define LC "[PagedNode] "
 
@@ -51,23 +52,23 @@ PagedNode2::setOwner(PagedNodeManager* owner)
 void
 PagedNode2::setLoadFunction(const Loader& value)
 {
+    std::lock_guard<Mutex> lock(_mutex);
     _load_function = value;
 }
 
 void
 PagedNode2::traverse(osg::NodeVisitor& nv)
 {
-    // locate the paging manager if there is one
-    if (!_pagingManager_weak.valid())
+    osg::ref_ptr<PagingManager> pagingManager;
     {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        if (!_pagingManager_weak.valid())
+        std::lock_guard<Mutex> lock(_mutex);
+        if (!_pagingManager_weak.lock(pagingManager))
         {
-            osg::ref_ptr<PagingManager> pm;
-            if (ObjectStorage::get(&nv, pm))
+            if (ObjectStorage::get(&nv, pagingManager))
             {
-                _pagingManager_weak = pm.get();
+                // Tokens belong to one tracker and cannot survive replacement of its manager.
+                _token = nullptr;
+                _pagingManager_weak = pagingManager.get();
             }
         }
     }
@@ -91,7 +92,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
                 osg::CullStack* cullStack = nv.asCullStack();
                 if (cullStack != nullptr && cullStack->getLODScale() > 0.0f)
                 {
-                    float pixelError = _pagingManager_weak.valid() ? _pagingManager_weak->sse() : 0.0f;
+                    float pixelError = pagingManager.valid() ? pagingManager->sse() : 0.0f;
                     float pixels = Util::getPixelSize(cullStack, getBound().center(), getBound().radius()) / cullStack->getLODScale();
                     inRange = (pixels >= _minPixels + pixelError) && (pixels <= _maxPixels + pixelError);
                     _priority = pixels * _priorityScale;
@@ -100,7 +101,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
 
             if (inRange)
             {
-                if (_load_function && _loaded.empty() && !_loadGate.exchange(true))
+                if (!_loadGate.load())
                 {
                     startLoad(&nv);
                 }
@@ -114,8 +115,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
             else
             {
                 // child out of range; just accept static children
-                //auto paged_child = _merged.has_value(true) ? _loaded.value() : nullptr;
-                auto paged_child = _merged.has_value(true) ? _payload.get() : nullptr;
+                auto paged_child = isMerged() ? _payload.get() : nullptr;
 
                 for (auto& child : _children)
                 {
@@ -146,7 +146,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
 void
 PagedNode2::traverseChildren(osg::NodeVisitor& nv)
 {
-    if (_refinePolicy == REFINE_REPLACE && _merged.has_value(true))
+    if (_refinePolicy == REFINE_REPLACE && isMerged())
     {
         _loaded.value()->accept(nv);
     }
@@ -165,54 +165,58 @@ PagedNode2::touch()
     // tell the paging manager this node is still alive
     // (and should not be removed from the scene graph)
     osg::ref_ptr<PagingManager> pagingManager;
-    if (_pagingManager_weak.lock(pagingManager))
     {
-        _token = pagingManager->use(this, _token);
+        std::lock_guard<Mutex> lock(_mutex);
+        _pagingManager_weak.lock(pagingManager);
+    }
+    if (pagingManager.valid())
+    {
+        // Use the same lock order as expiration: tracker first, then node state.
+        scoped_lock_if trackerLock(pagingManager->_trackerMutex, pagingManager->_threadsafe);
+        std::lock_guard<Mutex> lock(_mutex);
+        _token = pagingManager->_tracker.use(this, _token);
     }
 }
 
 bool
-PagedNode2::merge(int revision)
+PagedNode2::isMerged() const
 {
-    // Check the revision, b/c it is possible for a node in the merge queue
-    // to be expired before it pops to the front of the merge queue and
-    // this method gets invoked.
-    if (_revision == revision)
+    std::lock_guard<Mutex> lock(_mutex);
+    return _merged.has_value(true);
+}
+
+bool
+PagedNode2::merge(int revision, jobs::promise<bool> promise)
+{
+    osg::ref_ptr<osg::Node> node;
+    osg::ref_ptr<SceneGraphCallbacks> callbacks;
     {
-        // This is called from PagingManager.
-        // We're in the UPDATE traversal.
-        // None of these should even happen since we check for them before we enqueue the merge.
-        // (See merge_job)
-        OE_SOFT_ASSERT_AND_RETURN(_loaded.available(), false);
-        OE_SOFT_ASSERT_AND_RETURN(_loaded.value().valid(), false);
-        OE_SOFT_ASSERT_AND_RETURN(_loaded.value()->getNumParents() == 0, false);
-        OE_SOFT_ASSERT_AND_RETURN(_payload.valid() && _payload->getNumParents() == 0, false);
-
-        _payload->removeChildren(0, _payload->getNumChildren());
-        _payload->addChild(_loaded.value());
-        this->addChild(_payload);
-        
-        if (_callbacks.valid())
-            _callbacks->firePostMergeNode(_loaded.value().get());
-
-        // If we have an owner, install its cull callback as the first callback!
-        //if (_owner && _owner->visibilityCallback())
-        //{
-        //    auto cb = _owner->visibilityCallback();
-        //    //NO, this is wrong, refactor IF necessary:
-        //    //cb->addNestedCallback(_loaded.value()->getCullCallback());
-        //    OE_SOFT_ASSERT(_loaded.value()->getCullCallback() == nullptr, "PagedNode2 does not support an existing cull callback on the loaded node");
-        //    _loaded.value()->setCullCallback(cb);
-        //}
-
-        _merged.resolve(true);
-        return true;
+        std::lock_guard<Mutex> lock(_mutex);
+        if (_revision == revision && _loaded.available())
+        {
+            node = _loaded.value();
+            callbacks = _callbacks;
+        }
     }
-    else
+
+    // All scene graph access happens in the update traversal. A stale completion must
+    // resolve its original promise, never the current load's _merged future.
+    if (!node.valid() || node->getNumParents() != 0 || !_payload.valid() || _payload->getNumParents() != 0)
     {
-        _merged.resolve(false);
+        promise.resolve(false);
         return false;
     }
+
+    _payload->removeChildren(0, _payload->getNumChildren());
+    _payload->addChild(node);
+    this->addChild(_payload);
+
+    // Publish the merge before invoking application callbacks, which may unload this node.
+    promise.resolve(true);
+    if (callbacks.valid())
+        callbacks->firePostMergeNode(node.get());
+
+    return true;
 }
 
 osg::BoundingSphere
@@ -227,10 +231,14 @@ PagedNode2::computeBound() const
     {
         osg::BoundingSphere bs = osg::Group::computeBound();
 
-        if (!_merged.available() && _loaded.available() && _loaded.value().valid())
+        osg::ref_ptr<osg::Node> loaded;
         {
-            bs.expandBy(_loaded.value()->computeBound());
+            std::lock_guard<Mutex> lock(_mutex);
+            if (!_merged.available() && _loaded.available())
+                loaded = _loaded.value();
         }
+        if (loaded.valid())
+            bs.expandBy(loaded->computeBound());
 
         return bs;
     }
@@ -239,13 +247,51 @@ PagedNode2::computeBound() const
 void
 PagedNode2::startLoad(const osg::Object* host)
 {
-    OE_SOFT_ASSERT_AND_RETURN(_load_function != nullptr, void());
+    std::unique_lock<Mutex> stateLock(_mutex);
+    if (!_load_function || _loadGate.load() || !_loaded.empty())
+        return;
 
     auto pnode_weak = osg::observer_ptr<PagedNode2>(this);
+    osg::ref_ptr<PagingManager> pagingManager;
+    auto loaded = _loaded;
+    auto loader = _load_function;
+    auto callbacks = _callbacks;
+    const bool preCompile = _preCompile;
+    const int load_revision = _revision;
+    _loadGate = true;
+    _pagingManager_weak.lock(pagingManager);
+    auto poolName = pagingManager.valid() ? pagingManager->_jobpoolName : _jobpoolName;
 
-    auto poolName = _pagingManager_weak.valid() ? _pagingManager_weak->_jobpoolName : _jobpoolName;
+    // The continuation only validates identity and enqueues; it never touches live graph bounds.
+    auto merge_job = [pnode_weak, load_revision](const osg::ref_ptr<osg::Node>& node, auto& promise)
+    {
+        osg::ref_ptr<PagedNode2> pnode;
+        osg::ref_ptr<PagingManager> manager;
+        if (node.valid() && pnode_weak.lock(pnode))
+        {
+            // Manual loads can start before traversal discovers the manager.
+            std::lock_guard<Mutex> lock(pnode->_mutex);
+            if (pnode->_revision == load_revision)
+                pnode->_pagingManager_weak.lock(manager);
+        }
+        if (manager.valid())
+            manager->merge(pnode, load_revision, promise);
+        else
+            promise.resolve(false);
+    };
+
+    // Publish both handles before the worker can resolve the load, including immediate completion.
+    _merged = loaded.then_dispatch<bool>(merge_job);
+    stateLock.unlock();
+
     if (poolName.empty())
         poolName = DEFAULT_JOBPOOL_NAME;
+
+    // Read visitor user data only on its traversal thread, and observe the ICO while it is alive.
+    osg::ref_ptr<osgUtil::IncrementalCompileOperation> ico;
+    if (preCompile)
+        ObjectStorage::get(host, ico);
+    auto ico_weak = osg::observer_ptr<osgUtil::IncrementalCompileOperation>(ico);
 
     jobs::context context;
     context.pool = jobs::get_pool(poolName);
@@ -254,28 +300,27 @@ PagedNode2::startLoad(const osg::Object* host)
         return pnode_weak.lock(pnode) ? pnode->getPriority() : -FLT_MAX;
     };
 
-    const int load_revision = _revision;
-
-    auto load_and_compile_job = [pnode_weak, host](auto& promise)
+    // Load and compile only detached content; the visitor and mutable node configuration are not captured.
+    auto load_and_compile_job = [pnode_weak, loader, callbacks, preCompile, ico_weak, load_revision](auto& promise)
     {
         osg::ref_ptr<osg::Node> result;
         osg::ref_ptr<ProgressCallback> progress = new ProgressCallback(&promise);
 
         osg::ref_ptr<PagedNode2> pnode;
-        if (pnode_weak.lock(pnode))
+        if (pnode_weak.lock(pnode) && pnode->_revision == load_revision)
         {
-            result = pnode->_load_function(progress.get());
+            result = loader(progress.get());
 
             if (result.valid())
             {
-                if (pnode->_callbacks.valid())
-                    pnode->_callbacks->firePreMergeNode(result.get());
+                if (callbacks.valid())
+                    callbacks->firePreMergeNode(result.get());
 
-                if (pnode->_preCompile && result->getBound().valid())
+                if (preCompile && result->getBound().valid())
                 {
                     GLObjectsCompiler compiler;
                     auto state = compiler.collectState(result.get());
-                    compiler.requestIncrementalCompile(result, state.get(), host, promise);
+                    compiler.requestIncrementalCompileWithICO(result, state.get(), ico_weak, promise);
                     return;
                 }
             }
@@ -284,79 +329,48 @@ PagedNode2::startLoad(const osg::Object* host)
         promise.resolve(result);
     };
 
-    auto merge_job = [pnode_weak, load_revision](const osg::ref_ptr<osg::Node>& node, auto& promise)
-    {
-        osg::ref_ptr<PagedNode2> pnode;
-        osg::ref_ptr<PagingManager> pagingManager;
-
-        if (!node.valid() ||
-            !pnode_weak.lock(pnode) ||
-            !pnode->_pagingManager_weak.lock(pagingManager))
-        {
-            promise.resolve(false);
-            return;
-        }
-
-        // Reject stale completion from older load cycle
-        if (pnode->_revision != load_revision)
-        {
-            promise.resolve(false);
-            return;
-        }
-
-        // Guard against duplicate merge of same child
-        if (node->getNumParents() > 0)
-        {
-            promise.resolve(false);
-            return;
-        }
-
-        pnode->dirtyBound();
-        pagingManager->merge(pnode);
-    };
-
-    _loaded = jobs::dispatch(load_and_compile_job, _loaded, context);
-    _merged = _loaded.then_dispatch<bool>(merge_job, context);
+    (void)jobs::dispatch(load_and_compile_job, loaded, context);
 }
 
 void
 PagedNode2::load()
 {
-    if (_load_function && _loaded.empty() && !_loadGate.exchange(true))
-    {
-        startLoad(nullptr);
-    }
+    startLoad(nullptr);
 }
 
 void PagedNode2::unload()
 {
-    if (_merged.has_value(true))
+    // Scene graph mutations, including explicit unloads, must be serialized on the update thread.
+    bool merged;
+    {
+        std::lock_guard<Mutex> lock(_mutex);
+        merged = _merged.has_value(true);
+        ++_revision;
+        _loaded.reset();
+        _merged.reset();
+        _token = nullptr;
+    }
+    if (merged)
     {
         _payload->removeChildren(0, _payload->getNumChildren());
         removeChild(_payload.get());
-        //removeChild(_loaded.value());
     }
 
-    _loaded.reset();
-    _merged.reset();
-
-    _loadGate.exchange(false);
-    _token = nullptr;
-
-    // prevents a node in the PagingManager's merge queue from being merged with old data.
-    _revision++;
+    _loadGate = false;
 }
 
 bool
 PagedNode2::isLoadComplete() const
 {
+    std::lock_guard<Mutex> lock(_mutex);
     return _merged.available() || (_load_function == nullptr);
 }
 
 bool
 PagedNode2::isHighestResolution() const
 {
-    return getLoadFunction() == nullptr;
+    std::lock_guard<Mutex> lock(_mutex);
+    return _load_function == nullptr;
 }
 
 PagingManager::PagingManager(const std::string& jobpoolname) :
@@ -437,11 +451,11 @@ PagingManager::traverse(osg::NodeVisitor& nv)
 }
 
 void
-PagingManager::merge(PagedNode2* host)
+PagingManager::merge(PagedNode2* host, int revision, jobs::promise<bool> promise)
 {
     scoped_lock_if lock(_mergeMutex, _threadsafe);
 
-    _mergeQueue.emplace(ToMerge{ host, host->_revision, host->getBound().radius() });
+    _mergeQueue.emplace(ToMerge{ host, revision, promise });
     _metrics->postprocessing++;
 }
 
@@ -458,6 +472,8 @@ PagingManager::update(osg::NodeVisitor* nv)
             // if the node is no longer in the scene graph, expunge it
             if (node->referenceCount() == 1)
             {
+                std::lock_guard<Mutex> nodeLock(node->_mutex);
+                node->_token = nullptr;
                 return true;
             }
 
@@ -503,44 +519,36 @@ PagingManager::update(osg::NodeVisitor* nv)
         }
     }
 
-    // Handle merges
-    // thread-local vector to prevent unnecessary reallocations
-    static thread_local std::vector<ToMerge> toMerge;
-    toMerge.clear();
-
+    // Pop before calling into the scene graph or application callbacks. Each completion retains
+    // its original revision and promise, even if the node has since unloaded or started again.
+    std::size_t remaining;
     {
         scoped_lock_if lock(_mergeMutex, _threadsafe);
-        unsigned count = 0u;
-        osg::ref_ptr<PagedNode2> next;
-        while (!_mergeQueue.empty() && count < _mergesPerFrame)
+        remaining = _mergeQueue.size();
+    }
+    unsigned count = 0u;
+    while (remaining > 0u && count < _mergesPerFrame)
+    {
+        --remaining;
+        ToMerge entry;
         {
-            auto& entry = _mergeQueue.front();
-
-            if (entry._node.lock(next) &&
-                next->_loaded.available() && next->_loaded.value().valid() &&
-                next->_loaded.value()->getNumParents() == 0)
-            {
-                // only tiles with actual geometry count towards the limit;
-                // intermediate tiles do not since they are fast mergers
-                if (entry._radius > 0.0)
-                    count++;
-
-                toMerge.emplace_back(std::move(entry));
-            }
-
+            scoped_lock_if lock(_mergeMutex, _threadsafe);
+            if (_mergeQueue.empty())
+                break;
+            entry = std::move(_mergeQueue.front());
             _mergeQueue.pop();
             _metrics->postprocessing--;
         }
-    }
-
-    // todo: just move this into the loop above? why not?
-    for(auto& entry : toMerge)
-    {
         osg::ref_ptr<PagedNode2> next;
         if (entry._node.lock(next))
         {
-            next->merge(entry._revision);
+            // Only nodes with nonempty bounds count towards the limit. Bounds are evaluated
+            // here on the update thread, after the node has joined the live graph.
+            if (next->merge(entry._revision, entry._promise) && next->getBound().radius() > 0.0)
+                ++count;
         }
+        else
+            entry._promise.resolve(false);
     }
 }
 
