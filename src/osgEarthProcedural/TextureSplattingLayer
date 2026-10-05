@@ -26,7 +26,7 @@ namespace osgEarth { namespace Procedural
             META_LayerOptions(osgEarthProcedural, Options, VisibleLayer::Options);
             OE_OPTION(int, numLevels, 1);
             OE_OPTION(bool, useHexTiler, true);
-            OE_OPTION(bool, enableHexTilerAnisotropicFiltering, false);
+            OE_OPTION(bool, enableHexTilerAnisotropicFiltering, true);
             OE_OPTION(float, hexTilerGradientBias, 0.0f);
             OE_OPTION(float, normalMapPower, 1.0f);
             OE_OPTION(float, lifeMapMaskThreshold, 0.0f);
