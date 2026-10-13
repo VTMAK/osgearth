@@ -176,6 +176,12 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
     {
         if (_textures.valid()) // nvgl
         {
+            // We want a distinct renderbin for each layer to prevent texture
+            // arena conflicts. Each ChonkRenderBin uses a texture arean based
+            // on the first chonk in the drawable; so keeping them separate
+            // avoids conflicts
+            const auto renderBin = 100 + static_cast<int>(getUID());
+
             // for each StyleGroup that isn't under another StyleGroup:
             forEachUnnestedNodeOfType<StyleGroup>(result, [&](StyleGroup* styleGroup)
                 {
@@ -185,7 +191,7 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
                     // for each MT that's not under another MT:
                     forEachUnnestedNodeOfType<osg::MatrixTransform>(styleGroup, [&](auto* xform)
                         {
-                            osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+                            osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable(renderBin);
 
                             for (unsigned i = 0; i < xform->getNumChildren(); ++i)
                             {
@@ -206,7 +212,7 @@ TiledModelLayer::createTile(const TileKey& key, ProgressCallback* progress) cons
                     }
                     else
                     {
-                        osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+                        osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable(renderBin);
                         drawable->add(styleGroup, _chonkFactory);
                         output = drawable;
                     }
