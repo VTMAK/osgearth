@@ -2,7 +2,9 @@
 #include <osgEarthImGui/ImGuiPanel>
 #include <osgEarthProcedural/LifeMapLayer>
 #include <osgEarthProcedural/TextureSplattingLayer>
+#include <osgEarth/ExampleResources>
 #include <osgEarth/VirtualProgram>
+#include <mutex>
 
 namespace {
     const char* render_lifemap = R"(
@@ -43,60 +45,149 @@ namespace osgEarth
 
         struct LifeMapLayerGUI : public ImGuiPanel
         {
+            struct MouseState
+            {
+                std::mutex mutex;
+                osg::observer_ptr<osg::View> view;
+                float x = 0.0f, y = 0.0f;
+                bool pending = false;
+            };
+
+            std::shared_ptr<MouseState> _mouseState;
+            osg::observer_ptr<osgViewer::View> _eventView;
             osg::observer_ptr<MapNode> _mapNode;
             osg::observer_ptr<LifeMapLayer> _lifemap;
             osg::observer_ptr<TextureSplattingLayer> _splat;
-            VirtualProgram* _vp;
             std::string _renderMode;
+            int _renderModeIndex = 0;
             bool _showLifemapUnderMouse;
             Future<osg::Vec4> _lifemapUnderMouse;
             bool _showLandcoverUnderMouse;
             Future<LandCoverSample> _landcoverUnderMouse;
-            //Future<osg::Vec4> _lifemapUnderMouse;
-            bool _first;
             TileKey _keyUnderMouse;
 
             LifeMapLayerGUI() : ImGuiPanel("Life Map"),
-                _first(true),
-                _vp(nullptr),
                 _showLifemapUnderMouse(false),
                 _showLandcoverUnderMouse(false)
             {
                 //nop
             }
 
-            void setRenderMode(const std::string& mode, osg::RenderInfo& ri)
+            ~LifeMapLayerGUI() override
             {
-                if (!_vp)
-                    _vp = VirtualProgram::getOrCreate(_lifemap->getOrCreateStateSet());
+                _mouseState.reset();
+                _lifemapUnderMouse.reset();
+                _landcoverUnderMouse.reset();
+            }
+
+            void setRenderMode(const std::string& mode, LifeMapLayer* lifemap, TextureSplattingLayer* splat)
+            {
+                auto* vp = VirtualProgram::getOrCreate(lifemap->getOrCreateStateSet());
 
                 if (!_renderMode.empty())
-                    ShaderLoader::unload(_vp, _renderMode);
+                    ShaderLoader::unload(vp, _renderMode);
                 _renderMode = mode;
                 if (!_renderMode.empty())
-                    ShaderLoader::load(_vp, _renderMode);
+                    ShaderLoader::load(vp, _renderMode);
 
                 bool show = !_renderMode.empty();
-                _lifemap->setVisible(show);
-                if (_splat.valid())
-                    _splat->setVisible(!show);
+                lifemap->setVisible(show);
+                if (splat)
+                    splat->setVisible(!show);
             }
 
             void draw(osg::RenderInfo& ri) override
             {
-                if (!findNodeOrHide(_mapNode, ri))
-                    return;
-                if (!findLayerOrHide(_lifemap, ri))
-                    return;
-
-                findLayer(_splat, ri);
-
-                if (_first)
+                osg::ref_ptr<MapNode> mapNode = ri.getCurrentCamera() ? findNode<MapNode>(ri) : nullptr;
+                osg::ref_ptr<LifeMapLayer> lifemap;
+                osg::ref_ptr<TextureSplattingLayer> splat;
+                if (mapNode.valid() && mapNode->getMap())
                 {
-                    EventRouter::get(view(ri))
-                        .onMove([&](osg::View* v, float x, float y) { onMove(v, x, y); });
+                    LayerVector layers;
+                    mapNode->getMap()->getLayers(layers);
+                    for (auto& layer : layers)
+                    {
+                        if (!lifemap.valid())
+                            lifemap = dynamic_cast<LifeMapLayer*>(layer.get());
+                        if (!splat.valid())
+                            splat = dynamic_cast<TextureSplattingLayer*>(layer.get());
+                    }
+                }
 
-                    _first = false;
+                osg::ref_ptr<MapNode> oldMapNode;
+                osg::ref_ptr<LifeMapLayer> oldLifemap;
+                osg::ref_ptr<TextureSplattingLayer> oldSplat;
+                _mapNode.lock(oldMapNode);
+                _lifemap.lock(oldLifemap);
+                _splat.lock(oldSplat);
+                if (mapNode != oldMapNode || lifemap != oldLifemap || splat != oldSplat)
+                {
+                    _lifemapUnderMouse.reset();
+                    _landcoverUnderMouse.reset();
+                    _keyUnderMouse = {};
+                    if (lifemap != oldLifemap)
+                    {
+                        _renderMode.clear();
+                        _renderModeIndex = 0;
+                    }
+                    _mapNode = mapNode;
+                    _lifemap = lifemap;
+                    _splat = splat;
+                }
+
+                if (!mapNode.valid() || !lifemap.valid() || !lifemap->isOpen())
+                {
+                    _mouseState.reset();
+                    _lifemapUnderMouse.reset();
+                    _landcoverUnderMouse.reset();
+                    _keyUnderMouse = {};
+                    setVisible(false);
+                    return;
+                }
+
+                osg::ref_ptr<osgViewer::View> currentView = view(ri);
+                osg::ref_ptr<osgViewer::View> eventView;
+                _eventView.lock(eventView);
+                if (currentView != eventView)
+                {
+                    _mouseState.reset();
+                    _lifemapUnderMouse.reset();
+                    _landcoverUnderMouse.reset();
+                    _keyUnderMouse = {};
+                    _eventView = currentView;
+                }
+                if (currentView.valid() && !_mouseState)
+                {
+                    _mouseState = std::make_shared<MouseState>();
+                    std::weak_ptr<MouseState> weakMouseState = _mouseState;
+                    // The router can outlive the panel; scene access stays on the draw thread.
+                    EventRouter::get(currentView).onMove([weakMouseState](osg::View* v, float x, float y)
+                    {
+                        auto state = weakMouseState.lock();
+                        if (!state) return;
+                        std::lock_guard<std::mutex> lock(state->mutex);
+                        state->view = v;
+                        state->x = x;
+                        state->y = y;
+                        state->pending = true;
+                    });
+                }
+
+                if (_mouseState)
+                {
+                    osg::ref_ptr<osg::View> mouseView;
+                    float x = 0.0f, y = 0.0f;
+                    bool pending;
+                    {
+                        std::lock_guard<std::mutex> lock(_mouseState->mutex);
+                        pending = _mouseState->pending;
+                        _mouseState->pending = false;
+                        _mouseState->view.lock(mouseView);
+                        x = _mouseState->x;
+                        y = _mouseState->y;
+                    }
+                    if (pending && mouseView.valid() && mouseView.get() == currentView.get())
+                        onMove(mouseView.get(), x, y, mapNode.get(), lifemap.get());
                 }
 
                 ImGui::Begin("Life Map");
@@ -104,30 +195,29 @@ namespace osgEarth
                 // render the layer?
                 ImGui::TextColored(ImVec4(1, 1, 0, 1), "Visualization");
                 {
-                    static int s_renderMode = 0;
                     int m = 0;
 
-                    if (ImGui::RadioButton("Normal", &s_renderMode, m++)) {
-                        setRenderMode("", ri);
+                    if (ImGui::RadioButton("Normal", &_renderModeIndex, m++)) {
+                        setRenderMode("", lifemap.get(), splat.get());
                     }
-                    if (ImGui::RadioButton("Ruggedness", &s_renderMode, m++)) {
-                        setRenderMode(render_rugged, ri);
+                    if (ImGui::RadioButton("Ruggedness", &_renderModeIndex, m++)) {
+                        setRenderMode(render_rugged, lifemap.get(), splat.get());
                     }
-                    if (ImGui::RadioButton("Density", &s_renderMode, m++)) {
-                        setRenderMode(render_density, ri);
+                    if (ImGui::RadioButton("Density", &_renderModeIndex, m++)) {
+                        setRenderMode(render_density, lifemap.get(), splat.get());
                     }
-                    if (ImGui::RadioButton("Lushness", &s_renderMode, m++)) {
-                        setRenderMode(render_lush, ri);
+                    if (ImGui::RadioButton("Lushness", &_renderModeIndex, m++)) {
+                        setRenderMode(render_lush, lifemap.get(), splat.get());
                     }
-                    if (ImGui::RadioButton("Material", &s_renderMode, m++)) {
-                        setRenderMode(render_alpha, ri);
+                    if (ImGui::RadioButton("Material", &_renderModeIndex, m++)) {
+                        setRenderMode(render_alpha, lifemap.get(), splat.get());
                     }
-                    if (ImGui::RadioButton("All", &s_renderMode, m++)) {
-                        setRenderMode(render_lifemap, ri);
+                    if (ImGui::RadioButton("All", &_renderModeIndex, m++)) {
+                        setRenderMode(render_lifemap, lifemap.get(), splat.get());
                     }
                 }
 
-                LifeMapLayer::Options& o = _lifemap->options();
+                LifeMapLayer::Options& o = lifemap->options();
 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(1, 1, 0, 1), "LifeMap Generator levels:");
@@ -142,7 +232,7 @@ namespace osgEarth
                             o.landCoverBlur()->set(value, Units::METERS);
                     }
 
-                    if (_lifemap->getColorLayer())
+                    if (lifemap->getColorLayer())
                     {
                         ImGuiLTable::SliderFloat("Imagery color contrib", &o.colorWeight().mutable_value(), 0.0f, 1.0f);
                     }
@@ -159,11 +249,11 @@ namespace osgEarth
                 if (ImGui::Button("Apply Changes"))
                 {
                     // make sure the cache is off
-                    _lifemap->setCachePolicy(CachePolicy::NO_CACHE);
+                    lifemap->setCachePolicy(CachePolicy::NO_CACHE);
 
-                    _mapNode->getTerrainEngine()->invalidateRegion(
-                        { _lifemap.get() },
-                        GeoExtent::INVALID);
+                    auto* engine = mapNode->getTerrainEngine();
+                    if (engine)
+                        engine->invalidateRegion({ lifemap.get() }, GeoExtent::INVALID);
                 }
 
                 ImGui::Separator();
@@ -178,7 +268,7 @@ namespace osgEarth
                         (int)(pixel.a() * 255.0f));
                 }
 
-                if (_lifemap.valid() && _lifemap->getLandCoverLayer())
+                if (lifemap->getLandCoverLayer())
                 {
                     ImGui::Separator();
                     ImGui::Checkbox("Show landcover under mouse", &_showLandcoverUnderMouse);
@@ -210,38 +300,65 @@ namespace osgEarth
                 ImGui::End();
             }
 
-            bool getKeyUnderMouse(osg::View* view, float x, float y, TileKey& key, GeoPoint& point)
+            bool getKeyUnderMouse(osg::View* view, float x, float y,
+                MapNode* mapNode, TileKey& key, GeoPoint& point)
             {
-                auto* tile = _mapNode->getTerrain()->getTerrainTileUnderMouse(view, x, y);
-                if (tile)
-                {
-                    point = _mapNode->getGeoPointUnderMouse(view, x, y);
-                    key = _keyUnderMouse = _mapNode->getMap()->getProfile()->createTileKey(point.x(), point.y(), tile->getKey().getLOD());
-                }
-                return _keyUnderMouse.valid();
+                key = {};
+                point = {};
+                _keyUnderMouse = {};
+                if (!view || !mapNode || !mapNode->getMap() || !mapNode->getMap()->getProfile())
+                    return false;
+
+                osg::ref_ptr<Terrain> terrain = mapNode->getTerrain();
+                if (!terrain.valid())
+                    return false;
+
+                auto* tile = terrain->getTerrainTileUnderMouse(view, x, y);
+                if (!tile)
+                    return false;
+                const auto lod = tile->getKey().getLOD();
+
+                osg::Vec3d world;
+                if (!terrain->getWorldCoordsUnderMouse(view, x, y, world) ||
+                    !point.fromWorld(mapNode->getMapSRS(), world))
+                    return false;
+
+                key = _keyUnderMouse = mapNode->getMap()->getProfile()->createTileKey(point.x(), point.y(), lod);
+                return key.valid();
             }
 
-            void onMove(osg::View* view, float x, float y)
+            void onMove(osg::View* view, float x, float y, MapNode* mapNode, LifeMapLayer* lifemap)
             {
+                _lifemapUnderMouse.reset();
+                _landcoverUnderMouse.reset();
+                if (!_showLifemapUnderMouse && !_showLandcoverUnderMouse)
+                    return;
+
                 TileKey keyUnderMouse;
                 GeoPoint pointUnderMouse;
+                if (!lifemap || !lifemap->isOpen() ||
+                    !getKeyUnderMouse(view, x, y, mapNode, keyUnderMouse, pointUnderMouse))
+                    return;
+
+                // Keep the map and its layers alive until the sampling jobs finish.
+                osg::ref_ptr<MapNode> owner = mapNode;
+                osg::ref_ptr<LifeMapLayer> layer = lifemap;
 
                 if (_showLifemapUnderMouse)
                 {
-                    _lifemapUnderMouse.reset();
-                    getKeyUnderMouse(view, x, y, keyUnderMouse, pointUnderMouse);
-
-                    TileKey key = _lifemap->getBestAvailableTileKey(keyUnderMouse, false);
+                    TileKey key = layer->getBestAvailableTileKey(keyUnderMouse, false);
                     if (key.valid())
                     {
-                        auto task = [this, key, pointUnderMouse](Cancelable& c)
+                        auto task = [owner, layer, key, pointUnderMouse](Cancelable& c)
                             {
                                 osg::Vec4 result(0, 0, 0, 1);
+                                if (c.canceled() || !layer->isOpen())
+                                    return result;
                                 osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(&c);
 
-                                for (auto k = key; k.valid(); k.makeParent())
+                                for (auto k = key; k.valid() && !c.canceled(); k.makeParent())
                                 {
-                                    auto g = _lifemap->createImage(k, prog.get());
+                                    auto g = layer->createImage(k, prog.get());
                                     if (g.valid())
                                     {
                                         g.getReader().setBilinear(false);
@@ -258,22 +375,23 @@ namespace osgEarth
 
                 if (_showLandcoverUnderMouse)
                 {
-                    auto coverage = _lifemap->getLandCoverLayer();
-
-                    _landcoverUnderMouse.reset();
-
-                    if (!keyUnderMouse.valid())
-                        getKeyUnderMouse(view, x, y, keyUnderMouse, pointUnderMouse);
+                    osg::ref_ptr<CoverageLayer> coverage = layer->getLandCoverLayer();
+                    if (!coverage.valid() || !coverage->isOpen())
+                        return;
 
                     TileKey key = coverage->getBestAvailableTileKey(keyUnderMouse, false);
                     if (key.valid())
                     {
-                        auto task = [this, key, pointUnderMouse](Cancelable& c)
+                        auto task = [owner, coverage, key, pointUnderMouse](Cancelable& c)
                             {
                                 LandCoverSample result;
+                                if (c.canceled() || !coverage->isOpen())
+                                    return result;
                                 osg::ref_ptr<ProgressCallback> prog = new ProgressCallback(&c);
-                                auto factory = LandCoverSample::Factory::create(_lifemap->getLandCoverLayer());
-                                for (auto k = key; k.valid(); k.makeParent())
+                                auto factory = LandCoverSample::Factory::create(coverage.get());
+                                if (!factory)
+                                    return result;
+                                for (auto k = key; k.valid() && !c.canceled(); k.makeParent())
                                 {
                                     auto g = factory->createCoverage(k, prog.get());
                                     if (g.valid())
