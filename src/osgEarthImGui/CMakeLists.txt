@@ -60,7 +60,8 @@ set(LIB_HEADERS
     Common
     ImGuiEventHandler
     ImGuiApp
-    ImGuiPanel )
+    ImGuiPanel
+    ScreenSpaceErrorControls )
     
 set(LIB_SOURCES 
     ImGuiEventHandler.cpp )

@@ -349,7 +349,7 @@ TileNode::shouldSubDivide(TerrainCuller* culler, const SelectionInfo& selectionI
             }
         
             // SSE is the amount of error we are willing to tolerate in the screen space size
-            float pixelSizeThreshold = tileImagerySize + _context->options().getScreenSpaceError() + culler->getScreenSpaceError();
+            float pixelSizeThreshold = tileImagerySize + culler->getTerrainScreenSpaceError() + culler->getScreenSpaceError();
 
             return (tileGeometrySizeInPixels > pixelSizeThreshold);
         }

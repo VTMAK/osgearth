@@ -23,6 +23,7 @@
 #include <osg/BlendFunc>
 #include <osg/Depth>
 #include <osg/CullFace>
+#include <osg/Stats>
 
 #include <cstdlib> // for getenv
 
@@ -747,9 +748,21 @@ RexTerrainEngineNode::cull_traverse(osg::NodeVisitor& nv)
     float global_sse = 0.0f;
     nv.getUserValue("oe_sse", global_sse);
     culler.setScreenSpaceError(global_sse);
+    culler.setTerrainScreenSpaceError(getScreenSpaceError(*cv));
 
     // Assemble the terrain drawables:
     _terrain->accept(culler);
+
+    // Optional per-camera diagnostics; counts surface tiles submitted by this cull,
+    // once each regardless of imagery passes, not shared resident tiles or GPU draws.
+    auto* stats = cv->getCurrentCamera() ? cv->getCurrentCamera()->getStats() : nullptr;
+    if (stats && stats->collectStats("osgEarth.SSE") && nv.getFrameStamp())
+    {
+        unsigned frame = nv.getFrameStamp()->getFrameNumber();
+        stats->setAttribute(frame, "osgEarth.MapSSE", global_sse);
+        stats->setAttribute(frame, "osgEarth.TerrainSSE", culler.getTerrainScreenSpaceError());
+        stats->setAttribute(frame, "osgEarth.SurfaceTiles", culler._surfaceTiles);
+    }
 
     // If we're using geometry pooling, optimize the drawable forf shared state
     // by sorting the draw commands.

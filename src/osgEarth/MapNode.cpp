@@ -21,6 +21,7 @@
 
 #include <osgDB/DatabasePager>
 #include <osgUtil/Optimizer>
+#include <cmath>
 
 #ifdef OSGEARTH_HAVE_SUPERLUMINALAPI
 #include <Superluminal/PerformanceAPI.h>
@@ -36,6 +37,35 @@ using namespace osgEarth::Contrib;
 
 namespace
 {
+    // Preserve the actual previous user object, including absence. Removing it before
+    // setUserValue also avoids mutating an enclosing map's saved ValueObject.
+    struct ScopedSSE
+    {
+        osg::NodeVisitor& visitor;
+        osg::ref_ptr<osg::Object> previous;
+
+        ScopedSSE(osg::NodeVisitor& nv) : visitor(nv)
+        {
+            auto* data = visitor.getOrCreateUserDataContainer();
+            unsigned index = data->getUserObjectIndex("oe_sse");
+            if (index < data->getNumUserObjects())
+            {
+                previous = data->getUserObject(index);
+                data->removeUserObject(index);
+            }
+        }
+
+        ~ScopedSSE()
+        {
+            auto* data = visitor.getOrCreateUserDataContainer();
+            unsigned index = data->getUserObjectIndex("oe_sse");
+            if (index < data->getNumUserObjects())
+                data->removeUserObject(index);
+            if (previous.valid())
+                data->addUserObject(previous);
+        }
+    };
+
     /**
      * A group that the osgUtil::Optimizer won't remove even when it's empty.
      */
@@ -293,9 +323,6 @@ MapNode::init()
 
     this->addChild( _layerNodes );
 
-    // the default SSE for all supporting geometries
-    _sseU = new osg::Uniform("oe_sse", options().screenSpaceError().get());
-
     _readyForUpdate = true;
 }
 
@@ -416,8 +443,8 @@ MapNode::open()
     osg::StateSet* stateset = getOrCreateStateSet();
     stateset->setName("MapNode");
 
-    // install the screen-space error "global" uniform
-    stateset->addUniform(_sseU.get());
+    // Static fallback; each cull publishes its resolved SSE in a separate StateSet.
+    stateset->addUniform(new osg::Uniform("oe_sse", getScreenSpaceError()));
 
     if ( options().enableLighting().isSet() )
     {
@@ -630,23 +657,28 @@ MapNode::getTerrainEngine() const
     return _terrainEngine;
 }
 
-void
-MapNode::setScreenSpaceError(float value)
-{
-    // global option:
-    options().screenSpaceError() = value;
-
-    // update the corresponding terrain option:
-    //getTerrainOptions().setScreenSpaceError(value);
-
-    // update the uniform:
-    _sseU->set(value);
-}
-
 float
 MapNode::getScreenSpaceError() const
 {
     return options().screenSpaceError().get();
+}
+
+float
+MapNode::getScreenSpaceError(osgUtil::CullVisitor& cv) const
+{
+    const float configured = getScreenSpaceError();
+    auto resolver = std::atomic_load(&_screenSpaceErrorResolver);
+    const float resolved = resolver ? (*resolver)(cv, configured) : configured;
+    return std::isfinite(resolved) && resolved >= 0.0f ? resolved : configured;
+}
+
+std::shared_ptr<const MapNode::ScreenSpaceErrorResolver>
+MapNode::setScreenSpaceErrorResolver(const ScreenSpaceErrorResolver& resolver)
+{
+    std::shared_ptr<const ScreenSpaceErrorResolver> replacement;
+    if (resolver)
+        replacement = std::make_shared<const ScreenSpaceErrorResolver>(resolver);
+    return std::atomic_exchange(&_screenSpaceErrorResolver, replacement);
 }
 
 void
@@ -861,6 +893,7 @@ MapNode::traverse( osg::NodeVisitor& nv )
     else if ( nv.getVisitorType() == nv.CULL_VISITOR)
     {
         osgUtil::CullVisitor* cv = Culling::asCullVisitor(nv);
+        ScopedSSE scopedSSE(nv);
 
         int stateSetsPushed = 0;
 
@@ -879,20 +912,20 @@ MapNode::traverse( osg::NodeVisitor& nv )
             if (_drapingManager != nullptr)
                 ObjectStorage::set(&nv, _drapingManager);
 
-            // store the SSE:
-            nv.setUserValue("oe_sse", getScreenSpaceError());
+            const float sse = getScreenSpaceError(*cv);
+            nv.setUserValue("oe_sse", sse);
 
-            // update any per-camera data:
+            // Immutable traversal state: the render graph retains it until queued draws
+            // finish. Never change a uniform another camera/frame may still be using.
             auto* cam = cv->getCurrentCamera();
-            auto& percam = _percam.get(cam);
-            if (!percam.stateSet.valid()) {
-                percam.dprU = new osg::Uniform("oe_dpr", 1.0f);
-                percam.stateSet = new osg::StateSet();
-                percam.stateSet->addUniform(percam.dprU);
-            }
-            percam.dprU->set(Registry::instance()->getDevicePixelRatio(cam->getGraphicsContext()));
-
-            cv->pushStateSet(percam.stateSet);
+            osg::ref_ptr<osg::StateSet> stateSet = new osg::StateSet();
+            stateSet->addUniform(new osg::Uniform("oe_sse", sse));
+            stateSet->addUniform(new osg::Uniform("oe_dpr",
+                Registry::instance()->getDevicePixelRatio(cam->getGraphicsContext())));
+            cv->pushStateSet(stateSet);
+            // Some OSG builds store only a raw StateSet pointer in StateGraph.
+            // This branch is unique to this traversal; explicitly retain its state.
+            cv->getCurrentStateGraph()->setUserData(stateSet);
             ++stateSetsPushed;
         }
 

@@ -5,10 +5,29 @@
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/Registry>
 #include <osgEarth/MapModelChange>
+#include <cmath>
 
 #define LC "[TerrainEngineNode] "
 
 using namespace osgEarth;
+
+std::shared_ptr<const TerrainEngine::ScreenSpaceErrorResolver>
+TerrainEngineNode::setScreenSpaceErrorResolver(const ScreenSpaceErrorResolver& resolver)
+{
+    std::shared_ptr<const ScreenSpaceErrorResolver> replacement;
+    if (resolver)
+        replacement = std::make_shared<const ScreenSpaceErrorResolver>(resolver);
+    return std::atomic_exchange(&_screenSpaceErrorResolver, replacement);
+}
+
+float
+TerrainEngineNode::getScreenSpaceError(osgUtil::CullVisitor& cv) const
+{
+    const float configured = _optionsConcrete.screenSpaceError().get();
+    auto resolver = std::atomic_load(&_screenSpaceErrorResolver);
+    const float resolved = resolver ? (*resolver)(cv, configured) : configured;
+    return std::isfinite(resolved) && resolved >= 0.0f ? resolved : configured;
+}
 
 //------------------------------------------------------------------------
 

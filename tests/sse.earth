@@ -1,0 +1,12 @@
+<!-- Offline per-view SSE test map. See osgearth_windows usage for demo controls. -->
+<map>
+    <options>
+        <terrain>
+            <lod_method>screen_space</lod_method>
+            <max_level>12</max_level>
+        </terrain>
+    </options>
+    <GDALImage name="World">
+        <url>../data/world.tif</url>
+    </GDALImage>
+</map>

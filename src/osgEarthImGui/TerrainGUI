@@ -5,6 +5,7 @@
 #pragma once
 
 #include <osgEarthImGui/ImGuiPanel>
+#include <osgEarthImGui/ScreenSpaceErrorControls>
 #include <osgEarth/Threading>
 #include <osgEarth/GLUtils>
 #include <osgEarth/ExampleResources>
@@ -22,6 +23,8 @@ namespace osgEarth
     {
     private:
         osg::observer_ptr<MapNode> _mapNode;
+        osg::observer_ptr<osg::Node> _sseEngine;
+        std::shared_ptr<ImGuiDetail::ScreenSpaceErrorControls> _sseControls;
         std::unique_ptr<AsyncElevationSampler> _sampler;
         Future<ElevationSample> _sample;
         osg::ref_ptr<FeatureNode> _measureCursor;
@@ -67,6 +70,13 @@ namespace osgEarth
                     ImGui::End();
                     return;
                 }
+
+                if (!_sseEngine.valid() || _sseEngine.get() != engine->getNode())
+                {
+                    _sseControls = ImGuiDetail::ScreenSpaceErrorControls::install(*engine);
+                    _sseEngine = engine->getNode();
+                }
+                auto sseRows = _sseControls->rows(ri.getState()->getFrameStamp());
 
                 static unsigned u32_one = 1;
 
@@ -120,11 +130,22 @@ namespace osgEarth
 
                     if (options.getLODMethod() == LODMethod::SCREEN_SPACE)
                     {
-                        float sse = options.getScreenSpaceError();
-                        if (ImGuiLTable::SliderFloat("  Screen space error", &sse, 0.0f, 2048.0f))
+                        if (sseRows.empty())
+                            ImGuiLTable::Text("  Screen space error", "Waiting for visible terrain views");
+                        for (auto& row : sseRows)
                         {
-                            options.setScreenSpaceError(sse);
-                            engine->dirtyTerrainOptions();
+                            ImGui::PushID(static_cast<int>(row.id));
+                            if (ImGuiLTable::SliderFloat(row.label.c_str(), &row.sse, 0.0f, 2048.0f))
+                                _sseControls->set(row.id, row.sse);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("Terrain SSE for this view; map SSE is added separately.\nRight-click to reset.");
+                            if (ImGui::BeginPopupContextItem("sse_options"))
+                            {
+                                if (ImGui::MenuItem("Reset view SSE"))
+                                    _sseControls->reset(row.id);
+                                ImGui::EndPopup();
+                            }
+                            ImGui::PopID();
                         }
 
                         float tileImagePixelSize = options.getTilePixelSize();

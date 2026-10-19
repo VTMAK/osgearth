@@ -206,7 +206,6 @@ OE_OPTION_IMPL(TerrainOptionsAPI, bool, MorphImagery, morphImagery);
 OE_OPTION_IMPL(TerrainOptionsAPI, unsigned, MergesPerFrame, mergesPerFrame);
 OE_OPTION_IMPL(TerrainOptionsAPI, std::string, TextureCompressionMethod, textureCompression);
 OE_OPTION_IMPL(TerrainOptionsAPI, unsigned, Concurrency, concurrency);
-OE_OPTION_IMPL(TerrainOptionsAPI, float, ScreenSpaceError, screenSpaceError);
 OE_OPTION_IMPL(TerrainOptionsAPI, unsigned, MaxTextureSize, maxTextureSize);
 OE_OPTION_IMPL(TerrainOptionsAPI, bool, Visible, visible);
 OE_OPTION_IMPL(TerrainOptionsAPI, bool, CreateTilesAsync, createTilesAsync);
@@ -216,6 +215,12 @@ OE_OPTION_IMPL(TerrainOptionsAPI, bool, GPUPaging, gpuPaging);
 OE_OPTION_IMPL(TerrainOptionsAPI, float, TessellationResolution, tessellationResolution);
 OE_OPTION_IMPL(TerrainOptionsAPI, float, TessellationMinLevel, tessellationMinLevel);
 OE_OPTION_IMPL(TerrainOptionsAPI, float, TessellationMaxLevel, tessellationMaxLevel);
+
+const float&
+TerrainOptionsAPI::getScreenSpaceError() const
+{
+    return options().screenSpaceError().get();
+}
 
 bool
 TerrainOptionsAPI::getGPUTessellation() const

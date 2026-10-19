@@ -8,6 +8,10 @@
 #include <osgEarth/Map>
 #include <osgEarth/Extension>
 #include <osgEarth/TerrainOptions>
+#include <functional>
+#include <memory>
+
+namespace osgUtil { class CullVisitor; }
 
 namespace osg
 {
@@ -88,9 +92,26 @@ namespace osgEarth
         Map* getMap();
         const Map* getMap() const;
 
-        //! Screen-space error for geometry level of detail
-        void setScreenSpaceError(float sse);
+        //! Configured default from Options; runtime overrides use the resolver below.
         float getScreenSpaceError() const;
+
+        //! Effective map SSE for this visitor. Evaluates the resolver on each call;
+        //! an empty resolver or invalid result uses the configured default.
+        //! Does not change the visitor or publish traversal state.
+        float getScreenSpaceError(osgUtil::CullVisitor& cv) const;
+
+        // OSG's getCurrentCamera() requires a non-const CullVisitor.
+        using ScreenSpaceErrorResolver = std::function<float(osgUtil::CullVisitor&, float configuredSSE)>;
+
+        //! Replaces this map's SSE contribution once per cull traversal (CPU and GPU).
+        //! An empty resolver uses getScreenSpaceError(). The terrain contribution is independent.
+        //! Safe to replace/clear during culls; an in-flight call retains its resolver.
+        //! The resolver must support concurrent calls and synchronize mutable captured state.
+        //! Inspect the visitor to identify the camera; do not modify its traversal state.
+        //! Return a finite, nonnegative pixel error; invalid results use the configured value.
+        //! For a constant override, return a captured value from the resolver.
+        //! Returns a snapshot of the previous resolver so callers can compose overrides.
+        std::shared_ptr<const ScreenSpaceErrorResolver> setScreenSpaceErrorResolver(const ScreenSpaceErrorResolver& resolver);
 
         //! Whether to allow lighting when present
         void setEnableLighting(const bool& value);
@@ -251,7 +272,7 @@ namespace osgEarth
     private:
 
         osg::ref_ptr< MapCallback > _mapCallback;
-        osg::ref_ptr<osg::Uniform> _sseU;
+        std::shared_ptr<const ScreenSpaceErrorResolver> _screenSpaceErrorResolver;
     
         void init();
 
@@ -262,12 +283,6 @@ namespace osgEarth
         ClampingManager* getClampingManager();
         friend class ClampingTechnique;
         friend class ClampableNode;
-
-        struct PerCameraData {
-            osg::ref_ptr<osg::StateSet> stateSet;
-            osg::ref_ptr<osg::Uniform> dprU;
-        };
-        mutable PerObjectFastMap<osg::Camera*, PerCameraData> _percam;
 
     private:
         Options _optionsConcrete;
