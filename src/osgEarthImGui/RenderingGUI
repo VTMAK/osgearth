@@ -5,6 +5,7 @@
 #pragma once
 
 #include <osgEarthImGui/ImGuiPanel>
+#include <osgEarthImGui/ScreenSpaceErrorControls>
 #include <osgEarth/Threading>
 #include <osgEarth/MemoryUtils>
 #include <osgEarth/GLUtils>
@@ -225,6 +226,7 @@ namespace osgEarth
     {
     private:
         osg::observer_ptr<MapNode> _mapNode;
+        std::shared_ptr<ImGuiDetail::ScreenSpaceErrorControls> _sseControls;
         using time_point = std::chrono::time_point<std::chrono::steady_clock>;
         time_point _lastFrame;
         std::queue<int> _times;
@@ -266,16 +268,36 @@ namespace osgEarth
             if (!isVisible())
                 return;
 
+            if (!_mapNode.valid())
+                _sseControls.reset();
             if (!findNodeOrHide(_mapNode, ri))
                 return;
+
+            if (!_sseControls)
+                _sseControls = ImGuiDetail::ScreenSpaceErrorControls::install(*_mapNode.get());
+            auto sseRows = _sseControls->rows(ri.getState()->getFrameStamp());
 
             ImGui::Begin(name(), visible());
             {
                 if (ImGuiLTable::Begin("LOD"))
                 {
-                    float sse = _mapNode->getScreenSpaceError();
-                    if (ImGuiLTable::SliderFloat("SSE", &sse, 1.0f, 200.0f))
-                        _mapNode->setScreenSpaceError(sse);
+                    if (sseRows.empty())
+                        ImGuiLTable::Text("SSE", "Waiting for visible map views");
+                    for (auto& row : sseRows)
+                    {
+                        ImGui::PushID(static_cast<int>(row.id));
+                        if (ImGuiLTable::SliderFloat(row.label.c_str(), &row.sse, 1.0f, 200.0f))
+                            _sseControls->set(row.id, row.sse);
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Map SSE for this view; terrain SSE is added separately.\nRight-click to reset.");
+                        if (ImGui::BeginPopupContextItem("sse_options"))
+                        {
+                            if (ImGui::MenuItem("Reset view SSE"))
+                                _sseControls->reset(row.id);
+                            ImGui::EndPopup();
+                        }
+                        ImGui::PopID();
+                    }
 
                     float lod_scale = camera(ri)->getLODScale();
                     if (ImGuiLTable::SliderFloat("LOD Scale", &lod_scale, 0.1f, 4.0f))

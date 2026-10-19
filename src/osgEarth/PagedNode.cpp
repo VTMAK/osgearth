@@ -93,6 +93,7 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
                 if (cullStack != nullptr && cullStack->getLODScale() > 0.0f)
                 {
                     float pixelError = pagingManager.valid() ? pagingManager->sse() : 0.0f;
+                    nv.getUserValue("oe_sse", pixelError);
                     float pixels = Util::getPixelSize(cullStack, getBound().center(), getBound().radius()) / cullStack->getLODScale();
                     inRange = (pixels >= _minPixels + pixelError) && (pixels <= _maxPixels + pixelError);
                     _priority = pixels * _priorityScale;
@@ -440,8 +441,15 @@ PagingManager::traverse(osg::NodeVisitor& nv)
                 }
                 else // LODMethod::SCREEN_SPACE
                 {
-                    float pixels = Util::getPixelSize(nv.asCullStack(), entry._data->getBound().center(), entry._data->getBound().radius()) / nv.asCullStack()->getLODScale();
-                    entry._data->_lastPixelSize = std::max(entry._data->_lastPixelSize, pixels);
+                    auto* stack = nv.asCullStack();
+                    if (!stack || stack->getLODScale() <= 0.0f)
+                        continue;
+                    float pixels = Util::getPixelSize(stack, entry._data->getBound().center(), entry._data->getBound().radius()) / stack->getLODScale();
+                    float sse = _sse;
+                    nv.getUserValue("oe_sse", sse);
+                    // Retain if ANY view needs this page, including bounded pixel ranges.
+                    entry._data->_inPixelRange |= pixels >= entry._data->getMinPixels() + sse &&
+                        pixels <= entry._data->getMaxPixels() + sse;
                 }
                 //entry._data->_lastTime = nv.getFrameStamp() ? nv.getFrameStamp()->getReferenceTime() : 0.0;
             }
@@ -485,7 +493,7 @@ PagingManager::update(osg::NodeVisitor* nv)
                 return false;
             }
             else if (node->getLODMethod() == LODMethod::SCREEN_SPACE &&
-                node->_lastPixelSize >= node->getMinPixels() + _sse && node->_lastPixelSize < node->getMaxPixels() + _sse)
+                node->_inPixelRange)
             {
                 return false;
             }
@@ -514,7 +522,7 @@ PagingManager::update(osg::NodeVisitor* nv)
             if (entry._data.valid())
             {
                 entry._data->_lastRange = FLT_MAX;
-                entry._data->_lastPixelSize = 0.0f;
+                entry._data->_inPixelRange = false;
             }
         }
     }

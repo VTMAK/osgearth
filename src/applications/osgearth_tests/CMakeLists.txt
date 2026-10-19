@@ -10,6 +10,7 @@ set(TARGET_SRC
     ImageUtilsTests.cpp
     PathTests.cpp
     PagedNodeTests.cpp
+    ScreenSpaceErrorTests.cpp
     ImageLayerTests.cpp
     SpatialReferenceTests.cpp
     StringUtilsTests.cpp

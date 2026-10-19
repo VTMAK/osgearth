@@ -270,7 +270,7 @@ namespace osgEarth { namespace Util
         std::atomic_int _revision = { 0 };
         bool _autoUnload = true;
         float _lastRange = FLT_MAX;
-        float _lastPixelSize = 0.0f;
+        bool _inPixelRange = false; // union of per-view screen-space retention decisions
         std::atomic<double> _lastTime = { 0.0 };
         std::atomic<float> _priority = { 0.0f };
         RefinePolicy _refinePolicy = REFINE_REPLACE;

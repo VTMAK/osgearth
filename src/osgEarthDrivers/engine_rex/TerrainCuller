@@ -48,6 +48,8 @@ namespace osgEarth { namespace REX
         TerrainRenderData _terrain;
         osg::ref_ptr<Horizon> _horizon;
         float _sse = 0.0f;
+        float _terrainSSE = 0.0f;
+        unsigned _surfaceTiles = 0u;
 
     public:
         //! Construct the culler
@@ -80,6 +82,9 @@ namespace osgEarth { namespace REX
         float getScreenSpaceError() const {
             return _sse;
         }
+
+        void setTerrainScreenSpaceError(float value) { _terrainSSE = value; }
+        float getTerrainScreenSpaceError() const { return _terrainSSE; }
 
     public: // osg::NodeVisitor
         void apply(osg::Node& node);

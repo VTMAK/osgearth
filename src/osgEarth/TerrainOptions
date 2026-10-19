@@ -241,8 +241,8 @@ namespace osgEarth
         void setConcurrency(const unsigned& value);
         const unsigned& getConcurrency() const;
 
-        //! Screen space error for PIXEL SIZE ON SCREEN LOD mode
-        void setScreenSpaceError(const float& value);
+        //! Configured default for screen-space LOD. Runtime overrides use
+        //! TerrainEngine::setScreenSpaceErrorResolver.
         const float& getScreenSpaceError() const;
 
         //! Sets a maximum size for textures used by the terrain

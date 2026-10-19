@@ -1,0 +1,157 @@
+/* osgEarth
+ * Copyright 2026 Pelican Mapping
+ * MIT License
+ */
+#pragma once
+
+#include <osgEarth/CameraUtils>
+#include <osg/Camera>
+#include <osg/FrameStamp>
+#include <osg/View>
+#include <osg/observer_ptr>
+#include <osgUtil/CullVisitor>
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace osgEarth { namespace ImGuiDetail
+{
+    // Shared between a panel's draw thread and the map or terrain cull threads.
+    // Kept independent of ImGui so view discovery and expiration need no GL context.
+    class ScreenSpaceErrorControls
+    {
+    public:
+        struct Row
+        {
+            unsigned id;
+            std::string label;
+            float sse;
+        };
+
+        // MapNode and TerrainEngine share the same resolver signature.
+        template<typename Target>
+        static std::shared_ptr<ScreenSpaceErrorControls> install(Target& target)
+        {
+            auto controls = std::make_shared<ScreenSpaceErrorControls>();
+            // A concurrent cull must wait until the previous resolver is captured.
+            // The resolver owns the controls, never the panel or its cameras.
+            std::lock_guard<std::mutex> lock(controls->_mutex);
+            controls->_fallback = target.setScreenSpaceErrorResolver(
+                [controls](osgUtil::CullVisitor& cv, float configured) {
+                    return controls->resolve(cv, configured);
+                });
+            return controls;
+        }
+
+        std::vector<Row> rows(const osg::FrameStamp* frameStamp)
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            prune(frameStamp);
+            std::vector<Row> result;
+            for (const auto& view : _views)
+                result.push_back(view.row);
+            return result;
+        }
+
+        void set(unsigned id, float sse)
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            for (auto& view : _views)
+            {
+                if (view.row.id == id)
+                {
+                    view.row.sse = sse;
+                    view.overridden = true;
+                    break;
+                }
+            }
+        }
+
+        void reset(unsigned id)
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            for (auto& view : _views)
+                if (view.row.id == id)
+                    view.overridden = false;
+        }
+
+    private:
+        using Resolver = std::function<float(osgUtil::CullVisitor&, float)>;
+
+        struct View
+        {
+            Row row;
+            osg::observer_ptr<osg::Camera> camera;
+            unsigned lastFrame;
+            bool overridden = false;
+        };
+
+        float resolve(osgUtil::CullVisitor& cv, float configured)
+        {
+            std::shared_ptr<const Resolver> fallback;
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                fallback = _fallback;
+            }
+            // Call application code without holding the controls mutex.
+            float value = fallback ? (*fallback)(cv, configured) : configured;
+            if (!std::isfinite(value) || value < 0.0f)
+                value = configured;
+
+            auto* camera = cv.getCurrentCamera();
+            auto* frameStamp = cv.getFrameStamp();
+            if (!camera || !frameStamp ||
+                Util::CameraUtils::isShadowCamera(camera) ||
+                Util::CameraUtils::isDepthCamera(camera) ||
+                Util::CameraUtils::isPickCamera(camera))
+                return value;
+
+            std::lock_guard<std::mutex> lock(_mutex);
+            auto i = std::find_if(_views.begin(), _views.end(),
+                [camera](const View& view) { return view.camera.get() == camera; });
+            if (i == _views.end())
+            {
+                View view;
+                view.camera = camera;
+                view.row.id = _nextID++;
+                view.row.label = "  SSE: View " + std::to_string(view.row.id);
+                auto name = camera->getName();
+                if (name.empty() && camera->getView())
+                    name = camera->getView()->getName();
+                if (!name.empty())
+                    view.row.label += " (" + name + ")";
+                view.row.sse = value;
+                view.lastFrame = frameStamp->getFrameNumber();
+                _views.push_back(view);
+                i = _views.end() - 1;
+            }
+            i->lastFrame = frameStamp->getFrameNumber();
+            if (!i->overridden)
+                i->row.sse = value;
+            value = i->row.sse;
+            prune(frameStamp);
+            return value;
+        }
+
+        // Allow two missed frames because other views can cull after this panel
+        // draws. Observers never keep a closed view's camera alive.
+        void prune(const osg::FrameStamp* frameStamp)
+        {
+            _views.erase(std::remove_if(_views.begin(), _views.end(),
+                [frameStamp](const View& view) {
+                    return !view.camera.valid() ||
+                        (frameStamp && frameStamp->getFrameNumber() > view.lastFrame &&
+                         frameStamp->getFrameNumber() - view.lastFrame > 2u);
+                }), _views.end());
+        }
+
+        std::mutex _mutex;
+        std::shared_ptr<const Resolver> _fallback;
+        std::vector<View> _views;
+        unsigned _nextID = 1u;
+    };
+} }

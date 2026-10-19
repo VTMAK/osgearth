@@ -45,6 +45,7 @@ TerrainCuller::reset(
     _currentTileNode = nullptr;
     _firstDrawCommandForTile = nullptr;
     _orphanedPassesDetected = 0u;
+    _surfaceTiles = 0u;
     _layerExtents = &layerExtents;
     bool temp;
     _isSpy = _cv->getUserValue("osgEarth.Spy", temp);
@@ -371,6 +372,7 @@ TerrainCuller::apply(SurfaceNode& node)
         if (_firstDrawCommandForTile)
         {
             _firstDrawCommandForTile->_layerOrder = 0;
+            ++_surfaceTiles;
         }
 
         // update our bounds

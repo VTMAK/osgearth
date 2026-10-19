@@ -20,6 +20,7 @@
 #include <osg/NodeCallback>
 #include <osg/BoundingBox>
 #include <osgUtil/RenderBin>
+#include <memory>
 #include <set>
 
 #define OSGEARTH_ENV_TERRAIN_ENGINE_DRIVER "OSGEARTH_TERRAIN_ENGINE"
@@ -60,6 +61,8 @@ namespace osgEarth
 
         using ComputeTileRangeCallback = std::function<float(osg::Node* node, osg::NodeVisitor& nv)>;
         using ComputeTilePixelSizeCallback = std::function<float(osg::Node* node, osg::NodeVisitor& nv)>;
+        // OSG's getCurrentCamera() requires a non-const CullVisitor.
+        using ScreenSpaceErrorResolver = std::function<float(osgUtil::CullVisitor&, float configuredSSE)>;
 
     public:
         //! Unique ID of the terrain engine instance
@@ -166,6 +169,21 @@ namespace osgEarth
 
         //! Set a function that computes the range of a tile for the purposes of culling.
         virtual void setComputeTileRangeCallback(const ComputeTileRangeCallback& callback) = 0;
+
+        //! Effective terrain SSE contribution for this visitor, excluding map SSE.
+        //! Evaluates the resolver on each call; an empty resolver or invalid result
+        //! uses the configured terrain default. Does not change traversal state.
+        virtual float getScreenSpaceError(osgUtil::CullVisitor& cv) const = 0;
+
+        //! Replaces only the terrain SSE contribution once per cull traversal in screen-space LOD.
+        //! Empty uses the configured terrain SSE. Map SSE remains additive and independent.
+        //! Safe to replace/clear during culls; an in-flight call retains its resolver.
+        //! Callbacks must support concurrent culls and synchronize mutable captured state.
+        //! Return finite, nonnegative pixels; invalid results use the configured value.
+        //! For a constant override, return a captured value. Supported by the REX engine.
+        //! Inspect the visitor to identify the camera; do not modify its traversal state.
+        //! Returns a snapshot of the previous resolver so callers can compose overrides.
+        virtual std::shared_ptr<const ScreenSpaceErrorResolver> setScreenSpaceErrorResolver(const ScreenSpaceErrorResolver& resolver) = 0;
     };
 
     /**
@@ -269,6 +287,10 @@ namespace osgEarth
         ComputeTileRangeCallback& getComputeTileRangeCallback() { return _computeTileRangeCallback; }
         ComputeTilePixelSizeCallback& getComputeTilePixelSizeCallback() { return _computeTilePixelSizeCallback; }
 
+        std::shared_ptr<const ScreenSpaceErrorResolver> setScreenSpaceErrorResolver(const ScreenSpaceErrorResolver& resolver) override;
+
+        float getScreenSpaceError(osgUtil::CullVisitor& cv) const override;
+
         //! Return the top level node associated with the terrain.
         osg::Node* getNode() override {
             return this;
@@ -351,6 +373,7 @@ namespace osgEarth
 
         ComputeTileRangeCallback _computeTileRangeCallback;
         ComputeTilePixelSizeCallback _computeTilePixelSizeCallback;
+        std::shared_ptr<const ScreenSpaceErrorResolver> _screenSpaceErrorResolver;
 
     public:
         // internal
