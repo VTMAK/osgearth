@@ -9,6 +9,6 @@
 namespace osgEarthPrestige
 {
     //! Installs two-sided leaf lighting and view-corrected baked crown normals before scene publication.
-    //! Existing authored volume normals retain their orientation; only baked impostors fade their edge-on cards.
+    //! Volume normals retain their orientation with reduced Prestige specular reflection; baked cards fade edge-on.
     OSGEARTHPRESTIGE_EXPORT void installAssetLighting(osg::StateSet* state);
 }

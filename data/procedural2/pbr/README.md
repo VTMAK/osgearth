@@ -40,6 +40,14 @@ restrained AO. The height, micro-normal, roughness and AO maps are approximate r
 from the color source, not independent measured channels. Height is stored but does not add
 triangles or enable parallax. Transmission/subsurface scattering and wind are not implemented.
 
+Prestige lighting gives authored crown-volume normals (technique 3) and their baked-volume
+proxies (technique 5) a 0.1 specular weight. These normals approximate a cluster of leaves,
+so a full-strength surface reflection produces broad white patches under a grazing sun,
+even with high roughness. The weight applies to direct and environment reflection and keeps
+the remaining dielectric energy in the diffuse term. Normal direction, texture roughness,
+albedo, alpha, geometry and LODs remain authored. Ordinary surface normals and imported
+source-normal proxies (techniques 0 and 4) keep the standard material response.
+
 Source images are retained verbatim. The compiler extracts the four botanical regions, prepares
 512 px foliage materials and 1024 px bark/stone materials, adds transparent-edge RGB padding,
 and exports editable PNGs plus runtime DDS. Foliage uses BC3; opaque bark/stone albedo uses BC1

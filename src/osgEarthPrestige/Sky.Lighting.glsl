@@ -11,13 +11,17 @@ void oe_prestige_sky_vertex(inout vec4 vertex) { }
 #pragma vp_order 0.8
 #pragma import_defines(OE_LIGHTING, OE_NUM_LIGHTS, OE_SHADOWING)
 #pragma import_defines(OE_PRESTIGE_SKY_ATMOSPHERE, OE_PRESTIGE_SKY_SRGB, OE_PRESTIGE_SKY_TONEMAP)
-#pragma import_defines(OE_CLOUD_LAYER)
+#pragma import_defines(OE_CLOUD_LAYER, OE_PRESTIGE_SKY_SPECULAR_FACTOR)
 #pragma include Sky.Common.glsl
 #pragma include CloudLayer.Common.glsl
 
 in vec3 vp_Normal;
 in vec3 vp_VertexView;
 uniform int oe_prestige_sky_sunIndex;
+#ifdef OE_PRESTIGE_SKY_SPECULAR_FACTOR
+// Optional material-stage reflection weight, initialized before fragment_lighting order 0.8.
+float oe_prestige_sky_specularFactor;
+#endif
 struct OE_PBR { float displacement, roughness, ao, metal; } oe_pbr;
 struct osg_LightSourceParameters
 {
@@ -46,14 +50,15 @@ vec3 oe_psky_fresnel(float cosine, vec3 f0)
 }
 
 // Energy-conserving Lambert + GGX with height-correlated Smith visibility.
-vec3 oe_psky_brdf(vec3 N, vec3 V, vec3 L, vec3 albedo, vec3 f0, float metal, float a2, float nv, float nl)
+vec3 oe_psky_brdf(vec3 N, vec3 V, vec3 L, vec3 albedo, vec3 f0, float metal, float a2, float nv, float nl,
+    float specularFactor)
 {
     vec3 H = oe_psky_normalize(V+L,N);
     float nh = max(0.0,dot(N,H));
     float denominator = nh*nh*(a2-1.0)+1.0;
     float D = a2/(oe_psky_pi*denominator*denominator);
     float visibility = 0.5/max(1e-6,nl*sqrt(nv*nv*(1.0-a2)+a2)+nv*sqrt(nl*nl*(1.0-a2)+a2));
-    vec3 F = oe_psky_fresnel(dot(V,H),f0);
+    vec3 F = oe_psky_fresnel(dot(V,H),f0)*specularFactor;
     return ((1.0-F)*(1.0-metal)*albedo/oe_psky_pi + D*visibility*F)*nl;
 }
 
@@ -68,6 +73,11 @@ void oe_prestige_sky_lighting(inout vec4 color)
     float roughness = clamp(oe_pbr.roughness,0.045,1.0);
     float metal = clamp(oe_pbr.metal,0.0,1.0), ao = clamp(oe_pbr.ao,0.0,1.0);
     vec3 f0 = mix(vec3(0.04),albedo,metal);
+    float specularFactor = 1.0;
+#ifdef OE_PRESTIGE_SKY_SPECULAR_FACTOR
+    // The material weight scales reflected energy; the remaining dielectric energy stays diffuse.
+    specularFactor = clamp(oe_prestige_sky_specularFactor,0.0,1.0);
+#endif
     float nv = max(1e-4,dot(N,V)), alpha = roughness*roughness, a2 = alpha*alpha;
     vec3 earthPosition = oe_prestige_sky_eye+oe_prestige_sky_viewToEarth*vp_VertexView;
     float r = max(length(earthPosition),oe_psky_radius+0.001);
@@ -115,9 +125,9 @@ void oe_prestige_sky_lighting(inout vec4 color)
 #endif
         }
         if (max(light.r,max(light.g,light.b)) > 0.0)
-            radiance += light*oe_psky_brdf(N,V,L,albedo,f0,metal,a2,nv,nl);
+            radiance += light*oe_psky_brdf(N,V,L,albedo,f0,metal,a2,nv,nl,specularFactor);
     }
-    vec3 F = oe_psky_fresnel(nv,f0);
+    vec3 F = oe_psky_fresnel(nv,f0)*specularFactor;
     vec3 diffuse = albedo*(1.0-metal)*(1.0-F);
     radiance += oe_prestige_sky_settings.w*diffuse*ao;
     if (oe_prestige_sky_settings.z > 0.0)
@@ -132,7 +142,8 @@ void oe_prestige_sky_lighting(inout vec4 color)
         vec4 q = roughness*vec4(-1.0,-0.0275,-0.572,0.022)+vec4(1.0,0.0425,1.04,-0.04);
         float a = min(q.x*q.x,exp2(-9.28*nv))*q.x+q.y;
         vec2 dfg = vec2(-1.04,1.04)*a+q.zw;
-        radiance += oe_prestige_sky_settings.z*ao*(diffuse*irradiance+specular*max(vec3(0.0),f0*dfg.x+dfg.y));
+        radiance += oe_prestige_sky_settings.z*ao*
+            (diffuse*irradiance+specular*max(vec3(0.0),f0*dfg.x+dfg.y)*specularFactor);
 #else
         // Atmosphere-free environment retains a finite reflection for metallic materials.
         radiance += oe_prestige_sky_settings.z*0.03*ao*(diffuse+F);
