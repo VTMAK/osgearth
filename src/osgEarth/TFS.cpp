@@ -137,7 +137,6 @@ TFSFeatureSourceOptions::getConfig() const
     conf.set("url", _url);
     conf.set("format", _format);
     conf.set("invert_y", _invertY);
-    conf.set("auto_fallback", _autoFallback);
     return conf;
 }
 
@@ -145,13 +144,11 @@ void
 TFSFeatureSourceOptions::fromConfig(const Config& conf)
 {
     format().setDefault("json");
-    autoFallback().setDefault(false);
     invertY().setDefault(false);
 
     conf.get("url", _url);
     conf.get("format", _format);
     conf.get("invert_y", _invertY);
-    conf.get("auto_fallback", _autoFallback);
 }
 
 //........................................................................
@@ -161,7 +158,6 @@ REGISTER_OSGEARTH_LAYER(TFSFeatures, TFSFeatureSource);
 OE_LAYER_PROPERTY_IMPL(TFSFeatureSource, URI, URL, url);
 OE_LAYER_PROPERTY_IMPL(TFSFeatureSource, std::string, Format, format);
 OE_LAYER_PROPERTY_IMPL(TFSFeatureSource, bool, InvertY, invertY);
-OE_LAYER_PROPERTY_IMPL(TFSFeatureSource, bool, AutoFallbackToMaxLevel, autoFallback);
 
 void
 TFSFeatureSource::init()

@@ -11,6 +11,8 @@
 #include <osgEarth/NetworkMonitor>
 #include <osg/StateSet>
 #include <osgDB/Registry>
+#include <map>
+#include <mutex>
 
 using namespace osgEarth;
 
@@ -154,6 +156,13 @@ Layer::setReadOptions(const osgDB::Options* readOptions)
             options().osgOptionString().get() + " " +
             _readOptions->getOptionString());
     }
+
+    // An already-open layer will not run openImplementation() when added to a map.
+    // Closed layers defer this until open so subsequent option changes still take effect.
+    if (isOpen())
+    {
+        updateCacheSettings();
+    }
 }
 
 const osgDB::Options*
@@ -228,6 +237,7 @@ Layer::getCacheID() const
         hashConf.remove("terrain");
         hashConf.remove("texture_compression");
         hashConf.remove("visible");
+        hashConf.remove("opacity");
 
         auto hash = osgEarth::hashString(hashConf.toJSON());
         std::stringstream buf;
@@ -376,6 +386,13 @@ Layer::open(const osgDB::Options* readOptions)
 Status
 Layer::openImplementation()
 {
+    updateCacheSettings();
+    return Status::OK();
+}
+
+void
+Layer::updateCacheSettings()
+{
     // Create some local cache settings for this layer.
     // There might be a CacheSettings object in the readoptions that
     // came from the map. If so, copy it.
@@ -410,8 +427,6 @@ Layer::openImplementation()
 
     // Store it for further propagation!
     _cacheSettings->store(_readOptions.get());
-
-    return Status::OK();
 }
 
 Status
@@ -494,6 +509,33 @@ struct Holder : public osg::Object {
     T value;
 };
 
+namespace
+{
+    struct LayerFactories
+    {
+        std::mutex mutex;
+        std::map<std::string, Layer::Factory> factories;
+    };
+
+    //! Constructs the shared registry on first use, including registration during module initialization.
+    LayerFactories& layerFactories()
+    {
+        static LayerFactories registry;
+        return registry;
+    }
+}
+
+bool
+Layer::registerFactory(const std::string& name, Factory factory)
+{
+    if (name.empty() || !factory)
+        return false;
+
+    auto& registry = layerFactories();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    return registry.factories.emplace(toLower(name), factory).second;
+}
+
 osg::ref_ptr<Layer>
 Layer::create(const ConfigOptions& options)
 {
@@ -509,6 +551,24 @@ Layer::create(const ConfigOptions& options)
         // fail silently
         OE_DEBUG << "[Layer] ILLEGAL- Layer::create requires a valid driver name" << std::endl;
         return nullptr;
+    }
+
+    Factory factory = nullptr;
+    {
+        auto& registry = layerFactories();
+        std::lock_guard<std::mutex> lock(registry.mutex);
+        auto i = registry.factories.find(toLower(name));
+        if (i != registry.factories.end())
+            factory = i->second;
+    }
+
+    if (factory)
+    {
+        // Constructors can create other layers, so invoke the factory after releasing the registry lock.
+        auto result = factory(options);
+        if (result.valid() && result->getName().empty())
+            result->setName("osgearth_layer_" + name);
+        return result;
     }
 
     // convey the configuration options:

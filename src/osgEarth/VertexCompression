@@ -1,0 +1,176 @@
+/* --*-c++-*-- */
+/* osgEarth
+ * Copyright 2025 Pelican Mapping
+ * MIT License
+ */
+#ifndef OSGEARTH_VERTEX_COMPRESSION_H
+#define OSGEARTH_VERTEX_COMPRESSION_H 1
+
+#include <osgEarth/Common>
+#include <osg/Array>
+#include <osg/Geometry>
+#include <osg/GL>
+#include <osg/NodeVisitor>
+#include <osg/Vec2f>
+#include <osg/Vec3f>
+#include <osg/Vec4f>
+#include <osg/Vec4ub>
+#include <algorithm>
+#include <cmath>
+
+#ifndef GL_INT_2_10_10_10_REV
+#define GL_INT_2_10_10_10_REV 0x8D9F
+#endif
+
+namespace osgEarth
+{
+    using PackedNormalArray = osg::TemplateArray<GLint, osg::Array::IntArrayType, 4, GL_INT_2_10_10_10_REV>;
+
+    inline GLint packNormal(const osg::Vec3f& normal)
+    {
+        osg::Vec3f n = normal;
+        if (n.length2() > 0.0f)
+        {
+            n.normalize();
+        }
+
+        auto quantizeSnorm10 = [](float value) -> unsigned int
+        {
+            value = std::max(-1.0f, std::min(1.0f, value));
+            int q = static_cast<int>(std::round(value * 511.0f));
+            q = std::max(-511, std::min(511, q));
+            return static_cast<unsigned int>(q) & 0x3ffu;
+        };
+
+        unsigned int packed =
+            quantizeSnorm10(n.x()) |
+            (quantizeSnorm10(n.y()) << 10) |
+            (quantizeSnorm10(n.z()) << 20);
+
+        return static_cast<GLint>(packed);
+    }
+
+    inline osg::Vec4ub packColor(const osg::Vec4f& color)
+    {
+        auto quantizeUnorm8 = [](float value) -> GLubyte
+        {
+            value = std::max(0.0f, std::min(1.0f, value));
+            return static_cast<GLubyte>(std::round(value * 255.0f));
+        };
+
+        return osg::Vec4ub(
+            quantizeUnorm8(color.r()),
+            quantizeUnorm8(color.g()),
+            quantizeUnorm8(color.b()),
+            quantizeUnorm8(color.a()));
+    }
+
+    inline void compressColorArray(osg::Geometry* geom)
+    {
+        if (!geom)
+            return;
+
+        if (auto* colors = dynamic_cast<osg::Vec4ubArray*>(geom->getColorArray()))
+        {
+            colors->setNormalize(true);
+        }
+        else if (auto* colors = dynamic_cast<osg::Vec4Array*>(geom->getColorArray()))
+        {
+            auto* packed = new osg::Vec4ubArray(colors->getBinding());
+            packed->setNormalize(true);
+            packed->reserve(colors->size());
+            for (const auto& color : *colors)
+            {
+                packed->push_back(packColor(color));
+            }
+            geom->setColorArray(packed);
+        }
+    }
+
+    inline void compressNormalArray(osg::Geometry* geom)
+    {
+        if (!geom)
+            return;
+
+        if (auto* normals = dynamic_cast<PackedNormalArray*>(geom->getNormalArray()))
+        {
+            normals->setNormalize(true);
+            normals->setPreserveDataType(false);
+        }
+        else if (auto* normals = dynamic_cast<osg::Vec3Array*>(geom->getNormalArray()))
+        {
+            if (normals->getBinding() != osg::Array::BIND_PER_VERTEX)
+                return;
+
+            auto* packed = new PackedNormalArray(osg::Array::BIND_PER_VERTEX);
+            packed->setNormalize(true);
+            packed->setPreserveDataType(false);
+            packed->reserve(normals->size());
+            for (const auto& normal : *normals)
+            {
+                packed->push_back(packNormal(normal));
+            }
+            geom->setNormalArray(packed);
+        }
+    }
+
+    inline void compressTexCoordArrays(osg::Geometry* geom)
+    {
+        if (!geom)
+            return;
+
+        for (unsigned unit = 0; unit < geom->getNumTexCoordArrays(); ++unit)
+        {
+            auto* texCoords = dynamic_cast<osg::Vec3Array*>(geom->getTexCoordArray(unit));
+            if (!texCoords)
+                continue;
+
+            bool allLayersZero = true;
+            for (const auto& texCoord : *texCoords)
+            {
+                if (texCoord.z() != 0.0f)
+                {
+                    allLayersZero = false;
+                    break;
+                }
+            }
+
+            if (!allLayersZero)
+                continue;
+
+            auto* packed = new osg::Vec2Array(texCoords->getBinding());
+            packed->setNormalize(texCoords->getNormalize());
+            packed->setPreserveDataType(texCoords->getPreserveDataType());
+            packed->reserve(texCoords->size());
+            for (const auto& texCoord : *texCoords)
+            {
+                packed->push_back(osg::Vec2f(texCoord.x(), texCoord.y()));
+            }
+            geom->setTexCoordArray(unit, packed, packed->getBinding());
+        }
+    }
+
+    inline void compressVertexArrays(osg::Geometry* geom)
+    {
+        compressNormalArray(geom);
+        compressColorArray(geom);
+        compressTexCoordArrays(geom);
+    }
+
+    struct CompressVertexArraysVisitor : public osg::NodeVisitor
+    {
+        CompressVertexArraysVisitor() : osg::NodeVisitor()
+        {
+            setTraversalMode(TRAVERSE_ALL_CHILDREN);
+            setNodeMaskOverride(~0);
+        }
+
+        void apply(osg::Drawable& drawable)
+        {
+            compressVertexArrays(drawable.asGeometry());
+            traverse(drawable);
+        }
+    };
+}
+
+#endif // OSGEARTH_VERTEX_COMPRESSION_H

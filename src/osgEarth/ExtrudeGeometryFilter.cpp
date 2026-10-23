@@ -10,6 +10,7 @@
 #include <osgEarth/Utils>
 #include <osgEarth/Tessellator>
 #include <osgEarth/LineDrawable>
+#include <osgEarth/VertexCompression>
 
 #include <osg/Geode>
 #include <osg/Geometry>
@@ -23,6 +24,32 @@ using namespace osgEarth;
 
 namespace
 {
+    PackedNormalArray* getOrCreatePackedNormalArray(osg::Geometry* geom)
+    {
+        PackedNormalArray* normals = dynamic_cast<PackedNormalArray*>(geom->getNormalArray());
+        if (!normals)
+        {
+            normals = new PackedNormalArray(osg::Array::BIND_PER_VERTEX);
+            geom->setNormalArray(normals);
+        }
+        normals->setNormalize(true);
+        normals->setPreserveDataType(false);
+        return normals;
+    }
+
+    osg::Vec4ubArray* getOrCreateColorArray(osg::Geometry* geom)
+    {
+        osg::Vec4ubArray* colors = dynamic_cast<osg::Vec4ubArray*>(geom->getColorArray());
+        if (!colors)
+        {
+            colors = new osg::Vec4ubArray(osg::Array::BIND_PER_VERTEX);
+            colors->setNormalize(true);
+            geom->setColorArray(colors);
+        }
+        colors->setNormalize(true);
+        return colors;
+    }
+
     // Calculates the rotation angle of a shape. This conanically applies to
     // buildings; it finds the longest edge and compares its angle to the
     // x-axis to determine a rotation value. This method is used so we can 
@@ -605,23 +632,13 @@ ExtrudeGeometryFilter::buildWallGeometry(
         }
     }
 
-    osg::Vec4Array* colors = 0L;
+    osg::Vec4ubArray* colors = 0L;
     if ( useColor )
     {
-        colors = static_cast<osg::Vec4Array*>(walls->getColorArray());
-        if (!colors)
-        {
-            colors = new osg::Vec4Array( osg::Array::BIND_PER_VERTEX);
-            walls->setColorArray( colors );
-        }
+        colors = getOrCreateColorArray(walls);
     }
 
-    osg::Vec3Array* normals = static_cast<osg::Vec3Array*>(walls->getNormalArray());
-    if (!normals)
-    {
-        normals = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-        walls->setNormalArray(normals);
-    }
+    PackedNormalArray* normals = getOrCreatePackedNormalArray(walls);
     
     ObjectIDArray* ids = nullptr;
     if (index)
@@ -706,7 +723,7 @@ ExtrudeGeometryFilter::buildWallGeometry(
             {
                 normal.normalize();
                 normal_cache[i] = normal;
-                normals->push_back(normal);
+                normals->push_back(packNormal(normal));
             }
             
             if ( anchors )
@@ -734,12 +751,12 @@ ExtrudeGeometryFilter::buildWallGeometry(
             // Assign wall polygon colors.
             if (useColor)
             {
-                colors->push_back(shade(wallColor, normal_cache[0], shadeMin));
-                colors->push_back(shade(wallBaseColor, normal_cache[1], shadeMin));
-                colors->push_back(shade(wallBaseColor, normal_cache[2], shadeMin));
-                colors->push_back(shade(wallBaseColor, normal_cache[3], shadeMin));
-                colors->push_back(shade(wallColor, normal_cache[4], shadeMin));
-                colors->push_back(shade(wallColor, normal_cache[5], shadeMin));
+                colors->push_back(packColor(shade(wallColor, normal_cache[0], shadeMin)));
+                colors->push_back(packColor(shade(wallBaseColor, normal_cache[1], shadeMin)));
+                colors->push_back(packColor(shade(wallBaseColor, normal_cache[2], shadeMin)));
+                colors->push_back(packColor(shade(wallBaseColor, normal_cache[3], shadeMin)));
+                colors->push_back(packColor(shade(wallColor, normal_cache[4], shadeMin)));
+                colors->push_back(packColor(shade(wallColor, normal_cache[5], shadeMin)));
             }
 
             // Calculate texture coordinates:
@@ -806,12 +823,7 @@ ExtrudeGeometryFilter::buildRoofGeometry(const Structure&     structure,
         verts = new osg::Vec3Array();
         roof->setVertexArray(verts);
     }
-    osg::Vec4Array* color = static_cast<osg::Vec4Array*>(roof->getColorArray());
-    if (!color)
-    {
-        color = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
-        roof->setColorArray(color);
-    }
+    osg::Vec4ubArray* color = getOrCreateColorArray(roof);
 
     osg::Vec3Array* tex = 0L;
     if ( roofSkin )
@@ -850,12 +862,7 @@ ExtrudeGeometryFilter::buildRoofGeometry(const Structure&     structure,
         }
     }
 
-    osg::Vec3Array* normal = static_cast<osg::Vec3Array*>(roof->getNormalArray());
-    if (!normal)
-    {
-        normal = new osg::Vec3Array(osg::Array::BIND_PER_VERTEX);
-        roof->setNormalArray(normal);
-    }
+    PackedNormalArray* normal = getOrCreatePackedNormalArray(roof);
 
     bool flatten =
         _style.has<ExtrusionSymbol>() &&
@@ -884,8 +891,8 @@ ExtrudeGeometryFilter::buildRoofGeometry(const Structure&     structure,
             {
                 verts->push_back(face.left.roof);
                 tempVerts->push_back(face.left.roof);
-                color->push_back( roofColor );
-                normal->push_back(osg::Vec3(0, 0, 1));
+                color->push_back(packColor(roofColor));
+                normal->push_back(packNormal(osg::Vec3(0, 0, 1)));
 
                 if ( tex )
                 {
@@ -963,7 +970,7 @@ ExtrudeGeometryFilter::buildRoofGeometry(const Structure&     structure,
 
         for(unsigned i= startVertPtr; i<normal->size(); ++i)
         {
-            (*normal)[i] = -(*normal)[i];
+            (*normal)[i] = packNormal(osg::Vec3(0, 0, -1));
         }
     }
 

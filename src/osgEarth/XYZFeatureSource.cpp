@@ -25,7 +25,6 @@ XYZFeatureSource::Options::getConfig() const
     conf.set("url", _url);
     conf.set("format", _format);
     conf.set("esri_geodetic", _esriGeodetic);
-    conf.set("auto_fallback", _autoFallback);
     return conf;
 }
 
@@ -35,7 +34,6 @@ XYZFeatureSource::Options::fromConfig(const Config& conf)
     conf.get("url", _url);
     conf.get("format", _format);
     conf.get("esri_geodetic", _esriGeodetic);
-    conf.get("auto_fallback", _autoFallback);
 }
 
 //........................................................................
@@ -45,7 +43,6 @@ REGISTER_OSGEARTH_LAYER(xyzfeatures, XYZFeatureSource);
 OE_LAYER_PROPERTY_IMPL(XYZFeatureSource, URI, URL, url);
 OE_LAYER_PROPERTY_IMPL(XYZFeatureSource, std::string, Format, format);
 OE_LAYER_PROPERTY_IMPL(XYZFeatureSource, bool, EsriGeodetic, esriGeodetic);
-OE_LAYER_PROPERTY_IMPL(XYZFeatureSource, bool, AutoFallbackToMaxLevel, autoFallback);
 
 Status
 XYZFeatureSource::openImplementation()

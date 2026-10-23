@@ -343,11 +343,13 @@ namespace osgEarth { namespace Internal
 
         if (element._declutter && ScreenSpaceLayout::globallyEnabled)
         {
-            double leaderLen = osg::minimum((double)_context->_options.leaderLineMaxLength().get(), element._offsetLength);
+            // Scale the logical max length into physical pixels so the label can float far enough away
+            const double maxLeaderLenPhys = _context->_options.leaderLineMaxLength().get() * local._dprscale.x();
+            const double leaderLen = osg::minimum(maxLeaderLenPhys, element._offsetLength);
             osg::Vec3d pos = element._anchor + element._offsetVector*leaderLen;
 
             // alignment of text relative to the leader line
-            const float margin = 5.0f;
+            const float margin = 5.0f * local._dprscale.x();
             osg::Vec3d alignment;
             osg::BoundingBox box = element._drawable->getBoundingBox();
 
@@ -398,6 +400,10 @@ namespace osgEarth { namespace Internal
         }
         else
         {
+            // Multiply the logical offset by the DPR before adding it to the anchor
+            offset.x() *= local._dprscale.x();
+            offset.y() *= local._dprscale.y();
+
             leaf->_modelview->makeTranslate(element._anchor + offset);
             leaf->_modelview->preMultScale(local._dprscale);
         }
@@ -430,7 +436,7 @@ namespace osgEarth { namespace Internal
             std::vector<Element*> elements;
         };
 
-        const double clusterDistance = 4.0;
+        const double clusterDistance = 4.0 * local._dprscale.x();
         const double clusterDistance2 = clusterDistance * clusterDistance;
         std::vector<SiteCluster> siteClusters;
 

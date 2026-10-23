@@ -7,51 +7,31 @@
 #include <osgEarth/Common>
 #include <osgEarth/GLUtils>
 #include <osgEarth/TextureArena>
+#include <osgEarth/MaterialArena>
 #include <osgEarth/Utils>
 #include <osg/Geometry>
+#include <osg/Camera>
 #include <osgUtil/RenderLeaf>
 #include <osgUtil/RenderBin>
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
+#include <atomic>
 
 // Usage hint to signal which textures are external materials. Currently only two slots are supported [0, 1]
 #define CHONK_HINT_EXTENDED_MATERIAL_SLOT "osgEarth.Chonk.ExtendedMaterial.Slot"
 
+// Geometry colors are linear multipliers; encode the modulated albedo to sRGB.
+#define CHONK_HINT_LINEAR_COLOR "osgEarth.Chonk.LinearColor"
+
 namespace osgEarth
 {
-    class OSGEARTH_EXPORT ChonkMaterial
-    {
-    public:
-        using Ptr = std::shared_ptr<ChonkMaterial>;
-
-        static Ptr create() {
-            return Ptr(new ChonkMaterial);
-        }
-
-        // texturearena indexes of material textures
-        int albedo_index = -1;
-        int normal_index = -1;
-        int pbr_index = -1;
-        int material1_index = -1;
-        int material2_index = -1;
-
-        // store refs to the original textures when the
-        // factory objects's texture arena is using auto-release.
-        // otherwise they are null.
-        Texture::Ptr albedo_tex;
-        Texture::Ptr normal_tex;
-        Texture::Ptr pbr_tex;
-        Texture::Ptr material1_tex;
-        Texture::Ptr material2_tex;
-
-    private:
-        //! hidden to force use of create()
-        ChonkMaterial() = default;
-    };
+    class ChonkRenderPass;
+    using ChonkMaterial = MaterialArena::Material;
 
     class ChonkFactory;
     class ChonkDrawable;
+    class ChonkGeometryPageBuilder;
 
     /**
      * A bindless rendering unit comprised of one VBO and one EBO.
@@ -92,20 +72,23 @@ namespace osgEarth
             osg::Vec3f normal;
             char normal_technique = (char)0;
             osg::Vec4ub color;
+            GLubyte color_is_linear = 0;
+            GLushort material_index = 0;
             osg::Vec2f uv;
             osg::Vec3f flex;
-
-            // texturearena indexes of materials
-            // TODO: use a material index instead?
-            GLshort albedo_index = -1;
-            GLshort normalmap_index = -1;
-            GLshort pbr_index = -1;
-            osg::Vec2s extended_material_index = osg::Vec2s(-1, -1);
         };
 
         static GLubyte NORMAL_TECHNIQUE_DEFAULT;
         static GLubyte NORMAL_TECHNIQUE_ZAXIS;
         static GLubyte NORMAL_TECHNIQUE_HEMISPHERE;
+        //! Authored volume normals: retain orientation and atlas UVs on either face of impostor cards.
+        //! Supply an osg::UByteArray in vertex attribute slot 6 (overall or per vertex).
+        static GLubyte NORMAL_TECHNIQUE_VOLUME;
+        //! Six-view baked impostor: planar geometric normals and full-sphere tangent normal maps.
+        //! UVs address the top half of an atlas; back faces sample the corresponding bottom half.
+        static GLubyte NORMAL_TECHNIQUE_BAKED;
+        //! Six-view baked authored volume normals; preserves their orientation while retaining geometric card fading.
+        static GLubyte NORMAL_TECHNIQUE_BAKED_VOLUME;
 
         static unsigned MATERIAL_VERTEX_SLOT;
 
@@ -116,7 +99,15 @@ namespace osgEarth
             std::size_t length;
             float far_pixel_scale;
             float near_pixel_scale;
+            GLuint base_vertex = 0; // page-relative vertex block; indices stay mesh-local
+            // Whether any texel or vertex alpha can fail the alpha test. Opaque LODs render
+            // without discard, which keeps early depth rejection; unknown means alpha-tested.
+            bool alphaTested = true;
         };
+
+        //! Reports whether vertices [first, end) can fail the alpha test through vertex
+        //! alpha or an alpha-tested material; used to classify each LOD after it is ripped.
+        bool hasAlphaTest(std::size_t first, std::size_t end) const;
 
     public:
 
@@ -124,11 +115,15 @@ namespace osgEarth
         static Ptr create();
 
         std::string _name;
+        osg::ref_ptr<MaterialArena> _materialArena;
+        // One owner per distinct material, rather than one per vertex.
         std::vector<ChonkMaterial::Ptr> _materials;
         std::vector<VertexGPU> _vbo_store;
         std::vector<element_t> _ebo_store;
         std::vector<LOD> _lods;
         osg::BoundingBoxf _box;
+        // Material IDs whose albedo can contain texels below full alpha.
+        std::unordered_set<GLushort> _alphaMaterials;
 
         // Customed draw command
         using DrawCommand = DrawElementsIndirectBindlessCommandNV;
@@ -155,6 +150,81 @@ namespace osgEarth
         friend class ChonkDrawable;
     };
 
+    /** Immutable geometry storage shared by independently culled meshes.
+     * Build on one CPU thread, then retain the page in any number of drawables.
+     * All meshes use the caller's common inherited Chonk render state and arena.
+     */
+    class OSGEARTH_EXPORT ChonkGeometryPage
+    {
+    public:
+        using Ptr = std::shared_ptr<const ChonkGeometryPage>;
+        using MeshId = unsigned;
+        static constexpr MeshId INVALID_MESH = ~0u;
+
+        struct Mesh
+        {
+            unsigned firstVertex = 0, vertexCount = 0;
+            unsigned firstIndex = 0, indexCount = 0;
+            osg::BoundingBoxf bounds;
+        };
+
+        //! Immutable mesh descriptors, indexed by IDs returned by the builder.
+        const std::vector<Mesh>& meshes() const { return _meshes; }
+        //! Packed CPU vertices, retained for context recreation and intersections.
+        const std::vector<Chonk::VertexGPU>& vertices() const { return _storage->_vbo_store; }
+        //! Mesh-local indices; add Mesh::firstVertex when accessing CPU vertices.
+        const std::vector<Chonk::element_t>& indices() const { return _storage->_ebo_store; }
+        //! Allocate/upload the page once per share group and establish residency
+        //! in the current context. Commands correspond one-to-one with meshes.
+        const Chonk::DrawCommands& getOrCreateCommands(osg::State& state) const;
+
+    private:
+        //! Only builders create mutable pages; finish publishes const ownership.
+        ChonkGeometryPage();
+        Chonk::Ptr _storage;
+        std::vector<Mesh> _meshes;
+        friend class ChonkGeometryPageBuilder;
+        friend class ChonkDrawable;
+        friend class ChonkFactory;
+    };
+
+    /** CPU-only, single-threaded page builder. Inputs are read without mutation.
+     * Unsupported local render state is rejected; place common shader/uniform/
+     * raster state above the consuming drawable. No geometry may change after finish.
+     */
+    class OSGEARTH_EXPORT ChonkGeometryPageBuilder
+    {
+    public:
+        //! Retain the factory's arena and texture resolver, with a configurable
+        //! total geometry-byte cap. A full page rejects appends without changing it.
+        //! The factory must outlive this builder because its resolver may capture it.
+        ChonkGeometryPageBuilder(ChonkFactory& factory, std::size_t maxBytes = 64u*1024u*1024u);
+        ChonkGeometryPageBuilder(const ChonkGeometryPageBuilder&) = delete;
+        ChonkGeometryPageBuilder& operator=(const ChonkGeometryPageBuilder&) = delete;
+        //! Move exclusive ownership of unfinished CPU geometry.
+        ChonkGeometryPageBuilder(ChonkGeometryPageBuilder&&) = default;
+
+        //! Append one static object as one cullable mesh. Returns INVALID_MESH on
+        //! unsupported content, invalid indices, exhaustion, or a finished builder.
+        //! Pixel limits affect this mesh only. Failure rolls back the append.
+        ChonkGeometryPage::MeshId addMesh(osg::Node* node,
+            float farPixelScale = 0.0f, float nearPixelScale = FLT_MAX);
+        //! Consume this builder and publish initialized bounds/immutable storage;
+        //! returns empty for an empty or previously finished builder. No GL calls.
+        ChonkGeometryPage::Ptr finish();
+
+    private:
+        osg::ref_ptr<TextureArena> _textures;
+        std::function<Texture::Ptr(osg::Texture*, bool&)> _getOrCreateTexture;
+        std::shared_ptr<ChonkGeometryPage> _page;
+        std::size_t _maxBytes;
+        //! Append directly through a Ripper writer, then finalize one mesh range.
+        //! Roll back geometry/material ownership on failure; writer may throw.
+        ChonkGeometryPage::MeshId append(const std::function<bool(Chonk*)>& writer,
+            float farPixelScale, float nearPixelScale);
+        friend class ChonkFactory;
+    };
+
     /**
      * Converts OSG geometry into Chonk data.
      */
@@ -170,6 +240,10 @@ namespace osgEarth
         //! Texture caching function
         GetOrCreateFunction getOrCreateTexture;
 
+        //! Maximum vertex/index payload per page for subtree extraction. Oversize
+        //! individual meshes fail conversion; full pages roll over automatically.
+        std::size_t geometryPageSize = 64u*1024u*1024u;
+
     public:
         //! Default, user should supply a TextureArena.
         ChonkFactory();
@@ -182,16 +256,52 @@ namespace osgEarth
         //! for preventint duplicate textures in the arena.
         void setGetOrCreateFunction(GetOrCreateFunction);
 
-        //! For the given node, this method populates the provided Chonk wit
-        //! its geometry. If the factory finds any InstancedGeometry's along
-        //! the way it will create a Chonk for each one in out_instances.
-        //! Returns false if the node contained no geometry.
+        //! Create a single-threaded, CPU-only builder; inputs must share common
+        //! inherited rendering state. A full page can be finished and replaced.
+        //! A zero maxBytes selects geometryPageSize.
+        ChonkGeometryPageBuilder createGeometryPageBuilder(std::size_t maxBytes = 0);
+
+        //! Read-only conversion of a static asset, shared across cells. The
+        //! cache is weak and keyed by the source graph and pixel limits.
+        //! Scene/state eligibility checks are disabled by default.
+        //! OSGEARTH_CHONK_ENFORCE_ELIGIBILITY=1 rejects unsupported semantics
+        //! with a warning and returns an empty pointer. Set before startup.
+        //! Also returns empty if the arena's 65536 material IDs are exhausted.
+        Chonk::Ptr getOrCreateChonk(osg::Node* node,
+            float far_pixel_scale = 0.0f, float near_pixel_scale = FLT_MAX);
+
+        //! Replace compatible external instance batches with one ChonkDrawable.
+        //! Retains ordinary/unsupported content and tracks asset reload/unload
+        //! on update traversal. The shared factory must use the texture arena
+        //! installed above the returned node. Paging/geo transforms stay outside.
+        static osg::ref_ptr<osg::Node> convertExternalInstances(
+            osg::Node* node, std::shared_ptr<ChonkFactory> factory);
+
+        //! Convert a loaded model/cell, packing compatible static ordinary meshes
+        //! as well as external instances. Preserve unsupported branches and track
+        //! external reloads on update traversal; never flatten paging boundaries.
+        //! Leave a lone ordinary primitive set on its original draw path unless
+        //! the model also contains an instance batch. Multiple primitive sets can
+        //! still benefit from packing, even within one Geometry. Reloads recheck
+        //! this policy; explicit load/add/page-builder calls are unaffected.
+        //! The factory's arena must be installed above the result. Setting
+        //! OSGEARTH_CHONK_GEOMETRY_PAGES=0 retains instance-only conversion.
+        static osg::ref_ptr<osg::Node> convertScene(
+            osg::Node* node, std::shared_ptr<ChonkFactory> factory);
+
+        //! Append the node's geometry as another LOD in the provided Chonk.
+        //! Use the drawable overload to preserve InstanceGeometry placements.
+        //! Returns false if the node contained no geometry, the material arena
+        //! is full, or this Chonk already uses a different arena.
         bool load(
             osg::Node* node,
             Chonk* chonk, 
             float far_pixel_scale,
             float near_pixel_scale);
 
+        //! Pack ordinary geometry into pages with one culling bound per geometry,
+        //! retaining explicit InstanceGeometry placements. Common render state
+        //! must be installed above the drawable, as for legacy Chonk conversion.
         bool load(
             osg::Node* node,
             ChonkDrawable* drawable,
@@ -208,12 +318,19 @@ namespace osgEarth
     private:
         mutable std::vector<Texture::WeakPtr> _texcache;
         mutable std::mutex _texcache_mutex;
+        struct CachedChonk {
+            osg::observer_ptr<osg::Node> source;
+            Chonk::WeakPtr chonk;
+            float farScale, nearScale;
+        };
+        std::vector<CachedChonk> _chonkCache;
+        std::mutex _chonkCacheMutex;
     };
 
     /**
      * Renders batches of chonks with gpu culling.
      */
-    class OSGEARTH_EXPORT ChonkDrawable : public osg::Geometry //public osg::Drawable
+    class OSGEARTH_EXPORT ChonkDrawable : public osg::Geometry
     {
     public:
         META_Node(osgEarth, ChonkDrawable);
@@ -245,10 +362,29 @@ namespace osgEarth
         //! Adds a chonk instance to the drawable, along with
         //! a tile-local UV coordinate. You only need this if you
         //! intend to set a custom culling shader.
+        //! With OE_CHONK_DENSITY_LOD, local_uv.x is instead a stable rank in [0,1); the vec3 uniform
+        //! oe_chonk_density_lod supplies thinning start/end distances and the retained fraction.
+        //! OE_CHONK_DITHER_FADE optionally turns LOD/range fades into screen-door coverage without MSAA.
         void add(
             Chonk::Ptr value,
             const osg::Matrixf& xform,
             const osg::Vec2f& local_uv);
+
+        struct PagePlacement
+        {
+            ChonkGeometryPage::MeshId mesh = ChonkGeometryPage::INVALID_MESH;
+            osg::Matrixf transform;
+            osg::Vec2f tileUV;
+        };
+
+        //! Append a placement, retaining its immutable page. Returns false for
+        //! an invalid mesh, incompatible arena, or non-finite/singular/reflected
+        //! transform. Call during scene updates, never concurrently with drawing.
+        bool add(ChonkGeometryPage::Ptr page, ChonkGeometryPage::MeshId mesh,
+            const osg::Matrixf& transform = osg::Matrixf(), const osg::Vec2f& tileUV = osg::Vec2f());
+        //! Validate and append a page's placements together, retaining the page
+        //! once and dirtying GPU tables/bounds once. Validation failure is atomic.
+        bool add(ChonkGeometryPage::Ptr page, const std::vector<PagePlacement>& placements);
 
         //! The timestamp at which this drawable was first created.
         //! Used for new data fade-in.
@@ -264,6 +400,20 @@ namespace osgEarth
         //! Whether to GPU cull on the per-chonk basis.
         //! Default is true.
         void setUseGPUCulling(bool value);
+        //! Reports whether this drawable supports GPU visibility, including optional multi-view passes.
+        bool getUseGPUCulling() const { return _gpucull; }
+
+        //! Copies custom vertex-shader records to draw-local SSBO binding 3. Set before publishing or on update;
+        //! never concurrently with drawing. Empty data unbinds the buffer. Records survive context recreation.
+        //! The shader must bounds-check its own indices. This does not change CPU intersection geometry.
+        void setAuxiliaryData(const std::vector<osg::Vec4f>& records);
+
+        //! Enables member-sized LOD for uniform-scale grouped instances; zero stride disables it.
+        //! Auxiliary records at binding 3 contain a local bounding sphere (xyz center, w radius) per member.
+        //! Instance UV is (-member count, first member index). The expansion shader applies per-member alpha;
+        //! GPU culling rejects the group only if all members fail. Returns false for invalid layout/cutoff.
+        //! Set before publication or on update, never concurrently with drawing; ordinary instances bypass this.
+        bool setMemberLOD(unsigned stride, unsigned sphereOffset, float minPixels, unsigned sourceLOD = 0u);
 
         //! Render bin number to use for this drawable
         void setRenderBinNumber(int value);
@@ -274,8 +424,15 @@ namespace osgEarth
 
         //! Whether this drawable contains any geometry
         bool empty() const {
-            return _batches.empty();
+            return _batches.empty() && _pageBatches.empty();
         }
+
+        //! Logical counts, excluding GPU workgroup padding and LOD duplication.
+        std::size_t getNumInstances() const;
+        std::size_t getNumBatches() const;
+
+        //! Monotonic content revision, changed by geometry/placement and render-setting updates.
+        std::uint64_t getContentRevision() const { return _contentRevision.load(); }
 
     public:
 
@@ -291,21 +448,67 @@ namespace osgEarth
 
         mutable Mutex _m;
 
-        // Keep me 16-byte aligned
+        // Stable source data, shared by every visible LOD of a placement.
+        // Keep this 80-byte std430 layout in sync with the shader source records.
         struct Instance
         {
             osg::Matrixf xform; // local xform
             osg::Vec2f uv; // tile-local UV
-            GLuint lod;
-            float visibility[2]; // per LOD
             float radius; // per chonk
-            float alphaCutoff;
             GLint first_lod_cmd_index = -1; // invalid instance
         };
+        static_assert(sizeof(Instance) == 80, "Chonk source instance layout must match GLSL");
+        static_assert(offsetof(Instance, xform) == 0 && offsetof(Instance, uv) == 64 &&
+            offsetof(Instance, radius) == 72 && offsetof(Instance, first_lod_cmd_index) == 76,
+            "Chonk source instance offsets must match GLSL std430");
+
+        // One result per visible instance/LOD pair; sourceIndex addresses Instance.
+        // Multi-view passes pack the view index in lod's high 16 bits; the low bits retain the selected LOD.
+        // Full-precision fade also preserves the culling debug values above 1.
+        struct VisibleInstance
+        {
+            GLuint sourceIndex;
+            GLuint lod;
+            GLfloat fade;
+            GLfloat alphaCutoff;
+        };
+        static_assert(sizeof(VisibleInstance) == 16, "Chonk visibility records must remain compact");
+        static_assert(offsetof(VisibleInstance, lod) == 4 &&
+            offsetof(VisibleInstance, fade) == 8 && offsetof(VisibleInstance, alphaCutoff) == 12,
+            "Chonk visibility record layout must match GLSL");
+        //! Single-view draw lists. Opaque lists hold instances that cannot fail the alpha test
+        //! and draw without discard; late lists hold what the second occlusion pass found.
+        enum List { EARLY_OPAQUE = 0, EARLY_CUTOUT = 1, LATE_OPAQUE = 2, LATE_CUTOUT = 3, NUM_LISTS = 4 };
+        //! Single-view culling passes, matching CHONK_PASS_* in Chonk.Culling.glsl. RESET also
+        //! refreshes GPU tables and runs multi-view culling, which keeps its own passes.
+        enum CullPass { RESET = 0, CULL = 1, EARLY = 2, LATE = 3 };
+
+        //! One camera's occlusion-culling state for one bin draw, shared by that draw's leaves on
+        //! the draw thread. The camera pointer is an identity key only.
+        struct OcclusionFrame : public osg::Referenced
+        {
+            const osg::Camera* camera = nullptr;
+            unsigned frameNumber = 0;
+            bool hizValid = false; // the depth pyramid was built for the late pass
+            GLuint64 hiz = 0; // bindless sampler handle of the pyramid
+            osg::Vec4f hizParams; // viewport width and height in pixels, levels, 1 when valid
+        };
+
         using Instances = std::vector<Instance>;
         using Batches = std::unordered_map<Chonk::Ptr, Instances>;
         Batches _batches;
+        struct PageInstance { ChonkGeometryPage::MeshId mesh; Instance instance; };
+        using PageBatches = std::unordered_map<ChonkGeometryPage::Ptr, std::vector<PageInstance>>;
+        PageBatches _pageBatches;
+        osg::ref_ptr<MaterialArena> _materialArena;
+        std::vector<osg::Vec4f> _auxiliaryData;
+        osg::Vec4f _memberLOD;
+        //! Encode a placement with a conservative radius, shared by both paths.
+        static Instance makeInstance(const osg::BoundingBoxf&, const osg::Matrixf&, const osg::Vec2f&);
+        //! Check the common arena with _m held; empty drawables accept any.
+        bool acceptsArena(const MaterialArena*) const;
         bool _gpucull = true;
+        std::atomic<std::uint64_t> _contentRevision{0};
         float _fadeNear = 0.0f, _fadeFar = 0.0f;
         double _birthday = -1.0;
         float _alphaCutoff = 0.0f;
@@ -315,6 +518,9 @@ namespace osgEarth
         //! be stored and managed for each unique OSG state,
         //! since they will differ for each view based on the camera
         //! location and will potentially change every frame.
+        //! Binds optional member data/policy for the active compute or draw program, including disabled defaults.
+        void applyMemberLOD(osg::State&) const;
+
         struct GLObjects : public PerStateGLObjects
         {
             // GPU variant/lod def. Keep me 16-byte aligned.
@@ -329,8 +535,21 @@ namespace osgEarth
                 GLfloat fade_near;
                 GLfloat fade_far;
                 GLuint num_lods; // chonk-global
-                GLuint total_num_commands; // global
+                GLuint draw_group; // shared vertex/index buffers for core indirect draws
+                GLuint flags = 0; // FLAG_*
+                GLuint pad[3] = {0, 0, 0};
             };
+            static constexpr GLuint FLAG_ALPHA_TESTED = 1u;
+
+            //! Per-camera visible-last-frame bits for two-phase occlusion culling.
+            struct Visibility
+            {
+                const osg::Camera* key = nullptr;
+                osg::observer_ptr<const osg::Camera> camera;
+                unsigned lastUsed = 0;
+                GLBuffer::Ptr bits; // one uint per source instance and LOD; 1 = visible
+            };
+            std::vector<Visibility> _visibility;
 
             // re-usable arrays
             std::vector<Chonk::DrawCommand> _commands;
@@ -345,33 +564,73 @@ namespace osgEarth
             GLBuffer::Ptr _instanceInputBuf;
             GLBuffer::Ptr _instanceOutputBuf;
             GLBuffer::Ptr _chonkBuf;
+            GLBuffer::Ptr _auxiliaryBuf;
+            struct DrawGroup
+            {
+                GLBuffer::Ptr vertices, indices;
+                GLuint first = 0, count = 0;
+            };
+            std::vector<DrawGroup> _drawGroups;
+            GLBuffer::Ptr _templateBuf, _groupBuf;
+            GLVAO::Ptr _coreVAO;
+            unsigned _outputCapacity = 0;
+            std::uint64_t _dataRevision = 0;
+            struct ViewBatch
+            {
+                std::uint64_t viewID = 0, revision = 0;
+                std::uint64_t batchSerial = 0;
+                unsigned lastUsed = 0;
+                osg::Matrixd localToWorld;
+                GLBuffer::Ptr commands, visible, compact, coreCommands, counts, parameter;
+            };
+            std::vector<ViewBatch> _viewBatches;
+            void(GL_APIENTRY * _glMultiDrawElementsIndirectCount)
+                (GLenum, GLenum, const GLvoid*, GLintptr, GLsizei, GLsizei) = nullptr;
+            void(GL_APIENTRY * _glMultiDrawElementsIndirectBindlessCountNV)
+                (GLenum, GLenum, const GLvoid*, GLintptr, GLsizei, GLsizei, GLint) = nullptr;
             bool _dirty = true;
             bool _gpucull = true;
 
             void(GL_APIENTRY * _glMultiDrawElementsIndirectBindlessNV)
                 (GLenum, GLenum, const GLvoid*, GLsizei, GLsizei, GLint);
 
-            struct PCPState {
-                GLint _passUL = -1;
-            };
-            mutable std::unordered_map<const void*, PCPState> _pcps;
-
             void initialize(
                 const osg::Object* host, osg::State& state);
             void update(
-                const Batches&, const osg::Object* host,
+                const Batches&, const PageBatches&, const osg::Object* host,
                 float fadeNear, float fadeFar,
                 double birthday, float alphaCutoff,
                 osg::State&);
-            void cull(osg::State& state);
-            void draw(osg::State& state);
+            //! Zeroes all four lists' instance counts on the GPU. The caller orders it with barriers
+            //! against the previous frame's reads and the following culling dispatches.
+            void reset(osg::State& state);
+            //! Runs one culling pass (CULL, EARLY or LATE) into the draw lists; LATE tests against
+            //! frame's pyramid. The culling program must be active on this context.
+            void cull(osg::State& state, int pass, const OcclusionFrame* frame);
+            //! Draws one List with the currently applied program; unculled drawables draw
+            //! everything as EARLY_CUTOUT.
+            void draw(osg::State& state, int list);
+            //! Finds or creates the camera's visibility bits, initially all visible, pruning
+            //! entries for dead or long-unused cameras.
+            GLBuffer::Ptr visibility(osg::State& state, const OcclusionFrame& frame);
             void release();
+            //! Finds persistent per-view/per-placement output storage, allowing a drawable to appear on multiple paths.
+            ViewBatch& viewBatch(osg::State&, const ChonkRenderPass&);
+            //! Classifies instances for every active view, then compacts both core and bindless draw commands.
+            void cullViews(osg::State&, const ChonkRenderPass&);
+            //! Submits only surviving GPU-generated commands for this view, without CPU readback.
+            void drawViews(osg::State&, const ChonkRenderPass&);
+            //! Creates an independent core or NV-unified vertex layout with matching Chonk attribute formats.
+            GLVAO::Ptr createVAO(const osg::Object*, osg::State&, bool bindless);
         };
         mutable osg::buffered_object<GLObjects> _globjects;
 
-        void update_and_cull_batches(osg::State& state) const;
+        //! Runs one CullPass: RESET refreshes GPU tables and zeroes the lists (or runs multi-view
+        //! culling); the other passes cull single-view drawables.
+        void update_and_cull_batches(osg::State& state, int pass, const OcclusionFrame* frame) const;
 
-        void draw_batches(osg::State& state) const;
+        //! Draws one List; multi-view passes draw everything as EARLY_CUTOUT.
+        void draw_batches(osg::State& state, int list) const;
 
         void dirtyGLObjects();
 
@@ -392,6 +651,7 @@ namespace osgEarth
         ChonkDrawable(const ChonkDrawable& rhs, const osg::CopyOp&) { }
 
         friend class ChonkRenderBin;
+        friend class ChonkFactory;
     };
 
     /**
@@ -416,21 +676,63 @@ namespace osgEarth
 
         static void releaseSharedGLObjects(osg::State* state);
 
+        //! Draws opaque, unfaded instances with a shader variant that has no alpha-test discard.
+        //! Compiling a discard makes the GPU depth-test after shading whenever depth writes are on,
+        //! so hidden fragments get fully shaded. Output is unchanged. Thread-safe; default on.
+        static void setOpaquePath(bool value);
+
+        //! Whether opaque instances draw without the alpha-test discard.
+        static bool getOpaquePath();
+
+        //! Two-phase GPU occlusion culling for single-view color cameras: redraw instances that were
+        //! visible last frame, build a depth pyramid, then test every instance against it and draw
+        //! newly visible ones in the same frame, so nothing pops. Terrain and earlier bins occlude
+        //! too. Needs GL 4.5 and bindless textures (NVGL). Thread-safe; default on.
+        static void setOcclusionCulling(bool value);
+
+        //! Whether color cameras cull occluded Chonk instances.
+        static bool getOcclusionCulling();
+
+        //! Draws each bin's drawables nearest first, so early depth rejection can skip hidden
+        //! fragments. Thread-safe; default on.
+        static void setFrontToBack(bool value);
+
+        //! Whether Chonk drawables draw nearest first.
+        static bool getFrontToBack();
+
     private:
-        osg::ref_ptr<osg::StateSet> _cullSS;
+        osg::ref_ptr<osg::StateSet> _cullSS, _hizSS, _opaqueSS;
 
         friend class ChonkDrawable;
 
-        osg::ref_ptr<osgUtil::StateGraph> _cull_sg;
+        // One graph per pass position, in draw order; several share a state set.
+        osg::ref_ptr<osgUtil::StateGraph> _reset_sg, _cull_sg, _hiz_sg, _cullLate_sg;
+        osg::ref_ptr<osgUtil::StateGraph> _early_sg[2], _late_sg[2]; // [opaque, cutout]
 
         struct CullLeaf : public Util::CustomRenderLeaf {
-            CullLeaf(osgUtil::RenderLeaf*);
+            //! barrier: memory barrier bits issued before this leaf (once per pass, on its first leaf).
+            CullLeaf(osgUtil::RenderLeaf*, int pass, ChonkDrawable::OcclusionFrame*, GLbitfield barrier);
             void draw(osg::State&) override;
+            int _pass;
+            GLbitfield _barrier;
+            osg::Vec2f _coverage{0.0f,1.0f}; // per-path coverage also determines opaque-list eligibility
+            osg::Vec2f _sseAdjustment{0.0f,1.0f}; // keep population budgets separate in the flattened cull bin
+            osg::ref_ptr<ChonkDrawable::OcclusionFrame> _frame;
         };
         struct DrawLeaf : public Util::CustomRenderLeaf {
-            DrawLeaf(osgUtil::RenderLeaf*, bool, bool);
+            //! publish: this leaf issues the barrier that exposes the preceding culling results.
+            DrawLeaf(osgUtil::RenderLeaf*, int list, bool first, bool last, bool publish);
             void draw(osg::State&) override;
-            bool _first, _last;
+            int _list;
+            bool _first, _last, _publish;
+            osg::Vec2f _coverage{0.0f,1.0f}; // immutable per-leaf snapshot, independent of flattened bin state
+            osg::Vec2f _sseAdjustment{0.0f,1.0f}; // grouped vertex LOD uses the same budget as compute culling
+        };
+        //! Copies the current depth buffer and reduces it into the camera's occlusion pyramid.
+        struct HiZLeaf : public Util::CustomRenderLeaf {
+            HiZLeaf(osgUtil::RenderLeaf*, ChonkDrawable::OcclusionFrame*);
+            void draw(osg::State&) override;
+            osg::ref_ptr<ChonkDrawable::OcclusionFrame> _frame;
         };
     };
 }

@@ -178,7 +178,6 @@ namespace osgEarth
             OE_OPTION(CachePolicy, cachePolicy);
             OE_OPTION(std::string, shaderDefine);
             OE_OPTION(std::string, attribution);
-            OE_OPTION(ShaderOptions, shader);
             OE_OPTION_VECTOR(ShaderOptions, shaders);
             OE_OPTION(ProxySettings, proxySettings);
             OE_OPTION(std::string, osgOptionString);
@@ -209,7 +208,8 @@ namespace osgEarth
         UID getUID() const { return _uid; }
 
         //! osgDB read options for this Layer.
-        //! If you set this, do so prior to calling open().
+        //! Set before open() to configure data sources. For an open layer,
+        //! refreshes cache settings without reopening the data sources.
         virtual void setReadOptions(const osgDB::Options* options);
 
         //! osgDB read options for this Layer.
@@ -375,6 +375,13 @@ namespace osgEarth
         //! Creates a layer from serialized data - internal use
         static osg::ref_ptr<Layer> create(const ConfigOptions& options);
 
+        using Factory = osg::ref_ptr<Layer> (*)(const ConfigOptions&);
+
+        //! Registers a factory without an OSG plugin. Names are case-insensitive and may contain colons.
+        //! Thread-safe; returns false for empty names, null factories, or an already registered name.
+        //! The factory's code must remain loaded while layers can be created. Direct factories precede plugins.
+        static bool registerFactory(const std::string& name, Factory factory);
+
         //! Creates a layer from serialized data and attempt to cast it
         //! to a specific type
         template<class T>
@@ -471,6 +478,10 @@ namespace osgEarth
         std::vector<osg::ref_ptr<LayerShader> > _shaders;
         mutable Threading::ReadWriteMutex _inuse_mutex;
 
+        //! Resolves inherited and local cache policies, opens this layer's bin, and stores
+        //! the settings in the read options. Disables caching if the bin cannot be opened.
+        void updateCacheSettings();
+
         //! Prepares the layer for rendering if necessary.  
         void invoke_prepareForRendering(TerrainEngine*);
 
@@ -555,6 +566,19 @@ namespace osgEarth
         return options()._internal().value(key, fallback);
     }
 
+
+//! Registers a factory under a string name, e.g. ("prestige:prestige", osgEarthPrestige::PrestigeLayer).
+//! The containing module must already be loaded; this does not create a plugin or static-link anchor.
+#define REGISTER_OSGEARTH_LAYER_FACTORY(NAME, CLASS) \
+    OE_REGISTER_OSGEARTH_LAYER_FACTORY(NAME, CLASS, __LINE__)
+
+// Expand the line number before forming a private identifier independent of the name and class.
+#define OE_REGISTER_OSGEARTH_LAYER_FACTORY(NAME, CLASS, LINE) \
+    OE_REGISTER_OSGEARTH_LAYER_FACTORY_IMPL(NAME, CLASS, LINE)
+#define OE_REGISTER_OSGEARTH_LAYER_FACTORY_IMPL(NAME, CLASS, LINE) \
+    static const bool oe_layer_factory_##LINE = osgEarth::Layer::registerFactory( \
+        NAME, [](const osgEarth::ConfigOptions& options) -> osg::ref_ptr<osgEarth::Layer> { \
+            return new CLASS(options); });
 
 #define REGISTER_OSGEARTH_LAYER(NAME,CLASS) \
     extern "C" void osgdb_osgearth_##NAME(void) {} \

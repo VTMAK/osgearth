@@ -65,21 +65,35 @@ uniform osg_LightSourceParameters osg_LightSource[OE_NUM_LIGHTS];
 
 float atmos_scale(float fCos) 	
 { 
-    float x = 1.0 - fCos; 
+    float x = 1.0 - clamp(fCos, -1.0, 1.0);
     return RaleighScaleDepth * exp(-0.00287 + x*(0.459 + x*(3.83 + x*(-6.80 + x*5.25))));
 } 
+
+vec3 atmos_safeNormalize(vec3 value, vec3 fallback)
+{
+    float length2 = dot(value, value);
+    return length2 > 1e-12 ? value * inversesqrt(length2) : fallback;
+}
+
+float atmos_density(float height)
+{
+    // Scale height is expressed as a fraction of the atmosphere thickness,
+    // while all positions and radii in this shader are in meters.
+    float exponent = atmos_fScaleOverScaleDepth * (atmos_fInnerRadius - height);
+    return exp(min(exponent, 0.0));
+}
 
 void atmos_GroundFromSpace(in vec4 vertexVIEW) 
 { 
     // Get the ray from the camera to the vertex and its length (which is the far point of the ray passing through the atmosphere) 
-    vec3 v3Pos = vertexVIEW.xyz; 
+    vec3 v3Pos = vertexVIEW.xyz / vertexVIEW.w;
     vec3 v3Ray = v3Pos; 
     float fFar = length(v3Ray); 
-    v3Ray /= fFar; 
+    v3Ray = atmos_safeNormalize(v3Ray, vec3(0.0, 0.0, -1.0));
                 
     vec4 ec4 = osg_ViewMatrix * vec4(0,0,0,1); 
     vec3 earthCenter = ec4.xyz/ec4.w; 
-    vec3 normal = normalize(v3Pos-earthCenter); 
+    vec3 normal = atmos_safeNormalize(v3Pos-earthCenter, vec3(0.0, 0.0, 1.0));
     atmos_up = normal;
 
     earth_center = earthCenter;
@@ -93,14 +107,14 @@ void atmos_GroundFromSpace(in vec4 vertexVIEW)
 
     // Calculate the ray's starting position, then calculate its scattering offset 
     vec3 v3Start = v3Ray * fNear; 			
-    fFar -= fNear; 
-    float fDepth = exp((atmos_fInnerRadius - atmos_fOuterRadius) / RaleighScaleDepth);
+    fFar = max(fFar - fNear, 0.0);
+    float fDepth = atmos_density(atmos_fOuterRadius);
     float fCameraAngle = dot(-v3Ray, normal);  // try max(0, ...) to get rid of yellowing building tops
     float fLightAngle = dot(atmos_lightDir, normal); 
     float fCameraScale = atmos_scale(fCameraAngle); 
     float fLightScale = atmos_scale(fLightAngle); 
     float fCameraOffset = fDepth*fCameraScale; 
-    float fTemp = fLightScale * fCameraScale; 		
+    float fTemp = fLightScale + fCameraScale;
 
     // Initialize the scattering loop variables 
     float fSampleLength = fFar / F_SAMPLES;
@@ -115,8 +129,8 @@ void atmos_GroundFromSpace(in vec4 vertexVIEW)
     for(int i=0; i<N_SAMPLES; ++i) 
     {         
         float fHeight = length(v3SamplePoint-earthCenter); 			
-        float fDepth = exp(atmos_fScaleOverScaleDepth * (atmos_fInnerRadius - fHeight)); 
-        float fScatter = fDepth*fTemp - fCameraOffset; 
+        float fDepth = atmos_density(fHeight);
+        float fScatter = max(fDepth*fTemp - fCameraOffset, 0.0);
         v3Attenuate = exp(-fScatter * (atmos_v3InvWavelength * atmos_fKr4PI + atmos_fKm4PI)); 	
         v3FrontColor += v3Attenuate * (fDepth * fScaledLength); 					
         v3SamplePoint += v3SampleRay; 		
@@ -132,23 +146,23 @@ void atmos_GroundFromAtmosphere(in vec4 vertexVIEW)
     vec3 v3Pos = vertexVIEW.xyz / vertexVIEW.w; 
     vec3 v3Ray = v3Pos; 
     float fFar = length(v3Ray); 
-    v3Ray /= fFar; 
+    v3Ray = atmos_safeNormalize(v3Ray, vec3(0.0, 0.0, -1.0));
         
     vec4 ec4 = osg_ViewMatrix * vec4(0,0,0,1); 
     vec3 earthCenter = ec4.xyz/ec4.w; 
-    vec3 normal = normalize(v3Pos-earthCenter); 
+    vec3 normal = atmos_safeNormalize(v3Pos-earthCenter, vec3(0.0, 0.0, 1.0));
     atmos_up = normal; 
 
     earth_center = earthCenter;
 
     // Calculate the ray's starting position, then calculate its scattering offset 
-    float fDepth = exp((atmos_fInnerRadius - atmos_fCameraHeight) / RaleighScaleDepth);
+    float fDepth = atmos_density(atmos_fCameraHeight);
     float fCameraAngle = max(0.0, dot(-v3Ray, normal)); 
     float fLightAngle = dot(atmos_lightDir, normal); 
     float fCameraScale = atmos_scale(fCameraAngle); 
     float fLightScale = atmos_scale(fLightAngle); 
     float fCameraOffset = fDepth*fCameraScale; 
-    float fTemp = fLightScale * fCameraScale; 
+    float fTemp = fLightScale + fCameraScale;
 
     // Initialize the scattering loop variables 	
     float fSampleLength = fFar / F_SAMPLES; 		
@@ -162,8 +176,8 @@ void atmos_GroundFromAtmosphere(in vec4 vertexVIEW)
     for(int i=0; i<N_SAMPLES; i++) 		
     { 
         float fHeight = length(v3SamplePoint-earthCenter); 			
-        float fDepth = exp(atmos_fScaleOverScaleDepth * (atmos_fInnerRadius - fHeight)); 
-        float fScatter = fDepth*fTemp - fCameraOffset; 
+        float fDepth = atmos_density(fHeight);
+        float fScatter = max(fDepth*fTemp - fCameraOffset, 0.0);
         v3Attenuate = exp(-fScatter * (atmos_v3InvWavelength * atmos_fKr4PI + atmos_fKm4PI)); 	
         v3FrontColor += v3Attenuate * (fDepth * fScaledLength); 					
         v3SamplePoint += v3SampleRay; 		
@@ -185,10 +199,10 @@ void atmos_vertex_main(inout vec4 vertexVIEW)
     atmos_fScale = 1.0 / (atmos_fOuterRadius - atmos_fInnerRadius);
     atmos_fScaleOverScaleDepth = atmos_fScale / RaleighScaleDepth;
 
-    atmos_lightDir = normalize(osg_LightSource[0].position.xyz);  // view space
+    atmos_lightDir = atmos_safeNormalize(osg_LightSource[0].position.xyz, vec3(0.0, 0.0, 1.0)); // view space
     //atmos_vert = vertexVIEW.xyz; 
 
-    atmos_space = max(0.0, (atmos_fCameraHeight-atmos_fInnerRadius)/(atmos_fOuterRadius-atmos_fInnerRadius));
+    atmos_space = clamp((atmos_fCameraHeight-atmos_fInnerRadius)/(atmos_fOuterRadius-atmos_fInnerRadius), 0.0, 1.0);
 
     if(atmos_fCameraHeight >= atmos_fOuterRadius) 
     { 

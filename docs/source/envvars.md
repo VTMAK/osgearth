@@ -7,6 +7,7 @@
 | OSGEARTH_TERRAIN_CONCURRENCY | Number of threads to use for terrain tile loading. | `4` |
 
 ### Debugging
+
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
 | OSGEARTH_NOTIFY_LEVEL | Verbosity of console output. Options are `DEBUG`, `INFO`, `NOTICE`, and `FATAL`. `INFO` is usually sufficient for most debugging purposes. | `NOTICE` |
@@ -19,7 +20,7 @@
 | OSGEARTH_HEADLESS | Set this to `1` to simulate a headless environment in which no OpenGL graphics hardware is available. ||
 | OSGEARTH_CACHE_DEBUG | Set `1` to see verbose cache activity reporting on the console. Not supported by all cache drivers. ||
 | OSGEARTH_REX_DEBUG | Set to `1` and the terrain engine will render a bounding box for each terrain tile. ||
-|||
+|OSGEARTH_TEXTURE_ARENA_WARN_GPU_WORK|warn whenever a TextureArena texture compile requires GPU compression or mipmap generation||
 
 
 ### Caching

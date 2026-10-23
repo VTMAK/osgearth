@@ -5,7 +5,9 @@
 #include <osgEarthImGui/ImGuiApp>
 #include <osgEarth/EarthManipulator>
 #include <osgEarth/ExampleResources>
+#include <osgEarth/GLUtils>
 #include <osgViewer/Viewer>
+#include <osgGA/TrackballManipulator>
 
 #include <osgEarthImGui/LayersGUI>
 #include <osgEarthImGui/ContentBrowserGUI>
@@ -16,6 +18,7 @@
 #include <osgEarthImGui/LiveCamerasGUI>
 #include <osgEarthImGui/SystemGUI>
 #include <osgEarthImGui/EnvironmentGUI>
+#include <osgEarthImGui/ExternalAssetsGUI>
 #include <osgEarthImGui/TerrainGUI>
 #include <osgEarthImGui/ShaderGUI>
 #include <osgEarthImGui/CameraGUI>
@@ -25,6 +28,12 @@
 #include <osgEarthImGui/OpenEarthFileGUI>
 #include <osgEarthImGui/ResourceLibraryGUI>
 #include <osgEarthImGui/DecalsGUI>
+
+#ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
+#include <osgEarthImGui/PrestigeVegetationLayerGUI>
+#include <osgEarthImGui/PrestigeGrimeLayerGUI>
+#include <osgEarthImGui/PrestigeAssetsGUI>
+#endif
 
 #ifdef OSGEARTH_HAVE_GEOCODER
 #include <osgEarthImGui/SearchGUI>
@@ -71,8 +80,16 @@ main(int argc, char** argv)
 
     osgEarth::initialize(arguments);
 
+    // Handle ICO here so OSG's argument parser does not install its unprotected implementation.
+    bool useICO = arguments.read("--ico");
+
     // Set up the viewer and input handler:
     osgViewer::Viewer viewer(arguments);
+    if (useICO)
+    {
+        viewer.setIncrementalCompileOperation(GLUtils::createIncrementalCompileOperation());
+        OE_NOTICE << LC << "ICO vertex-array/index-buffer protection enabled" << std::endl;
+    }
     viewer.setThreadingModel(viewer.SingleThreaded);
     viewer.setCameraManipulator(new EarthManipulator(arguments));
 
@@ -93,7 +110,8 @@ main(int argc, char** argv)
         ui->add("Tools", new CameraGUI());
         ui->add("Tools", new ContentBrowserGUI());
         ui->add("Tools", new DecalsGUI());
-        ui->add("Tools", new EnvironmentGUI());
+        ui->add("Tools", new EnvironmentGUI("Sky", false, true));
+        ui->add("Tools", new ExternalAssetsGUI());
         ui->add("Tools", new NetworkMonitorGUI());
         ui->add("Tools", new NVGLInspectorGUI());
         ui->add("Tools", new AnnotationsGUI());
@@ -111,6 +129,13 @@ main(int argc, char** argv)
         ui->add("Tools", new TextureInspectorGUI());
         ui->add("Tools", new ViewpointsGUI());
         ui->add("Tools", new LiveCamerasGUI());
+
+#ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
+        ui->add("Prestige", new osgEarthPrestige::VegetationLayerGUI());
+        ui->add("Prestige", new EnvironmentGUI("Sky & Clouds", true));
+        ui->add("Prestige", new osgEarthPrestige::GrimeLayerGUI());
+        ui->add("Prestige", new PrestigeAssetsGUI());
+#endif
 
 #ifdef OSGEARTH_HAVE_CESIUM_NODEKIT
         ui->add("Cesium", new osgEarth::Cesium::CesiumIonGUI());
@@ -137,17 +162,24 @@ main(int argc, char** argv)
         // Put it on the front of the list so events don't filter through to other handlers.
         viewer.getEventHandlers().push_front(ui);
 
-        // Install a select-extent tool that panels can access.
-        auto selectTool = new Contrib::SelectExtentTool(MapNode::get(node));
-        selectTool->getStyle().getOrCreateSymbol<LineSymbol>()->stroke()->color() = Color::Red;
-        selectTool->setModKeyMask(osgGA::GUIEventAdapter::MODKEY_SHIFT);
-        selectTool->onSelect([ui](const osgEarth::GeoExtent& extent)
-            {
-                ui->setSelectedExtent(extent);
-            });
+        auto mapNode = MapNode::get(node);
+        if (mapNode)
+        {
+            // Install a select-extent tool that panels can access.
+            auto selectTool = new Contrib::SelectExtentTool(mapNode);
+            selectTool->getStyle().getOrCreateSymbol<LineSymbol>()->stroke()->color() = Color::Red;
+            selectTool->setModKeyMask(osgGA::GUIEventAdapter::MODKEY_SHIFT);
+            selectTool->onSelect([ui](const osgEarth::GeoExtent& extent)
+                {
+                    ui->setSelectedExtent(extent);
+                });
 
-        viewer.getEventHandlers().push_front(selectTool);
-
+            viewer.getEventHandlers().push_front(selectTool);
+        }
+        else
+        {
+            viewer.setCameraManipulator(new osgGA::TrackballManipulator());
+        }
         viewer.setSceneData(node);
         return viewer.run();
     }

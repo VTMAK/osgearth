@@ -12,6 +12,7 @@
 #include <osgDB/Registry>
 #include "vector_tile.pb.h"
 
+#include <google/protobuf/arena.h>
 #include <sqlite3.h>
 
 using namespace osgEarth;
@@ -311,13 +312,14 @@ namespace osgEarth { namespace MVT
             decompressedData = &value;
         }
 
-        mapnik::vector::tile tile;
+        google::protobuf::Arena arena;
+        mapnik::vector::tile* tile = google::protobuf::Arena::Create<mapnik::vector::tile>(&arena);
 
-        if (tile.ParseFromString(*decompressedData))
+        if (tile->ParseFromString(*decompressedData))
         {
-            for (int i = 0; i < tile.layers().size(); i++)
+            for (int i = 0; i < tile->layers().size(); i++)
             {
-                const mapnik::vector::tile_layer &layer = tile.layers().Get(i);
+                const mapnik::vector::tile_layer &layer = tile->layers().Get(i);
 
                 // if we have specific layers, only load those.
                 if (!layers_to_include.empty())

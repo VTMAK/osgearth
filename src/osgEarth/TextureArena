@@ -6,12 +6,14 @@
 
 #include <osgEarth/Common>
 #include <osgEarth/GLUtils>
+#include <osgEarth/MaterialArena>
 #include <osgEarth/URI>
 #include <osg/Object>
 #include <osg/StateAttribute>
 #include <osg/buffered_value>
 #include <osg/Image>
 #include <queue>
+#include <mutex>
 #include <unordered_set>
 
 namespace osgEarth
@@ -100,6 +102,7 @@ namespace osgEarth
         {
             GLTexture::Ptr _gltexture;
             unsigned _imageModCount = 0u;
+            bool _compileFailed = false;
         };
         mutable osg::buffered_object<GLObjects> _globjects;
 
@@ -114,6 +117,15 @@ namespace osgEarth
     protected:
         Texture(GLenum target);
         Texture(osg::Texture*);
+        bool needsCompile_no_lock(const osg::State&) const;
+
+        //! Conservative source upload size including all image mip levels; locks the texture.
+        //! Render-target allocations have no source bytes and return zero.
+        std::size_t estimateUploadBytes() const;
+
+        // The ICO can compile a shared texture while an arena renders it.
+        // Protect GL object creation, residency, and release as one operation.
+        mutable std::mutex _glMutex;
         void* _host;
         friend class TextureArena;
     };
@@ -138,6 +150,39 @@ namespace osgEarth
 
         //! Construct an empty arena.
         TextureArena();
+
+        //! Optional soft limits for each render-time upload batch; zero disables the corresponding limit.
+        //! All limits default to zero: each apply processes the entire pending batch.
+        //! At least one pending texture can be attempted, even when it exceeds the byte/time limit.
+        struct UploadBudget
+        {
+            double milliseconds = 0.0;
+            std::size_t bytes = 0u;
+            unsigned textures = 0u;
+        };
+
+        //! Last processed batch in this GL share group, plus the current unique pending count.
+        struct UploadStats
+        {
+            unsigned attempted = 0u;
+            unsigned compiled = 0u;
+            std::size_t bytes = 0u; // conservative source bytes, including failed attempts
+            std::size_t pending = 0u;
+            double milliseconds = 0.0; // batch CPU time, excluding table uploads and residency sweep
+        };
+
+        //! Set per-arena, per-frame render upload limits. Thread-safe; invalid times become unlimited.
+        //! A positive limit opts into budgeting; repeated passes/shared contexts then share one batch per frame.
+        //! With all limits zero, every apply processes pending work, including later passes in the same frame.
+        //! Without a FrameStamp, each apply gets a batch. Explicit compileGLObjects bypasses these limits.
+        void setUploadBudget(const UploadBudget& budget);
+        //! Thread-safe snapshot of the configured upload limits.
+        UploadBudget getUploadBudget() const;
+        //! Thread-safe snapshot of upload progress for state's GL share group.
+        UploadStats getUploadStats(const osg::State& state) const;
+
+        //! Material table sharing this arena's texture lifetime and GL handles.
+        MaterialArena* getMaterialArena() const;
 
         //! Whether to automatically release textures when they are no longer
         //! referenced anywhere outside of this arena. Default is false.
@@ -166,7 +211,7 @@ namespace osgEarth
         //! to allocate on the GPU.
         void setMaxTextureSize(unsigned pixels);
 
-        //! Adds a texture to the arena. On next apply() GL handles will allocate.
+        //! Adds a texture to the arena. Subsequent budgeted apply() calls allocate its GL handle.
         //! You only need to call this once for each texture.
         //! Returns the index of the texture handle
         int add(
@@ -205,29 +250,45 @@ namespace osgEarth
 
     private:
         //! disable copy
-        TextureArena(const TextureArena&, const osg::CopyOp&) { }
+        TextureArena(const TextureArena&, const osg::CopyOp&) : TextureArena() { }
 
         void releaseGLObjects(osg::State*, bool force) const;
+
+        //! Apply arena state with optional upload limits; owns the arena lock throughout the batch.
+        void applyInternal(osg::State&, bool budgeted) const;
 
         // GL objects that can be shared across contexts
         struct GLObjects : public BindlessShareableGLObjects
         {
             bool _inUse = false;
             bool _handleBufferDirty = true;
-            int _lastAppliedFrame = -1;
+            unsigned _lastAppliedFrame = 0u;
+            bool _hasAppliedFrame = false;
 
             std::queue<int> _toCompile;
+            std::unordered_set<int> _queued;
+            UploadStats _uploadStats;
+
+            //! Enqueue a slot at most once; caller must hold the arena mutex.
+            void queueCompile(int index) { if (_queued.insert(index).second) _toCompile.push(index); }
+            //! Reset pending work and membership together; caller must hold the arena mutex.
+            void clearCompileQueue() { _toCompile = std::queue<int>(); _queued.clear(); }
             TextureVector _toRemove;
             GLBuffer::Ptr _handleBuffer;
             std::vector<GLuint64> _handles;
+            std::uint64_t _handleRevision = 0;
+            std::unordered_map<const osg::GraphicsContext*, std::uint64_t> _residentRevisions;
         };
         mutable osg::buffered_object<GLObjects> _globjects;
+
+        osg::ref_ptr<MaterialArena> _materials;
 
         mutable TextureVector _textures;
         mutable std::unordered_map<Texture*, unsigned> _textureIndices;
         mutable std::unordered_set<unsigned> _dynamicTextures;
 
         bool _autoRelease = false;
+        UploadBudget _uploadBudget;
         unsigned _bindingPoint = 1u;
         bool _useUBO = false;
         mutable int _releasePtr = 0;

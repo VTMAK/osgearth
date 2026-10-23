@@ -1,0 +1,94 @@
+<Map name="Copernicus Land Cover">
+
+    <TMSImage name="Copernicus LC100">
+        <url>https://readymap.org/readymap/tiles/1.0.0/141/</url>
+
+        <!-- Setting 'coverage' preserves the original class IDs with no filtering/interpolation -->
+        <coverage>true</coverage>
+        
+        <morph_imagery>false</morph_imagery>
+
+        <shader>
+          <![CDATA[
+            #pragma vp_function colorize_landcover, fragment
+
+            vec3 lc_rgb(int r, int g, int b)
+            {
+                return vec3(r, g, b) / 255.0;
+            }
+
+            void colorize_landcover(inout vec4 color)
+            {
+                // Decode class ID from 8-bit grayscale
+                int cls = int(round(color.r * 255.0));
+
+                // Default: unknown/unrecognized class
+                vec3 rgb = lc_rgb(255, 0, 255);
+
+                // No input data
+                if      (cls == 0)
+                    rgb = lc_rgb(40, 40, 40);
+
+                // Closed forest
+                else if (cls == 111) // Evergreen needleleaf
+                    rgb = lc_rgb(88, 72, 31);
+                else if (cls == 112) // Evergreen broadleaf
+                    rgb = lc_rgb(0, 153, 0);
+                else if (cls == 113) // Deciduous needleleaf
+                    rgb = lc_rgb(112, 102, 62);
+                else if (cls == 114) // Deciduous broadleaf
+                    rgb = lc_rgb(0, 204, 0);
+                else if (cls == 115) // Mixed
+                    rgb = lc_rgb(78, 117, 31);
+                else if (cls == 116) // Unknown
+                    rgb = lc_rgb(0, 120, 0);
+
+                // Open forest
+                else if (cls == 121) // Evergreen needleleaf
+                    rgb = lc_rgb(102, 96, 0);
+                else if (cls == 122) // Evergreen broadleaf
+                    rgb = lc_rgb(141, 180, 0);
+                else if (cls == 123) // Deciduous needleleaf
+                    rgb = lc_rgb(141, 116, 0);
+                else if (cls == 124) // Deciduous broadleaf
+                    rgb = lc_rgb(160, 220, 0);
+                else if (cls == 125) // Mixed
+                    rgb = lc_rgb(146, 153, 0);
+                else if (cls == 126) // Unknown
+                    rgb = lc_rgb(100, 140, 0);
+
+                // Other vegetation
+                else if (cls == 20)  // Shrubs
+                    rgb = lc_rgb(255, 187, 34);
+                else if (cls == 30)  // Herbaceous vegetation
+                    rgb = lc_rgb(255, 255, 76);
+                else if (cls == 90)  // Herbaceous wetland
+                    rgb = lc_rgb(0, 150, 160);
+                else if (cls == 100) // Moss and lichen
+                    rgb = lc_rgb(250, 230, 160);
+
+                // Other land cover
+                else if (cls == 60)  // Bare/sparse vegetation
+                    rgb = lc_rgb(180, 180, 180);
+                else if (cls == 40)  // Cropland
+                    rgb = lc_rgb(240, 150, 255);
+                else if (cls == 50)  // Urban/built-up
+                    rgb = lc_rgb(250, 0, 0);
+                else if (cls == 70)  // Snow and ice
+                    rgb = lc_rgb(240, 240, 240);
+                else if (cls == 80)  // Permanent water
+                    rgb = lc_rgb(0, 50, 200);
+                else if (cls == 200) // Open sea
+                    rgb = lc_rgb(0, 0, 128);
+
+                // Missing value (as specified by metadata)
+                if (cls == 255)
+                    color.a = 0.0;
+
+                color.rgb = rgb;
+            }
+          ]]>
+        </shader>
+    </TMSImage>
+
+</Map>

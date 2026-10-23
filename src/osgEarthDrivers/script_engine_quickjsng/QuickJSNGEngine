@@ -64,20 +64,19 @@ namespace osgEarth { namespace Drivers { namespace QJS
         // per-thread context.
         struct Context
         {
-            Context() = default;
+            Context();
             ~Context();
             void initialize(const ScriptEngineOptions&);
             std::string _functionSource;
             JSRuntime* _runtime = nullptr;
             JSContext* _context = nullptr;
             JSValue _function;
-            JSValue _logFunction;
             JSValue _globalObj;
             JSValue _featureObj;
             JSValue _geometryObj;
             JSValue _propertiesObj;
             JSValue _typeStrings[64];
-            JSAtom _atom_id, _atom_type, _atom_properties;
+            JSAtom _atom_id, _atom_type;
             std::unordered_map<std::string, JSAtom> _propertyAtoms;
             //std::unordered_map<std::string, JSValue> _stringValues;
             std::unordered_map<std::string, JSValue> _functions;

@@ -42,6 +42,19 @@ namespace
 
 //............................................................................
 
+QuickJSNGEngine::Context::Context() :
+    _function(JS_UNDEFINED),
+    _globalObj(JS_UNDEFINED),
+    _featureObj(JS_UNDEFINED),
+    _geometryObj(JS_UNDEFINED),
+    _propertiesObj(JS_UNDEFINED),
+    _atom_id(JS_ATOM_NULL),
+    _atom_type(JS_ATOM_NULL)
+{
+    for (auto& value : _typeStrings)
+        value = JS_UNDEFINED;
+}
+
 void
 QuickJSNGEngine::Context::initialize(const ScriptEngineOptions& options)
 {
@@ -70,6 +83,8 @@ QuickJSNGEngine::Context::initialize(const ScriptEngineOptions& options)
                 JS_FreeCString(_context, msg);
                 JS_FreeValue(_context, ex);
             }
+
+            JS_FreeValue(_context, v);
         }
 
         // Log function:
@@ -79,8 +94,29 @@ QuickJSNGEngine::Context::initialize(const ScriptEngineOptions& options)
 
 QuickJSNGEngine::Context::~Context()
 {
-    if ( _context )
+    if (_context)
+    {
+        JS_FreeValue(_context, _function);
+
+        for (auto& function : _functions)
+            JS_FreeValue(_context, function.second);
+
+        JS_FreeValue(_context, _globalObj);
+        JS_FreeValue(_context, _featureObj);
+        JS_FreeValue(_context, _geometryObj);
+        JS_FreeValue(_context, _propertiesObj);
+
+        for (auto& value : _typeStrings)
+            JS_FreeValue(_context, value);
+
+        JS_FreeAtom(_context, _atom_id);
+        JS_FreeAtom(_context, _atom_type);
+
+        for (auto& atom : _propertyAtoms)
+            JS_FreeAtom(_context, atom.second);
+
         JS_FreeContext(_context);
+    }
 
     if (_runtime)
         JS_FreeRuntime(_runtime);

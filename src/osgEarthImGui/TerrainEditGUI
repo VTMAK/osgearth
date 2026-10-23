@@ -14,6 +14,7 @@
 #include <osgEarth/SDF>
 #include <osgEarth/FeatureNode>
 #include <osgEarth/FeatureRasterizer>
+#include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
 
 namespace osgEarth
@@ -34,6 +35,7 @@ namespace osgEarth
                 float lifemapMix,
                 GeoExtent& out_extent,
                 osg::ref_ptr<osg::Image>& out_elevation,
+                osg::ref_ptr<osg::Image>& out_image,
                 osg::ref_ptr<osg::Image>& out_lifemap,
                 osg::ref_ptr<osg::Image>& out_landcover)
             {
@@ -61,6 +63,33 @@ namespace osgEarth
                         writeElevation(value, iter);
                     }
                 );
+
+                out_image = URI("https://readymap.org/readymap/filemanager/download/public/textures/crater.png").getImage();
+                if (!out_image.valid())
+                {
+                    OE_WARN << "Failed to load crater texture image" << std::endl;
+                }
+                else
+                {
+                    out_image = ImageUtils::convertToRGBA8(out_image.get());
+
+                    ImageUtils::PixelReader readImage(out_image.get());
+                    ImageUtils::PixelWriter writeImage(out_image.get());
+
+                    writeImage.forEachPixel([&](auto& iter)
+                        {
+                            readImage(value, iter);
+
+                            float a = 2.0f * (iter.u() - 0.5f);
+                            float b = 2.0f * (iter.v() - 0.5f);
+                            float d = clamp(static_cast<float>(sqrt((a * a) + (b * b))), 0.0f, 1.0f);
+
+                            float mask = clamp((1.0f - d) / 0.15f, 0.0f, 1.0f);
+                            value.a() *= mask;
+
+                            writeImage(value, iter);
+                        });
+                }
 
                 out_lifemap = new osg::Image();
                 out_lifemap->allocateImage(
@@ -193,6 +222,7 @@ namespace osgEarth
             float _lifemapMix = 1.0f;
             osg::observer_ptr<MapNode> _mapNode;
             osg::ref_ptr<DecalElevationLayer> _elevDecal;
+            osg::ref_ptr<DecalImageLayer> _imageDecal;
             osg::ref_ptr<DecalImageLayer> _lifemapDecal;
             osg::ref_ptr<DecalImageLayer> _landcoverDecal;
             std::vector<const Layer*> _layersToRefresh;
@@ -277,6 +307,8 @@ namespace osgEarth
                      ex = _elevDecal->getDecalExtent(_undoStack.top());
                     _elevDecal->removeDecal(_undoStack.top());
                 }
+                if (_imageDecal.valid())
+                    _imageDecal->removeDecal(_undoStack.top());
                 if (_lifemapDecal.valid())
                     _lifemapDecal->removeDecal(_undoStack.top());
                 if (_landcoverDecal.valid())
@@ -290,6 +322,8 @@ namespace osgEarth
             {
                 if (_elevDecal.valid())
                     _elevDecal->clearDecals();
+                if (_imageDecal.valid())
+                    _imageDecal->clearDecals();
                 if (_lifemapDecal.valid())
                     _lifemapDecal->clearDecals();
                 if (_landcoverDecal.valid())
@@ -301,6 +335,7 @@ namespace osgEarth
             {
                 GeoExtent extent;
                 osg::ref_ptr<osg::Image> elevation;
+                osg::ref_ptr<osg::Image> image;
                 osg::ref_ptr<osg::Image> lifemap;
                 osg::ref_ptr<osg::Image> landcover;
 
@@ -311,14 +346,16 @@ namespace osgEarth
                     _lifemapMix,
                     extent,
                     elevation,
+                    image,
                     lifemap,
                     landcover);
 
-                addDecals(elevation, lifemap, landcover, extent);
+                addDecals(elevation, image, lifemap, landcover, extent);
             }
 
             void addDecals(
                 osg::ref_ptr<osg::Image>& elevation,
+                osg::ref_ptr<osg::Image>& image,
                 osg::ref_ptr<osg::Image>& lifemap,
                 osg::ref_ptr<osg::Image>& landcover,
                 const GeoExtent& extent)
@@ -333,6 +370,11 @@ namespace osgEarth
                 if (_elevDecal.valid() && elevation.valid())
                 {
                     _elevDecal->addDecal(id, extent, elevation.get(), _height, 0.0f, GL_RED);
+                }
+
+                if (_imageDecal.valid() && image.valid())
+                {
+                    _imageDecal->addDecal(id, extent, image.get());
                 }
 
                 if (_lifemapDecal.valid() && lifemap.valid())
@@ -439,7 +481,8 @@ namespace osgEarth
                         landcover,
                         extent);
 
-                    addDecals(elevation, lifemap, landcover, extent);
+                    osg::ref_ptr<osg::Image> image;
+                    addDecals(elevation, image, lifemap, landcover, extent);
                 }
 
                 cancelDrawing();
@@ -466,6 +509,17 @@ namespace osgEarth
                 _elevDecal->setMinLevel(_minLevel);
                 _mapNode->getMap()->addLayer(_elevDecal.get());
                 _layersToRefresh.push_back(_elevDecal.get());
+
+                _imageDecal = new DecalImageLayer();
+                _imageDecal->setName("Image Decals");
+                _imageDecal->setMinLevel(_minLevel);
+                _imageDecal->setBlendFuncs(
+                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                    GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                _mapNode->getMap()->addLayer(_imageDecal.get());
+                _layersToRefresh.push_back(_imageDecal.get());
 
                 _lifemapDecal = new DecalImageLayer();
                 _lifemapDecal->setName("LifeMap Decals");

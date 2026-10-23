@@ -24,6 +24,10 @@ namespace osgEarth
     const double MERC_MAXY =  20037508.34278925;
     const double MERC_WIDTH = MERC_MAXX - MERC_MINX;
     const double MERC_HEIGHT = MERC_MAXY - MERC_MINY;
+    const double MERC_MIN_LONGITUDE = -180.0;
+    const double MERC_MAX_LONGITUDE =  180.0;
+    const double MERC_MIN_LATITUDE = -85.0511287798066;
+    const double MERC_MAX_LATITUDE =  85.0511287798066;
 
     /** 
      * SpatialReference holds information describing the reference ellipsoid/datum

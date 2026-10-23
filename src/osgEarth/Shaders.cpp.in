@@ -6,6 +6,10 @@ namespace osgEarth { namespace Util
 {
     Shaders::Shaders()
     {
+        PBRMaterial = "PBRMaterial.glsl";
+        _sources[PBRMaterial] = @PBRMaterial.glsl@;
+        PBRTexture = "PBRTexture.glsl";
+        _sources[PBRTexture] = @PBRTexture.glsl@;
         // Cascade Draping
         CascadeDraping = "CascadeDraping.glsl";
         _sources[CascadeDraping] = @CascadeDraping.glsl@;
@@ -17,6 +21,13 @@ namespace osgEarth { namespace Util
         // Chonk GPU Culling
         ChonkCulling = "Chonk.Culling.glsl";
         _sources[ChonkCulling] = @Chonk.Culling.glsl@;
+
+        // Chonk occlusion-culling depth pyramid
+        ChonkScreenSize = "Chonk.ScreenSize.glsl";
+        _sources[ChonkScreenSize] = @Chonk.ScreenSize.glsl@;
+
+        ChonkHiZ = "Chonk.HiZ.glsl";
+        _sources[ChonkHiZ] = @Chonk.HiZ.glsl@;
 
         // Decaling headers
         Decals_Headers = "Decals.h.glsl";
@@ -113,6 +124,7 @@ namespace osgEarth { namespace Util
 
         PBR = "PBR.glsl";
         _sources[PBR] = @PBR.glsl@;
+
 
 		MetadataNode = "MetadataNode.glsl";
 		_sources[MetadataNode] = @MetadataNode.glsl@;

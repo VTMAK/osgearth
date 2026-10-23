@@ -996,14 +996,16 @@ FlatteningLayer::createFromFeatures(const TileKey& key, ProgressCallback* progre
                 feature->transform(workingSRS);
             }
 
+            // The integration algorithms measure distances in workingSRS coordinates,
+            // so convert the configured meter widths to that SRS's units as well.
             lineWidth = SpatialReference::transformUnits(
                 Distance(lineWidth, Units::METERS),
-                featureSRS,
+                workingSRS,
                 geoExtent.getCentroid().y());
 
             bufferWidth = SpatialReference::transformUnits(
                 Distance(bufferWidth, Units::METERS),
-                featureSRS,
+                workingSRS,
                 geoExtent.getCentroid().y());
 
             //TODO: optimization: test the geometry bounds against the expanded tilekey bounds

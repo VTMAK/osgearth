@@ -5,6 +5,7 @@
 
 #include <osgEarth/catch.hpp>
 #include <cmath>
+#include <iomanip>
 #include <osgEarth/SpatialReference>
 #include <osgEarth/Profile>
 
@@ -22,6 +23,15 @@ namespace
     bool near(double a, double b, double eps = 1e-3)
     {
         return std::abs(a - b) <= eps;
+    }
+
+    void require_vec_near(const osg::Vec3d& actual, const osg::Vec3d& expected, double eps = 1e-3)
+    {
+        INFO("actual = (" << std::setprecision(17) << actual.x() << ", " << actual.y() << ", " << actual.z() << ")");
+        INFO("expected = (" << std::setprecision(17) << expected.x() << ", " << expected.y() << ", " << expected.z() << ")");
+        REQUIRE(near(actual.x(), expected.x(), eps));
+        REQUIRE(near(actual.y(), expected.y(), eps));
+        REQUIRE(near(actual.z(), expected.z(), eps));
     }
                  
 }
@@ -104,6 +114,7 @@ TEST_CASE("Plate Carree SpatialReferences can be created") {
     REQUIRE(!plateCarre->isMercator());
     REQUIRE(!plateCarre->isGeodetic());
     REQUIRE(plateCarre->isProjected());
+    REQUIRE(plateCarre->getGeographicSRS()->isHorizEquivalentTo(SpatialReference::get("wgs84")));
 }
 
 TEST_CASE("PC/WGS84 transform") {
@@ -112,21 +123,34 @@ TEST_CASE("PC/WGS84 transform") {
 
     double pcMinX = -20037508.3427892476320267;
     double pcMaxX = 20037508.3427892476320267;
-    double pcMinY = -10018754.1713946219533682;
-    double pcMaxY = 10018754.1713946219533682;
+    double pcMinY = -10001965.729313634;
+    double pcMaxY = 10001965.729313634;
 
     osg::Vec3d output;
     REQUIRE(wgs84->transform(osg::Vec3d(-180, -90, 0), pceqc, output));
-    REQUIRE(vec_eq(output, osg::Vec3d(pcMinX, pcMinY, 0)));
+    require_vec_near(output, osg::Vec3d(pcMinX, pcMinY, 0));
 
     REQUIRE(wgs84->transform(osg::Vec3d(-180, +90, 0), pceqc, output));
-    REQUIRE(vec_eq(output, osg::Vec3d(pcMinX, pcMaxY, 0)));
+    require_vec_near(output, osg::Vec3d(pcMinX, pcMaxY, 0));
 
     REQUIRE(wgs84->transform(osg::Vec3d(180, -90, 0), pceqc, output));
-    REQUIRE(vec_eq(output, osg::Vec3d(pcMaxX, pcMinY, 0)));
+    require_vec_near(output, osg::Vec3d(pcMaxX, pcMinY, 0));
 
     REQUIRE(wgs84->transform(osg::Vec3d(180, 90, 0), pceqc, output));
-    REQUIRE(vec_eq(output, osg::Vec3d(pcMaxX, pcMaxY, 0)));
+    require_vec_near(output, osg::Vec3d(pcMaxX, pcMaxY, 0));
+
+    REQUIRE(pceqc->transform(osg::Vec3d(pcMinX, pcMinY, 0), wgs84, output));
+    require_vec_near(output, osg::Vec3d(-180, -90, 0));
+
+    REQUIRE(pceqc->transform(osg::Vec3d(pcMaxX, pcMaxY, 0), wgs84, output));
+    require_vec_near(output, osg::Vec3d(180, 90, 0));
+
+    const osg::Vec3d midLatitudeWGS84(2.0, 47.0, 0.0);
+    const osg::Vec3d midLatitudePC(222638.98158654713, 5207247.008956752, 0.0);
+    REQUIRE(wgs84->transform(midLatitudeWGS84, pceqc, output));
+    require_vec_near(output, midLatitudePC);
+    REQUIRE(pceqc->transform(midLatitudePC, wgs84, output));
+    require_vec_near(output, midLatitudeWGS84);
 }
 
 TEST_CASE("SphMercator/WGS84 transform") {

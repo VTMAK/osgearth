@@ -17,11 +17,11 @@
 #include <osgViewer/GraphicsWindow>
 #include <osg/Texture2D>
 #include <osg/BindImageTexture>
+#include <osg/LineStipple>
 
 #ifdef OSG_GL_FIXED_FUNCTION_AVAILABLE
 #include <osg/LineWidth>
 #include <osg/Point>
-#include <osg/LineStipple>
 #endif
 
 using namespace osgEarth;
@@ -31,6 +31,11 @@ using namespace osgEarth;
 #define USE_RECYCLING
 
 #define OE_DEVEL OE_DEBUG
+
+#ifndef GL_TEXTURE_BASE_LEVEL
+#define GL_TEXTURE_BASE_LEVEL 0x813C
+#define GL_TEXTURE_MAX_LEVEL 0x813D
+#endif
 
 #ifndef GL_LINE_SMOOTH
 #define GL_LINE_SMOOTH 0x0B20
@@ -87,8 +92,11 @@ namespace
         void* (GL_APIENTRY* MapNamedBufferRange)(GLuint name, GLintptr offset, GLsizeiptr length, GLbitfield access);
         void (GL_APIENTRY* UnmapNamedBuffer)(GLuint name);
 
-        void (GL_APIENTRY* CopyBufferSubData)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizei size);
-        void (GL_APIENTRY* CopyNamedBufferSubData)(GLuint readName, GLuint writeName, GLintptr readOffset, GLintptr writeOffset, GLsizei size);
+        // Buffer-copy sizes are pointer-sized; GLsizei corrupts the fifth argument on 64-bit Windows.
+        void (GL_APIENTRY* CopyBufferSubData)(GLenum readTarget, GLenum writeTarget,
+            GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
+        void (GL_APIENTRY* CopyNamedBufferSubData)(GLuint readName, GLuint writeName,
+            GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
         void (GL_APIENTRY* GetNamedBufferSubData)(GLuint name, GLintptr offset, GLsizei size, void*);
 
         bool useNamedBuffers;
@@ -506,6 +514,11 @@ GL3RealizeOperation::operator()(osg::Object* object)
         state->setModeValidity(GL_LINE_STIPPLE, false);
         state->setModeValidity(GL_LINE_SMOOTH, false);
 #endif
+
+        if (!GLUtils::isGLDebuggingEnabled())
+        {
+            state->setCheckForGLErrors(osg::State::NEVER_CHECK_GL_ERRORS);
+        }
     }
 
     CustomRealizeOperation::operator()(object);
@@ -779,11 +792,12 @@ GLObject::GLObject(GLenum ns, osg::State& state) :
 void
 GLObject::debugLabel(const std::string& category, const std::string& uniqueid)
 {
+    // Keep the label for error reports even without a GL debug context.
+    _category = category;
+    _uid = uniqueid;
+
     if (GLUtils::isGLDebuggingEnabled())
     {
-        _category = category;
-        _uid = uniqueid;
-
         OE_SOFT_ASSERT_AND_RETURN(valid(), void());
         ext()->debugObjectLabel(ns(), name(), label());
     }
@@ -1021,14 +1035,14 @@ GLBuffer::bufferData(GLsizei datasize, const GLvoid* data, GLbitfield flags) con
         if (alloc_size > _alloc_size)
             gl.NamedBufferData(name(), alloc_size, nullptr, flags);
 
-        gl.NamedBufferSubData(name(), 0, datasize, data);
+        if (data) gl.NamedBufferSubData(name(), 0, datasize, data);
     }
     else
     {
         if (alloc_size > _alloc_size)
             ext()->glBufferData(_target, alloc_size, nullptr, flags);
 
-        ext()->glBufferSubData(_target, 0, datasize, data);
+        if (data) ext()->glBufferSubData(_target, 0, datasize, data);
     }
 
     _alloc_size = alloc_size;
@@ -1505,7 +1519,11 @@ GLTexture::bind(osg::State& state)
     // Inform OSG of the state change
     state.haveAppliedTextureAttribute(state.getActiveTextureUnit(), osg::StateAttribute::TEXTURE);
 
-    // account for the FFP version of the mode
+#ifdef OSG_GL_FIXED_FUNCTION_AVAILABLE
+    // Account for the FFP version of the mode. Without fixed function the
+    // texture-target modes do not exist; telling OSG one was applied makes
+    // it restore that mode on the next State::apply, which a core profile
+    // rejects with GL_INVALID_ENUM.
     GLenum fixed_function_target = _target;
     if (_target == GL_TEXTURE_2D_ARRAY)
     {
@@ -1513,10 +1531,17 @@ GLTexture::bind(osg::State& state)
     }
 
     state.haveAppliedTextureMode(state.getActiveTextureUnit(), fixed_function_target);
+#endif
 }
 
 GLuint64
 GLTexture::handle(osg::State& state)
+{
+    return handle(state, true);
+}
+
+GLuint64
+GLTexture::handle(osg::State& state, bool reportFailure)
 {
     if (_handle == 0)
     {
@@ -1524,7 +1549,44 @@ GLTexture::handle(osg::State& state)
         _handle = ext()->glGetTextureHandle(_name);
     }
 
-    OE_SOFT_ASSERT(_handle != 0, "glGetTextureHandle failed");
+    if (_handle == 0)
+    {
+        // Errors pending here may originate in storage allocation or parameter
+        // setup as well as glGetTextureHandle. Only query on the failure path.
+        std::stringstream errors;
+        for (unsigned i = 0; i < 16; ++i)
+        {
+            const GLenum error = glGetError();
+            if (error == GL_NO_ERROR)
+                break;
+            errors << " 0x" << std::hex << error;
+        }
+        if (!reportFailure)
+            return 0;
+
+        GLint width = 0, height = 0, depth = 0, format = 0;
+        GLint baseLevel = 0, maxLevel = 0, minFilter = 0, magFilter = 0;
+        if (_target == GL_TEXTURE_1D || _target == GL_TEXTURE_2D ||
+            _target == GL_TEXTURE_3D || _target == GL_TEXTURE_2D_ARRAY)
+        {
+            glGetTexParameteriv(_target, GL_TEXTURE_BASE_LEVEL, &baseLevel);
+            glGetTexParameteriv(_target, GL_TEXTURE_MAX_LEVEL, &maxLevel);
+            glGetTexParameteriv(_target, GL_TEXTURE_MIN_FILTER, &minFilter);
+            glGetTexParameteriv(_target, GL_TEXTURE_MAG_FILTER, &magFilter);
+            glGetTexLevelParameteriv(_target, baseLevel, GL_TEXTURE_WIDTH, &width);
+            glGetTexLevelParameteriv(_target, baseLevel, GL_TEXTURE_HEIGHT, &height);
+            glGetTexLevelParameteriv(_target, baseLevel, GL_TEXTURE_DEPTH, &depth);
+            glGetTexLevelParameteriv(_target, baseLevel, GL_TEXTURE_INTERNAL_FORMAT, &format);
+        }
+        OE_SOFT_ASSERT(_handle != 0, "glGetTextureHandle failed: " << label()
+            << " name=" << _name << " context=" << state.getContextID()
+            << " target=0x" << std::hex << _target << " format=0x" << format
+            << " minFilter=0x" << minFilter << " magFilter=0x" << magFilter << std::dec
+            << " size=" << width << "x" << height << "x" << depth
+            << " mipLevels=" << baseLevel << ".." << maxLevel
+            << " recycles=" << recycles()
+            << " pendingGLerrors=" << (errors.str().empty() ? "none" : errors.str()) << );
+    }
     return _handle;
 }
 
@@ -1541,7 +1603,9 @@ GLTexture::makeResident(const osg::State& state, bool toggle)
     
     if (resident != toggle)
     {
-        OE_SOFT_ASSERT_AND_RETURN(_handle != 0, void(), "makeResident() called on invalid handle: " + label() << );
+        OE_SOFT_ASSERT_AND_RETURN(_handle != 0, void(), "makeResident() called on invalid handle: " << label()
+            << " name=" << _name << " context=" << state.getContextID()
+            << " target=0x" << std::hex << _target << std::dec << " recycles=" << recycles() << );
 
         if (toggle == true)
             ext()->glMakeTextureHandleResident(_handle);
@@ -2007,6 +2071,70 @@ namespace
 {
     using ICO = osgUtil::IncrementalCompileOperation;
 
+    // OSG 3.6 geometry compilation binds new EBOs before binding its own VAO.
+    // This can overwrite the last rendered VAO's EBO without updating that
+    // drawable's VertexArrayState cache. Preserve the actual GL attachment,
+    // since State::getCurrentVertexArrayState() usually points to the global
+    // VAS after Drawable::draw returns, rather than the still-bound VAO.
+    struct ScopedCompileVertexArrayBinding
+    {
+        osg::State& _state;
+        osg::GLExtensions* _ext;
+        GLint _vao = 0;
+        GLint _ebo = 0;
+
+        //! Snapshot the render VAO's EBO on its owning, current GL context.
+        explicit ScopedCompileVertexArrayBinding(osg::State& state) :
+            _state(state),
+            _ext(state.get<osg::GLExtensions>())
+        {
+            constexpr GLenum vertexArrayBinding = 0x85B5; // GL_VERTEX_ARRAY_BINDING
+            glGetIntegerv(vertexArrayBinding, &_vao);
+            if (_vao != 0)
+                glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING_ARB, &_ebo);
+        }
+
+        //! Restore the attachment even if compilation throws; do not rebind deleted objects.
+        ~ScopedCompileVertexArrayBinding()
+        {
+            if (_vao != 0 && _ext->glIsVertexArray(_vao))
+            {
+                // Bind unconditionally: custom compile callbacks can bypass OSG's cache.
+                _ext->glBindVertexArray(_vao);
+                _state.setCurrentVertexArrayObject(_vao);
+                _ext->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER_ARB,
+                    _ebo != 0 && _ext->glIsBuffer(_ebo) ? _ebo : 0);
+            }
+            else
+            {
+                _ext->glBindVertexArray(0);
+                _state.setCurrentVertexArrayObject(0);
+            }
+
+            // Raw buffer uploads also bypass the current VAS's binding cache.
+            _state.getCurrentVertexArrayState()->resetBufferObjectPointers();
+        }
+    };
+
+    struct VertexArraySafeICO : public ICO
+    {
+        //! Run normal ICO scheduling with the render VAO's EBO protected per invocation.
+        void operator()(osg::GraphicsContext* context) override
+        {
+            osg::State* state = context->getState();
+            osg::GLExtensions* ext = state->get<osg::GLExtensions>();
+            if (ext->glBindVertexArray && ext->glIsVertexArray && ext->glIsBuffer)
+            {
+                ScopedCompileVertexArrayBinding restore(*state);
+                ICO::operator()(context);
+            }
+            else
+            {
+                ICO::operator()(context);
+            }
+        }
+    };
+
     struct ICOCallback : public ICO::CompileCompletedCallback
     {
         jobs::promise<osg::ref_ptr<osg::Node>> _promise;
@@ -2030,6 +2158,12 @@ namespace
     };
 
     static osg::ref_ptr<osg::DummyObject> s_icoMarker = new osg::DummyObject();
+}
+
+osgUtil::IncrementalCompileOperation*
+GLUtils::createIncrementalCompileOperation()
+{
+    return new VertexArraySafeICO();
 }
 
 std::atomic_int GLObjectsCompiler::_jobsActive;

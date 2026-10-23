@@ -50,6 +50,10 @@
 #include <osgEarth/MBTiles>
 #endif
 
+#ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
+#include <osgEarthImGui/PrestigeGrimeLayerGUI>
+#endif
+
 #ifdef OSGEARTH_HAVE_PROCEDURAL_NODEKIT
 #include <osgEarthProcedural/LifeMapLayer>
 #include <osgEarthProcedural/TextureSplattingLayer>
@@ -859,6 +863,15 @@ namespace osgEarth
                                 imageLayer->setColorBlending(modulate ? BLEND_MODULATE : BLEND_INTERPOLATE);
                             }
                         }
+
+#ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
+                        auto grimeLayer = dynamic_cast<osgEarthPrestige::GrimeLayer*>(layer);
+                        if (grimeLayer)
+                        {
+                            osgEarthPrestige::GrimeLayerGUI::drawControls(grimeLayer);
+                        }
+
+#endif
 
 #ifdef OSGEARTH_HAVE_CESIUM_NODEKIT
                         auto cesiumNativeLayer = dynamic_cast<osgEarth::Cesium::CesiumNative3DTilesLayer*>(layer);

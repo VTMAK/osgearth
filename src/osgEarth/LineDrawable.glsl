@@ -79,10 +79,29 @@ void oe_LineDrawable_VS_CLIP(inout vec4 currClip)
     vec4 prevClip = gl_ProjectionMatrix * oe_LineDrawable_prevView;
     vec4 nextClip = gl_ProjectionMatrix * oe_LineDrawable_nextView;
 
-    // Transform all points into pixel space
-    vec2 prevPixel = ((prevClip.xy/prevClip.w)+1.0) * 0.5*oe_Camera.xy;
+    // Prevent perspective flips when a line segment crosses the camera's near plane.
+    // If an adjacent vertex is behind the camera (w <= 0) while the current vertex
+    // is in front (w > 0), the perspective divide (xy / w) will project the adjacent
+    // pixel to the wrong side of the screen. This invalidates the 2D screen-space
+    // direction vector needed for line extrusion and stippling.
+    // We manually clip the segment against a near-plane approximation (w = 1e-4)
+    // to find a safe clip-space coordinate that remains in front of the camera.
+    vec4 safePrevClip = prevClip;
+    if (safePrevClip.w <= 1e-4 && currClip.w > 1e-4) {
+        float t = (1e-4 - currClip.w) / (safePrevClip.w - currClip.w);
+        safePrevClip = mix(currClip, safePrevClip, t);
+    }
+
+    vec4 safeNextClip = nextClip;
+    if (safeNextClip.w <= 1e-4 && currClip.w > 1e-4) {
+        float t = (1e-4 - currClip.w) / (safeNextClip.w - currClip.w);
+        safeNextClip = mix(currClip, safeNextClip, t);
+    }
+
+    // Transform all points into pixel space using the clipped coordinates
+    vec2 prevPixel = ((safePrevClip.xy/safePrevClip.w)+1.0) * 0.5*oe_Camera.xy;
     vec2 currPixel = ((currClip.xy/currClip.w)+1.0) * 0.5*oe_Camera.xy;
-    vec2 nextPixel = ((nextClip.xy/nextClip.w)+1.0) * 0.5*oe_Camera.xy;
+    vec2 nextPixel = ((safeNextClip.xy/safeNextClip.w)+1.0) * 0.5*oe_Camera.xy;
 
 #ifdef OE_LINE_SMOOTH
     float thickness = floor(oe_GL_LineWidth + 1.0) * oe_dpr;
@@ -176,7 +195,9 @@ void oe_LineDrawable_VS_CLIP(inout vec4 currClip)
         // calculate the rotation angle that will project the
         // fragment coord onto the X-axis for stipple pattern sampling.
         float way = sign(cross(vec3(1, 0, 0), vec3(-stippleDir, 0)).z);
-        float angle = acos(dot(vec2(1, 0), -stippleDir)) * way;
+        // Avoid possible NaN from precision issues by clamping
+        float cosine = clamp(dot(vec2(1.0, 0.0), -stippleDir), -1.0, 1.0);
+        float angle = acos(cosine) * way;
 
         // quantize the rotation angle to mitigate precision problems
         // when connecting segments with slightly different vectors
@@ -199,6 +220,7 @@ void oe_LineDrawable_VS_CLIP(inout vec4 currClip)
 
 uniform int oe_GL_LineStippleFactor;
 uniform int oe_GL_LineStipplePattern;
+uniform float oe_dpr = 1.0;
 
 flat in vec2 oe_LineDrawable_rv;
 flat in int oe_LineDrawable_draw;
@@ -215,7 +237,7 @@ void oe_LineDrawable_Stippler_FS(inout vec4 color)
     if (oe_GL_LineStipplePattern != 0xffff)
     {
         // coordinate of the fragment, shifted to 0:
-        vec2 coord = (gl_FragCoord.xy - 0.5);
+        vec2 coord = (gl_FragCoord.xy - 0.5) / oe_dpr;
 
         // rotate the frag coord onto the X-axis so we can sample the 
         // stipple pattern:

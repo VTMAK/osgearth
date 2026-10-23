@@ -100,6 +100,17 @@ PagedNode2::traverse(osg::NodeVisitor& nv)
                 }
             }
 
+            if (_refinementFunction) inRange = _refinementFunction(nv, inRange);
+
+            if (_replacementFunction && _refinePolicy == REFINE_REPLACE)
+            {
+                // startLoad owns the load gate and snapshots state under the node mutex.
+                if (inRange && !_loadGate.load()) startLoad(&nv);
+                const bool retain = _replacementFunction(nv, isMerged() ? _payload.get() : nullptr, inRange);
+                if (inRange || retain) touch();
+                return;
+            }
+
             if (inRange)
             {
                 if (!_loadGate.load())
@@ -149,7 +160,7 @@ PagedNode2::traverseChildren(osg::NodeVisitor& nv)
 {
     if (_refinePolicy == REFINE_REPLACE && isMerged())
     {
-        _loaded.value()->accept(nv);
+        _payload->accept(nv);
     }
     else
     {
@@ -187,7 +198,7 @@ PagedNode2::isMerged() const
 }
 
 bool
-PagedNode2::merge(int revision, jobs::promise<bool> promise)
+PagedNode2::merge(int revision, jobs::promise<bool> promise, double referenceTime)
 {
     osg::ref_ptr<osg::Node> node;
     osg::ref_ptr<SceneGraphCallbacks> callbacks;
@@ -212,7 +223,8 @@ PagedNode2::merge(int revision, jobs::promise<bool> promise)
     _payload->addChild(node);
     this->addChild(_payload);
 
-    // Publish the merge before invoking application callbacks, which may unload this node.
+    // Publish transition timing with this payload before notifying callbacks, which may unload the node.
+    _mergeTime = referenceTime;
     promise.resolve(true);
     if (callbacks.valid())
         callbacks->firePostMergeNode(node.get());
@@ -552,7 +564,8 @@ PagingManager::update(osg::NodeVisitor* nv)
         {
             // Only nodes with nonempty bounds count towards the limit. Bounds are evaluated
             // here on the update thread, after the node has joined the live graph.
-            if (next->merge(entry._revision, entry._promise) && next->getBound().radius() > 0.0)
+            const double referenceTime = nv && nv->getFrameStamp() ? nv->getFrameStamp()->getReferenceTime() : 0.0;
+            if (next->merge(entry._revision, entry._promise, referenceTime) && next->getBound().radius() > 0.0)
                 ++count;
         }
         else

@@ -70,14 +70,59 @@ namespace
 		return std::find_first_of(it, end, PATH_SEPARATORS, PATH_SEPARATORS+PATH_SEPARATORS_LEN);
 	}
 
+    // Identifies XML namespace declarations, which XmlElement stores as Config children.
+    bool isNamespaceDeclaration(const std::string& key)
+    {
+        return key == "xmlns" || key.compare(0, 6, "xmlns:") == 0;
+    }
+
     // Config tags that we handle specially (versus just letting the plugin mechanism
     // take take of them)
     bool isReservedWord(const std::string& k)
     {
         return
             k == "options" ||
+            //k == "image" ||
+            //k == "elevation" ||
+            //k == "heightfield" ||
+            //k == "model" ||
+            //k == "mask" ||
             k == "external" ||
-            k == "libraries";
+            //k == "extensions" ||
+            k == "libraries" ||
+            isNamespaceDeclaration(k);
+    }
+
+    // Attempts to preload a nodekit; empty names are ignored and failures are nonfatal.
+    void preloadLibrary(std::string lib)
+    {
+        trim2(lib);
+        if (lib.empty())
+            return;
+
+        auto* registry = osgDB::Registry::instance();
+        std::string libName = registry->createLibraryNameForNodeKit(lib);
+        osgDB::Registry::LoadStatus status = registry->loadLibrary(libName);
+        if (status != osgDB::Registry::NOT_LOADED)
+        {
+            OE_DEBUG << LC << "Loaded nodekit library \"" << libName << "\" OK" << std::endl;
+        }
+        else
+        {
+            OE_WARN << LC << "Failed to load nodekit library \"" << libName << "\"" << std::endl;
+        }
+    }
+
+    // Preloads namespace values throughout the config before any layer or extension is constructed.
+    void preloadNamespaceLibs(const Config& conf)
+    {
+        for (const auto& child : conf.children())
+        {
+            if (isNamespaceDeclaration(child.key()))
+                preloadLibrary(child.value());
+            else
+                preloadNamespaceLibs(child);
+        }
     }
 
     /**
@@ -93,7 +138,8 @@ namespace
         {
             const std::string& name = i->key();
 
-            if ( isReservedWord(name) )
+            // Namespaced extensions load their nodekits through Extension::create.
+            if ( isReservedWord(name) || name.find(':') != std::string::npos )
                 continue;
 
             if (!name.empty())
@@ -121,20 +167,11 @@ namespace
                 .delim(";")
                 .tokenize(libraries.value());
 
-            for(auto& lib : libs)
+            for (StringVector::iterator itr = libs.begin(); itr != libs.end(); ++itr)
             {
-                std::string libName = osgDB::Registry::instance()->createLibraryNameForNodeKit(lib);
-                osgDB::Registry::LoadStatus status = osgDB::Registry::instance()->loadLibrary(libName);
-                if (status != osgDB::Registry::NOT_LOADED)
-                {
-                    OE_DEBUG << LC << "Loaded nodekit library \"" << libName << "\" OK" << std::endl;
-                }
-                else
-                {
-                    OE_WARN << LC << "Failed to nodekit library \"" << libName << "\"" << std::endl;
-                }
+                preloadLibrary(*itr);
             }
-        }
+        }        
     }
 
     /**
@@ -500,6 +537,9 @@ EarthFileSerializer2::deserialize(
     const osgDB::Options* readOptions) const
 {
     Config conf = const_conf;
+
+    // Namespace declarations can identify nodekits that register layer and extension factories.
+    preloadNamespaceLibs(conf);
 
     // First, pre-load any extension DLLs.
     preloadExtensionLibs(conf);

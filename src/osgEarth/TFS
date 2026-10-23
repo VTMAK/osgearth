@@ -69,7 +69,6 @@ namespace osgEarth { namespace TFS
         OE_OPTION(URI, url);
         OE_OPTION(std::string, format);
         OE_OPTION(bool, invertY);
-        OE_OPTION(bool, autoFallback);
         virtual Config getConfig() const;
     private:
         void fromConfig(const Config& conf);
@@ -105,12 +104,6 @@ namespace osgEarth
         //! Whether to flip the Y coordinate for tile access
         void setInvertY(const bool& value);
         const bool& getInvertY() const;
-
-        //! Whether a query for a TileKey higher than the max_level will
-        //! automatically fall back to a query at the max_level.
-        //! Default = false (an out-of bounds query returns nothing)
-        void setAutoFallbackToMaxLevel(const bool& value);
-        const bool& getAutoFallbackToMaxLevel() const;
 
     public: // Layer
 

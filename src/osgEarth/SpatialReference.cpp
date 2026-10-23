@@ -44,6 +44,99 @@ namespace
         }
     }
 
+    double meridionalArc(const Ellipsoid& ellipsoid, double latitude)
+    {
+        const double a = ellipsoid.getSemiMajorAxis();
+        const double f = (a - ellipsoid.getSemiMinorAxis()) / a;
+        const double e2 = f * (2.0 - f);
+        const double e4 = e2 * e2;
+        const double e6 = e4 * e2;
+        const double e8 = e4 * e4;
+
+        const double a0 = 1.0 - e2/4.0 - 3.0*e4/64.0 - 5.0*e6/256.0 - 175.0*e8/16384.0;
+        const double a2 = 3.0*e2/8.0 + 3.0*e4/32.0 + 45.0*e6/1024.0 + 105.0*e8/4096.0;
+        const double a4 = 15.0*e4/256.0 + 45.0*e6/1024.0 + 525.0*e8/16384.0;
+        const double a6 = 35.0*e6/3072.0 + 175.0*e8/12288.0;
+        const double a8 = 315.0*e8/131072.0;
+
+        return a * (
+            a0 * latitude -
+            a2 * std::sin(2.0 * latitude) +
+            a4 * std::sin(4.0 * latitude) -
+            a6 * std::sin(6.0 * latitude) +
+            a8 * std::sin(8.0 * latitude));
+    }
+
+    double inverseMeridionalArc(const Ellipsoid& ellipsoid, double northing)
+    {
+        const double halfPi = osg::PI * 0.5;
+        const double maxNorthing = meridionalArc(ellipsoid, halfPi);
+        const double clampedNorthing = clamp(northing, -maxNorthing, maxNorthing);
+
+        const double a = ellipsoid.getSemiMajorAxis();
+        const double f = (a - ellipsoid.getSemiMinorAxis()) / a;
+        const double e2 = f * (2.0 - f);
+        double latitude = clampedNorthing / a;
+
+        for (unsigned i = 0; i < 8; ++i)
+        {
+            const double sinLat = std::sin(latitude);
+            const double derivative = a * (1.0 - e2) /
+                std::pow(1.0 - e2 * sinLat * sinLat, 1.5);
+            const double delta = (meridionalArc(ellipsoid, latitude) - clampedNorthing) / derivative;
+            latitude -= delta;
+            if (std::abs(delta) < 1e-14)
+                break;
+        }
+
+        return clamp(latitude, -halfPi, halfPi);
+    }
+
+    class PlateCarreeSpatialReference : public SpatialReference
+    {
+    public:
+        PlateCarreeSpatialReference(const Key& key) :
+            SpatialReference(key)
+        {
+            _is_user_defined = true;
+            _domain = PROJECTED;
+            _name = "Plate Carree";
+            _units = Units::METERS;
+            _reportedLinearUnits = 1.0;
+
+            const double xmax = getEllipsoid().getSemiMajorAxis() * osg::PI;
+            const double ymax = meridionalArc(getEllipsoid(), osg::PI * 0.5);
+            _bounds.set(-xmax, -ymax, 0.0, xmax, ymax, 0.0);
+        }
+
+        const SpatialReference* preTransform(std::vector<osg::Vec3d>& points) const override
+        {
+            const double a = getEllipsoid().getSemiMajorAxis();
+            for (auto& point : points)
+            {
+                point.x() = osg::RadiansToDegrees(point.x() / a);
+                point.y() = osg::RadiansToDegrees(inverseMeridionalArc(getEllipsoid(), point.y()));
+            }
+            return getGeodeticSRS();
+        }
+
+        const SpatialReference* postTransform(std::vector<osg::Vec3d>& points) const override
+        {
+            const double a = getEllipsoid().getSemiMajorAxis();
+            for (auto& point : points)
+            {
+                point.x() = a * osg::DegreesToRadians(point.x());
+                point.y() = meridionalArc(
+                    getEllipsoid(),
+                    osg::DegreesToRadians(clamp(point.y(), -90.0, 90.0)));
+            }
+            return getGeodeticSRS();
+        }
+
+    protected:
+        ~PlateCarreeSpatialReference() override = default;
+    };
+
     // Make a MatrixTransform suitable for use with a Locator object based on the given extents.
     // Calling Locator::setTransformAsExtents doesn't work with OSG 2.6 due to the fact that the
     // _inverse member isn't updated properly.  Calling Locator::setTransform works correctly.
@@ -134,6 +227,8 @@ SpatialReference::createFromKey(const SpatialReference::Key& key)
 
     if (key.horizLower == "unified-cube")
         srs = new Contrib::CubeSpatialReference(key);
+    else if (key.horizLower == "plate-carre" || key.horizLower == "plate-carree")
+        srs = new PlateCarreeSpatialReference(key);
     else
         srs = new SpatialReference(key);
 
@@ -229,10 +324,11 @@ SpatialReference::SpatialReference(const Key& key) :
         key.horizLower == "plate-carre" || 
         key.horizLower == "plate-carree")
     {
-        // https://proj4.org/operations/projections/eqc.html
+        // PlateCarreeSpatialReference uses WGS84 geographic coordinates under
+        // the hood and applies the ellipsoidal projection in pre/postTransform.
         _setup.name = "Plate Carree";
         _setup.type = INIT_PROJ;
-        _setup.horiz = "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +units=m +ellps=WGS84 +datum=WGS84 +no_defs";
+        _setup.horiz = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs";
         _setup.vert = key.vertLower;
     }
 
@@ -1352,8 +1448,15 @@ SpatialReference::transformExtentToMBR(
     if (in_out_xmin > in_out_xmax || in_out_ymin > in_out_ymax)
         return false;
 
-    // Best-effort clamp to legal target bounds (generic).
-    clampExtentToLegalBounds(to_srs, in_out_xmin, in_out_ymin, in_out_xmax, in_out_ymax);
+    // Clamp geographic latitude when projecting to Mercator. Do not apply the
+    // generic legal-bounds clamp here: projected coordinates outside a CRS's
+    // nominal area of use can still be transformed, and clamping them changes
+    // the extent (including for otherwise lossless unit conversions).
+    if (isGeographic() && (to_srs->isMercator() || to_srs->isSphericalMercator()))
+    {
+        in_out_ymin = clamp(in_out_ymin, MERC_MIN_LATITUDE, MERC_MAX_LATITUDE);
+        in_out_ymax = clamp(in_out_ymax, MERC_MIN_LATITUDE, MERC_MAX_LATITUDE);
+    }
 
     if (in_out_xmin > in_out_xmax || in_out_ymin > in_out_ymax)
         return false;

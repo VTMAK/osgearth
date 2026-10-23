@@ -74,6 +74,8 @@ set(TARGET_GLSL
     CascadeDraping.glsl
     Chonk.glsl
     Chonk.Culling.glsl
+    Chonk.ScreenSize.glsl
+    Chonk.HiZ.glsl
     Decals.h.glsl
     Decals.glsl
     Decals.Culling.glsl
@@ -101,7 +103,9 @@ set(TARGET_GLSL
     SimpleOceanLayer.glsl
     RTTPicker.glsl
     WindLayer.CS.glsl
-    PBR.glsl)
+    PBR.glsl
+    PBRMaterial.glsl
+    PBRTexture.glsl)
 
 set(TARGET_IN
     BuildConfig.in    
@@ -155,6 +159,7 @@ SET(TARGET_H
     CentroidFilter
     CesiumIon
     Chonk
+    ChonkRenderPass
     CircleNode
     ClampableNode
     ClampCallback
@@ -206,6 +211,8 @@ SET(TARGET_H
     ExampleResources
     Export
     Expression
+    ExternalNode
+    InstancedExternalNode
     Extension
     ExtrudeGeometryFilter
     ExtrusionSymbol
@@ -340,6 +347,7 @@ SET(TARGET_H
     PagedNode
     PatchLayer
     PBRMaterial
+    MaterialTexturePreparation
     PhongLightingEffect
     Picker
     PlaceNode
@@ -389,6 +397,8 @@ SET(TARGET_H
     Shaders
     ShaderUtils
     Shadowing
+    ShadowingMath.h
+    ShadowingCache.h
     SimpleOceanLayer
     SimplePager
     SimplexNoise
@@ -429,6 +439,7 @@ SET(TARGET_H
     TextSymbol
     TextSymbolizer
     TextureArena
+    MaterialArena
     TextureBuffer
     TFS
     TFSPackager
@@ -461,6 +472,7 @@ SET(TARGET_H
     Utils
     UTMGraticule
     UTMLabelingEngine
+    VertexCompression
     VerticalDatum
     VideoLayer
     ViewFitter
@@ -525,6 +537,7 @@ set(TARGET_SRC
     CentroidFilter.cpp
     CesiumIon.cpp
     Chonk.cpp
+    ChonkRenderPass.cpp
     CircleNode.cpp
     ClampableNode.cpp
     ClampCallback.cpp
@@ -572,6 +585,8 @@ set(TARGET_SRC
     Ephemeris.cpp
     ExampleResources.cpp
     Expression.cpp
+    ExternalNode.cpp
+    InstancedExternalNode.cpp
     Extension.cpp
     ExtrudeGeometryFilter.cpp
     ExtrusionSymbol.cpp
@@ -596,6 +611,7 @@ set(TARGET_SRC
     Filter.cpp
     FilterContext.cpp
     FilteredFeatureSource.cpp
+    FlipVerticalPseudoLoader.cpp
     FlatteningLayer.cpp
     FractalElevationLayer.cpp
     FrameClock.cpp
@@ -694,6 +710,7 @@ set(TARGET_SRC
     PagedNode.cpp
     PatchLayer.cpp
     PBRMaterial.cpp
+    MaterialTexturePreparation.cpp
     PhongLightingEffect.cpp
     PlaceNode.cpp
     PMTiles.cpp
@@ -767,6 +784,7 @@ set(TARGET_SRC
     TextSymbol.cpp
     TextSymbolizer.cpp
     TextureArena.cpp
+    MaterialArena.cpp
     TextureBuffer.cpp
     TextureBufferSerializer.cpp
     TFS.cpp

@@ -277,7 +277,8 @@ ElevationLayer::assembleHeightField(const TileKey& key, ProgressCallback* progre
                 heights[i] = NO_DATA_VALUE;
 
             // Working set of points. it's much faster to xform an entire vector all at once.
-            std::vector<osg::Vec3d> points;
+            // Reuse a thread_local vector to avoid memory allocation/deallocation subsequent calls
+            static thread_local std::vector<osg::Vec3d> points;
             points.resize(cols * rows);
 
             double minx, miny, maxx, maxy;
@@ -811,6 +812,7 @@ ElevationLayerVector::populateHeightField(
     TileKey actualKey; // Storage if a new key needs to be constructed
 
     bool requiresResample = true;
+    GeoHeightField singleLayerHF;
 
     // If we only have a single contender layer, and the tile is the same size as the requested
     // heightfield then we just use it directly and avoid having to resample it
@@ -819,6 +821,7 @@ ElevationLayerVector::populateHeightField(
         ElevationLayer* layer = w.contenders[0].layer.get();
 
         GeoHeightField layerHF = layer->createHeightField(w.contenders[0].key, progress);
+        singleLayerHF = layerHF;
         if (layerHF.valid())
         {
             if (layerHF.getHeightField()->getNumColumns() == hf->getNumColumns() &&
@@ -854,6 +857,14 @@ ElevationLayerVector::populateHeightField(
         w.heightFailed.assign(w.contenders.size(), false);
         w.offsetFailed.assign(w.offsets.size(), false);
 
+        // The single-layer fast-path probe may have loaded a differently sized grid.
+        // Reuse it when resampling instead of issuing the same layer request twice.
+        if (singleLayerHF.valid())
+        {
+            w.heightFields.front() = singleLayerHF;
+            w.heightFallback.front() = w.contenders.front().isFallback;
+        }
+
         // Initialize the actual keys to match the contender keys.
         // We'll adjust these as necessary if we need to fall back
         for(unsigned i=0; i< w.contenders.size(); ++i)
@@ -863,7 +874,7 @@ ElevationLayerVector::populateHeightField(
 
         // The maximum number of heightfields to keep in this local cache
         const unsigned maxHeightFields = 50;
-        unsigned numHeightFieldsInCache = 0;
+        unsigned numHeightFieldsInCache = singleLayerHF.valid() ? 1u : 0u;
 
         for (unsigned c = 0; c < numColumns; ++c)
         {

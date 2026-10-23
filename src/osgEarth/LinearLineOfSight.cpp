@@ -5,6 +5,7 @@
 #include <osgEarth/LinearLineOfSight>
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/GLUtils>
+#include <osgEarth/VertexCompression>
 
 using namespace osgEarth;
 using namespace osgEarth::Contrib;
@@ -275,7 +276,8 @@ LinearLineOfSightNode::draw(bool backgroundThread)
         verts->reserve(4);
         geometry->setVertexArray( verts );
 
-        osg::Vec4Array* colors = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
+        osg::Vec4ubArray* colors = new osg::Vec4ubArray(osg::Array::BIND_PER_VERTEX);
+        colors->setNormalize(true);
         colors->reserve( 4 );
 
         geometry->setColorArray( colors );
@@ -284,8 +286,8 @@ LinearLineOfSightNode::draw(bool backgroundThread)
         {
             verts->push_back( _startWorld - _startWorld );
             verts->push_back( _endWorld   - _startWorld );
-            colors->push_back( _goodColor );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
+            colors->push_back( packColor(_goodColor) );
         }
         else
         {
@@ -293,20 +295,20 @@ LinearLineOfSightNode::draw(bool backgroundThread)
             {
                 verts->push_back( _startWorld - _startWorld );
                 verts->push_back( _endWorld - _startWorld );
-                colors->push_back( _badColor );
-                colors->push_back( _badColor );
+                colors->push_back( packColor(_badColor) );
+                colors->push_back( packColor(_badColor) );
             }
             else if (_displayMode == LineOfSight::MODE_SPLIT)
             {
                 verts->push_back( _startWorld - _startWorld );
-                colors->push_back( _goodColor );
+                colors->push_back( packColor(_goodColor) );
                 verts->push_back( _hitWorld   - _startWorld );
-                colors->push_back( _goodColor );
+                colors->push_back( packColor(_goodColor) );
 
                 verts->push_back( _hitWorld   - _startWorld );
-                colors->push_back( _badColor );
+                colors->push_back( packColor(_badColor) );
                 verts->push_back( _endWorld   - _startWorld );
-                colors->push_back( _badColor );
+                colors->push_back( packColor(_badColor) );
             }
         }
 

@@ -180,7 +180,7 @@ SkyNode::create(const SkyOptions& options)
     if ( driverName.empty() )
         driverName = "simple";
 
-    std::string extensionName = std::string("sky_") + driverName;
+    std::string extensionName = driverName.find(':') != std::string::npos ? driverName : "sky_" + driverName;
 
     osg::ref_ptr<Extension> extension = Extension::create(extensionName, options);
     if ( !extension.valid() ) {

@@ -99,7 +99,10 @@ namespace osgEarth
             if (menu.empty())
                 add(panel);
             else
+            {
+                panel->_dirtySettings = &_dirtySettings;
                 _menu[menu].push_back(GUIPtr(panel));
+            }
         }
 
         void addSeparator(const std::string& menu)
@@ -142,6 +145,10 @@ namespace osgEarth
         //! Render everything
         void draw(osg::RenderInfo& ri) override
         {
+            for (auto& panels : _menu.guis)
+                for (auto& panel : panels)
+                    panel->update(ri);
+
             if (ImGui::BeginMainMenuBar())
             {
                 for(size_t i=0; i<_menu.guis.size(); ++i)
@@ -153,7 +160,7 @@ namespace osgEarth
                             if (strcmp(gui->name(), "__separator") == 0)
                                 ImGui::Separator();
                             else
-                                ImGui::MenuItem(gui->name(), nullptr, gui->visible());
+                                ImGui::MenuItem(gui->menuLabel(), nullptr, gui->visible(), gui->isAvailable(ri));
                         }
                         ImGui::EndMenu();
                     }
@@ -165,8 +172,10 @@ namespace osgEarth
             {
                 for (auto& gui : _menu.guis[i])
                 {
-                    if (gui->isVisible())
+                    if (gui->isVisible() && gui->isAvailable(ri))
                         gui->draw(ri);
+                    if (gui->visibilityChanged())
+                        gui->dirtySettings();
                 }
             }
         }

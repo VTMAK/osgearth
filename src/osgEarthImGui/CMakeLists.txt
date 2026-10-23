@@ -20,6 +20,7 @@ set(STOCK_PANELS
     DecalsGUI
     #DateTimeGUI
     EnvironmentGUI    
+    ExternalAssetsGUI
     LayersGUI
     NetworkMonitorGUI
     NotifyGUI
@@ -43,6 +44,12 @@ set(STOCK_PANELS
     TerrainEditGUI
     TextureSplattingLayerGUI
     VegetationLayerGUI
+
+    # osgEarthPrestige
+    PrestigeVegetationLayerGUI
+    PrestigeGrimeLayerGUI
+    PrestigeAssetsGUI
+    FeatureOverlayGUI
     
     # osgEarthCesium
     CesiumIonGUI

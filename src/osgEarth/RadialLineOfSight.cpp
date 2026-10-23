@@ -5,6 +5,7 @@
 #include <osgEarth/RadialLineOfSight>
 #include <osgEarth/TerrainEngineNode>
 #include <osgEarth/GLUtils>
+#include <osgEarth/VertexCompression>
 
 using namespace osgEarth;
 using namespace osgEarth::Contrib;
@@ -250,7 +251,8 @@ RadialLineOfSightNode::compute_line(osg::Node* node)
     verts->reserve(_numSpokes * 5);
     geometry->setVertexArray( verts );
 
-    osg::Vec4Array* colors = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
+    osg::Vec4ubArray* colors = new osg::Vec4ubArray(osg::Array::BIND_PER_VERTEX);
+    colors->setNormalize(true);
     colors->reserve( _numSpokes * 5 );
 
     geometry->setColorArray( colors );
@@ -297,8 +299,8 @@ RadialLineOfSightNode::compute_line(osg::Node* node)
         {
             verts->push_back( start - _centerWorld );
             verts->push_back( end - _centerWorld );
-            colors->push_back( _goodColor );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
+            colors->push_back( packColor(_goodColor) );
         }
         else
         {
@@ -306,20 +308,20 @@ RadialLineOfSightNode::compute_line(osg::Node* node)
             {
                 verts->push_back( start - _centerWorld );
                 verts->push_back( hit - _centerWorld  );
-                colors->push_back( _goodColor );
-                colors->push_back( _goodColor );
+                colors->push_back( packColor(_goodColor) );
+                colors->push_back( packColor(_goodColor) );
 
                 verts->push_back( hit - _centerWorld );
                 verts->push_back( end - _centerWorld );
-                colors->push_back( _badColor );
-                colors->push_back( _badColor );
+                colors->push_back( packColor(_badColor) );
+                colors->push_back( packColor(_badColor) );
             }
             else if (_displayMode == LineOfSight::MODE_SINGLE)
             {
                 verts->push_back( start - _centerWorld );
                 verts->push_back( end - _centerWorld );
-                colors->push_back( _badColor );                                
-                colors->push_back( _badColor );                
+                colors->push_back( packColor(_badColor) );
+                colors->push_back( packColor(_badColor) );
             }
         }
 
@@ -328,8 +330,8 @@ RadialLineOfSightNode::compute_line(osg::Node* node)
         {
             verts->push_back( end - _centerWorld );
             verts->push_back( previousEnd - _centerWorld );
-            colors->push_back( _outlineColor );
-            colors->push_back( _outlineColor );
+            colors->push_back( packColor(_outlineColor) );
+            colors->push_back( packColor(_outlineColor) );
         }
         else
         {
@@ -343,8 +345,8 @@ RadialLineOfSightNode::compute_line(osg::Node* node)
     //Add the last outside of circle
     verts->push_back( firstEnd - _centerWorld );
     verts->push_back( previousEnd - _centerWorld );
-    colors->push_back( osg::Vec4(1,1,1,1));
-    colors->push_back( osg::Vec4(1,1,1,1));
+    colors->push_back( packColor(osg::Vec4(1,1,1,1)) );
+    colors->push_back( packColor(osg::Vec4(1,1,1,1)) );
 
     geometry->addPrimitiveSet(new osg::DrawArrays(GL_LINES, 0, verts->size()));
 
@@ -396,7 +398,8 @@ RadialLineOfSightNode::compute_fill(osg::Node* node)
     verts->reserve(_numSpokes * 2);
     geometry->setVertexArray( verts );
 
-    osg::Vec4Array* colors = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
+    osg::Vec4ubArray* colors = new osg::Vec4ubArray(osg::Array::BIND_PER_VERTEX);
+    colors->setNormalize(true);
     colors->reserve( _numSpokes * 2 );
 
     geometry->setColorArray( colors );
@@ -446,13 +449,13 @@ RadialLineOfSightNode::compute_fill(osg::Node* node)
         {
             //Both rays have LOS            
             verts->push_back( _centerWorld - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( nextEnd - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( currEnd - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
         }        
         else if (!currHasLOS && !nextHasLOS)
         {
@@ -460,32 +463,32 @@ RadialLineOfSightNode::compute_fill(osg::Node* node)
 
             //Draw the "good triangle"            
             verts->push_back( _centerWorld - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( nextHit - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( currHit - _centerWorld );                       
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
 
             //Draw the two bad triangles
             verts->push_back( currHit - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( nextHit - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( nextEnd - _centerWorld );                       
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
 
             verts->push_back( currHit - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( nextEnd - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( currEnd - _centerWorld );                       
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
         }
         else if (!currHasLOS && nextHasLOS)
         {
@@ -493,46 +496,46 @@ RadialLineOfSightNode::compute_fill(osg::Node* node)
 
             //Draw the good portion
             verts->push_back( _centerWorld - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( nextEnd - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( currHit - _centerWorld );                       
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
 
             //Draw the bad portion
             verts->push_back( currHit - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( nextEnd - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( currEnd - _centerWorld );                       
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
         }
         else if (currHasLOS && !nextHasLOS)
         {
             //Current does not have LOS but next does
             //Draw the good portion
             verts->push_back( _centerWorld - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( nextHit - _centerWorld );
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
             
             verts->push_back( currEnd - _centerWorld );                       
-            colors->push_back( _goodColor );
+            colors->push_back( packColor(_goodColor) );
 
             //Draw the bad portion
             verts->push_back( nextHit - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( nextEnd - _centerWorld );
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
             
             verts->push_back( currEnd - _centerWorld );                       
-            colors->push_back( _badColor );
+            colors->push_back( packColor(_badColor) );
         }               
     }
     

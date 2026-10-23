@@ -67,6 +67,9 @@ namespace osgEarth
         /** whether the GPU supports DrawInstanced rendering */
         bool supportsDrawInstanced() const { return _supportsDrawInstanced; }
 
+        /** whether the GPU supports per-vertex-attribute instance divisors */
+        bool supportsInstancedArrays() const { return _supportsInstancedArrays; }
+
         /** whether the GPU can handle non-power-of-two textures. */
         bool supportsNonPowerOfTwoTextures() const { return _supportsNonPowerOfTwoTextures; }
 
@@ -95,6 +98,9 @@ namespace osgEarth
         //! bindless buffers and draw commands, are available
         bool supportsNVGL() const { return _supportsNVGL; }
 
+        //! Whether vertex shaders can write gl_Layer using GL_ARB_shader_viewport_layer_array.
+        bool supportsShaderViewportLayerArray() const { return _supportsShaderViewportLayerArray; }
+
     protected:
         Capabilities();
 
@@ -109,6 +115,7 @@ namespace osgEarth
         float _GLSLversion;
         bool _supportsDepthPackedStencilBuffer;
         bool _supportsDrawInstanced;
+        bool _supportsInstancedArrays;
         bool _supportsNonPowerOfTwoTextures;
         int  _numProcessors;
         bool _supportsFragDepthWrite;
@@ -127,6 +134,7 @@ namespace osgEarth
         bool _supportsVertexArrayObjects;
         bool _supportsInt64;
         bool _supportsNVGL;
+        bool _supportsShaderViewportLayerArray;
 
     public:
         friend class Registry;

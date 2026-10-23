@@ -20,6 +20,7 @@
 #include <osgEarth/PointDrawable>
 #include <osgEarth/Registry>
 #include <osgEarth/StyleSheet>
+#include <osgEarth/VertexCompression>
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/TriangleIndexFunctor>
@@ -40,6 +41,13 @@ using namespace osgEarth;
 
 namespace
 {
+    osg::Vec4Array* makeColorArray(osg::Array::Binding binding, unsigned size, const osg::Vec4f& color)
+    {
+        auto* colors = new osg::Vec4Array(binding);
+        colors->assign(size, color);
+        return colors;
+    }
+
     bool isCCW(double x1, double y1, double x2, double y2, double x3, double y3)
     {
         return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1) > 0.0;
@@ -197,9 +205,7 @@ BuildGeometryFilter::processMeshes(FeatureList& features, FilterContext& context
 
             // assign the primary color array. PER_VERTEX required in order to support
             // vertex optimization later
-            auto colors = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
-            colors->assign(allPoints->size(), primaryColor);
-            osgGeom->setColorArray(colors);
+            osgGeom->setColorArray(makeColorArray(osg::Array::BIND_PER_VERTEX, allPoints->size(), primaryColor));
 
             geode->addDrawable(osgGeom);
 
@@ -217,6 +223,8 @@ BuildGeometryFilter::processMeshes(FeatureList& features, FilterContext& context
     }
 
     OE_TEST << LC << "Num drawables = " << geode->getNumDrawables() << "\n";
+    CompressVertexArraysVisitor compress;
+    geode->accept(compress);
     return geode;
 }
 
@@ -385,9 +393,7 @@ BuildGeometryFilter::processPolygons(FeatureList& features, FilterContext& conte
                 // assign the primary color array. PER_VERTEX required in order to support
                 // vertex optimization later
                 unsigned count = osgGeom->getVertexArray()->getNumElements();
-                osg::Vec4Array* colors = new osg::Vec4Array(osg::Array::BIND_PER_VERTEX);
-                colors->assign( count, primaryColor );
-                osgGeom->setColorArray( colors );
+                osgGeom->setColorArray(makeColorArray(osg::Array::BIND_PER_VERTEX, count, primaryColor));
 
                 geode->addDrawable( osgGeom );
 
@@ -663,6 +669,9 @@ BuildGeometryFilter::processPolygonizedLines(FeatureList&   features,
                 | osgUtil::Optimizer::VERTEX_POSTTRANSFORM
                 );
         }
+
+        CompressVertexArraysVisitor compress;
+        geode->accept(compress);
 
         // Add it to the group
         group->addChild( geode );
@@ -1810,15 +1819,15 @@ namespace
             {
                 osg::Vec3Array* verts = dynamic_cast<osg::Vec3Array*>(geom->getVertexArray());
 
-                osg::Vec3Array* normals = new osg::Vec3Array(verts->size());
+                osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array(verts->size());
                 normals->setBinding(normals->BIND_PER_VERTEX);
 
                 osg::TriangleIndexFunctor<GenerateNormalFunctor> f;
-                f.set(verts, normals);
+                f.set(verts, normals.get());
                 geom->accept(f);
                 f.finish();
 
-                geom->setNormalArray(normals);
+                geom->setNormalArray(normals.get());
             }
             traverse(drawable);
         }
@@ -1995,6 +2004,9 @@ BuildGeometryFilter::push( FeatureList& input, FilterContext& context )
             // but ignores other vertex attribute arrays.
             GenerateNormals gen;
             geode->accept(gen);
+
+            CompressVertexArraysVisitor compress;
+            geode->accept(compress);
 
             if (!polysGroup.valid())
                 polysGroup = new osg::Group();

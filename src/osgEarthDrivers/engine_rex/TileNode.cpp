@@ -243,8 +243,12 @@ TileNode::setElevationRaster(Texture::Ptr image, const osg::Matrixf& matrix)
 {
     if (image != getElevationRaster() || matrix != getElevationMatrix())
     {
-        if ( _surface.valid() )
-            _surface->setElevationRaster( image, matrix );
+        if (_surface.valid())
+        {
+            _surface->setElevationRaster(image, matrix);
+            // The surface is not an OSG child, so invalidate this tile's bounds explicitly.
+            dirtyBound();
+        }
     }
 }
 
@@ -601,6 +605,8 @@ TileNode::update(osg::NodeVisitor& nv)
                     sampler._texture = sampler._futureTexture;
                     sampler._futureTexture = nullptr;
                     sampler._matrix.makeIdentity();
+                    // Invalidate cached draw commands when the active sampler changes.
+                    ++_revision;
                     ++numFuturesResolved;
                 }
                 else if (ft->failed())

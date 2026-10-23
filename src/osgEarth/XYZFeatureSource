@@ -20,7 +20,6 @@ namespace osgEarth
             OE_OPTION(URI, url);
             OE_OPTION(std::string, format);
             OE_OPTION(bool, esriGeodetic, false);
-            OE_OPTION(bool, autoFallback, false);
             virtual Config getConfig() const;
         private:
             void fromConfig(const Config& conf);
@@ -41,12 +40,6 @@ namespace osgEarth
         //! the normal global-geodetic profile.
         void setEsriGeodetic(const bool& value);
         const bool& getEsriGeodetic() const;
-
-        //! Whether a query for a TileKey higher than the max_level will
-        //! automatically fall back to a query at the max_level.
-        //! Default = false (an out-of bounds query returns nothing)
-        void setAutoFallbackToMaxLevel(const bool& value);
-        const bool& getAutoFallbackToMaxLevel() const;
 
         //! Inserts a full tile of features to the feature source.
         Status insert(const TileKey& key, const FeatureList& features, bool overwrite) override;

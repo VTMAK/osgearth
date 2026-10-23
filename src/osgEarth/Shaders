@@ -17,6 +17,8 @@ namespace osgEarth { namespace Util
         std::string CascadeDraping;
         std::string Chonk;
         std::string ChonkCulling;
+        std::string ChonkScreenSize;
+        std::string ChonkHiZ;
         std::string Decals_Headers;
         std::string Decals;
         std::string DecalsCulling;
@@ -42,6 +44,8 @@ namespace osgEarth { namespace Util
         std::string RTTPicker;
         std::string WindComputer;
         std::string PBR;
+        std::string PBRMaterial;
+        std::string PBRTexture;
         std::string MetadataNode;
 	};	
 

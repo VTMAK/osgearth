@@ -1,9 +1,16 @@
 #version 460
 #extension GL_NV_gpu_shader5 : enable
+#extension GL_ARB_bindless_texture : enable
 
 #pragma import_defines(OE_GPUCULL_DEBUG)
 #pragma import_defines(OE_IS_SHADOW_CAMERA)
+#pragma import_defines(OE_CHONK_MULTIVIEW)
 #pragma import_defines(OE_LOD_SCALE_UNIFORM)
+#pragma import_defines(OE_LOG_DEPTH_BUFFER)
+#pragma import_defines(OE_CHONK_DENSITY_LOD)
+#pragma import_defines(OE_CHONK_SSE_ADJUST)
+#pragma import_defines(OE_CHONK_SSE_PIXEL_CUTOFF)
+#pragma import_defines(OE_CHONK_SSE_LOD_ONLY)
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
@@ -43,24 +50,33 @@ struct ChonkLOD
     float fade_near;
     float fade_far;
     uint num_lods;
-    // globals:
-    uint total_num_commands;
+    uint draw_group;
+    uint flags; // CHONK_FLAG_*
+    uint pad0, pad1, pad2;
 };
+#define CHONK_FLAG_ALPHA_TESTED 1u
 
+// 80-byte std430 source record; matches ChonkDrawable::Instance.
 struct ChonkInstance
 {
     mat4 xform;
     vec2 local_uv;
-    uint lod;
-    float visibility[2]; // per LOD
     float radius;
-    float alpha_cutoff;
     int first_lod_cmd_index; // -1 means unused
 };
 
-layout(binding = 0) buffer OutputBuffer
+// A visible LOD references the original placement instead of copying its matrix.
+struct ChonkVisibleInstance
 {
-    ChonkInstance output_instances[];
+    uint source_index;
+    uint lod;
+    float fade;
+    float alpha_cutoff;
+};
+
+layout(binding = 0, std430) writeonly buffer OutputBuffer
+{
+    ChonkVisibleInstance output_instances[];
 };
 
 layout(binding = 29) buffer Commands
@@ -68,21 +84,32 @@ layout(binding = 29) buffer Commands
     DrawElementsIndirectBindlessCommandNV commands[];
 };
 
-layout(binding = 30) buffer ChonkLODs
+layout(binding = 30) readonly buffer ChonkLODs
 {
     ChonkLOD chonks[];
 };
 
-layout(binding = 31) buffer InputBuffer
+layout(binding = 31, std430) readonly buffer InputBuffer
 {
     ChonkInstance input_instances[];
 };
 
 uniform vec3 oe_Camera;
 uniform float oe_sse;
+#ifdef OE_CHONK_SSE_ADJUST
+// Opt-in additive pixel budget. Y converts authored cutoffs from their reference error to per-error coefficients.
+uniform vec2 oe_chonk_sse_adjust = vec2(0.0, 1.0);
+#endif
 uniform vec4 oe_lod_scale;
 uniform float osg_FrameTime;
 uniform float oe_chonk_lod_transition_factor = 0.0;
+// Per-path coverage is captured by ChonkRenderBin; partial pages require the cutout path.
+uniform vec2 oe_chonk_coverage = vec2(0.0,1.0);
+
+#ifdef OE_CHONK_DENSITY_LOD
+// Opt-in population thinning: start/end distances and retained fraction. Instance local_uv.x is a stable rank.
+uniform vec3 oe_chonk_density_lod = vec3(0.0, 0.0, 1.0);
+#endif
 
 #ifdef OE_IS_SHADOW_CAMERA
 // xform from shadow camera view space to primary camera view space
@@ -91,6 +118,93 @@ uniform mat4 oe_primaryProjectionMatrix;
 uniform vec2 oe_primaryViewport;
 #endif
 uniform float oe_chonk_shadow_buffer_multiplier = 1.0;
+// Optional grouped-geometry contract: stride, sphere offset, authored cutoff, source LOD index.
+uniform vec4 oe_chonk_member_lod = vec4(0.0);
+uniform vec2 oe_chonk_member_range = vec2(0.0);
+layout(binding = 3, std430) readonly buffer ChonkMemberBounds { vec4 oe_chonk_member_records[]; };
+
+// Runtime zero selects the ordinary culler, including external shadow cameras.
+uniform uvec4 oe_chonk_views; // view count, active mask, mesh/LOD commands, visible capacity per view
+
+// Single-view culler. Commands form four lists of oe_chonk_list_stride entries each:
+// early opaque, early cutout, late opaque, late cutout. Opaque lists draw without discard.
+#define CHONK_PASS_RESET 0 // zero every list's instance counts
+#define CHONK_PASS_CULL  1 // frustum/LOD culling into the early lists
+#define CHONK_PASS_EARLY 2 // like CULL, but only instances visible last frame
+#define CHONK_PASS_LATE  3 // test against this frame's depth pyramid, emit the rest late
+uniform int oe_chonk_pass;
+uniform uint oe_chonk_list_stride;
+uniform uint oe_chonk_max_lods;   // visibility records per source instance
+uniform vec4 oe_chonk_hiz_params; // viewport width and height in pixels, pyramid levels, 1 if valid
+layout(bindless_sampler) uniform sampler2D oe_chonk_hiz; // farthest depth per texel; level 0 = half res
+layout(binding = 23, std430) buffer ChonkVisibility { uint visibility[]; }; // 1 = visible last frame
+#ifdef OE_CHONK_MULTIVIEW
+uniform int oe_chonk_view_phase;
+uniform int oe_chonk_view_output; // 0: PER_VIEW, 1: UNION, 2: MERGED (ChonkRenderPass::Output)
+uniform uint oe_chonk_view_groups;
+uniform vec4 oe_chonk_view_planes[48]; // six normalized local-space planes per view, MAX_VIEWS = 8
+uniform uint oe_chonk_orthographic_views;
+uniform float oe_chonk_parent_scale;
+uniform mat4 oe_chonk_lod_view;
+uniform mat4 oe_chonk_lod_projection;
+uniform vec2 oe_chonk_lod_viewport;
+uniform bool oe_chonk_retain_outside_lod_view;
+layout(binding = 24, std430) readonly buffer ViewGroups { uvec2 view_groups[]; };
+layout(binding = 25, std430) writeonly buffer CoreCommands { DrawElementsIndirectCommand core_commands[]; };
+layout(binding = 26) writeonly buffer CompactCommands { DrawElementsIndirectBindlessCommandNV compact_commands[]; };
+layout(binding = 27, std430) buffer DrawCounts { uint draw_counts[]; };
+layout(binding = 28) readonly buffer Templates { DrawElementsIndirectBindlessCommandNV templates[]; };
+
+// Returns independent lists; merged instances share one mesh/LOD command across all active views.
+uint viewListCount()
+{
+    return oe_chonk_view_output == 0 ? oe_chonk_views.x : 1u;
+}
+
+// Resets bounded GPU output ranges without streaming command lists from the CPU.
+void resetViewCommands()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i < 8u + 8u*oe_chonk_view_groups) draw_counts[i] = 0u;
+    if (i >= viewListCount()*oe_chonk_views.z) return;
+    commands[i] = templates[i%oe_chonk_views.z];
+    commands[i].cmd.instanceCount = 0u;
+    if (oe_chonk_view_output == 0)
+        commands[i].cmd.baseInstance += (i/oe_chonk_views.z)*oe_chonk_views.w;
+    else if (oe_chonk_view_output == 2)
+        commands[i].cmd.baseInstance *= oe_chonk_views.x;
+}
+
+// Compacts only nonempty commands; both API paths consume counts written entirely on the GPU.
+void compactViewCommands()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= viewListCount()*oe_chonk_views.z || commands[i].cmd.instanceCount == 0u) return;
+    uint view = i/oe_chonk_views.z;
+    uint group = chonks[i%oe_chonk_views.z].draw_group;
+    uint slot = atomicAdd(draw_counts[view],1u);
+    compact_commands[view*oe_chonk_views.z+slot] = commands[i];
+    slot = atomicAdd(draw_counts[8u+view*oe_chonk_view_groups+group],1u);
+    core_commands[view*oe_chonk_views.z+view_groups[group].x+slot] = commands[i].cmd;
+}
+
+// Conservatively tests local spheres against orthographic, perspective or oblique view volumes.
+bool inViewVolume(uint view, vec4 center, float radius)
+{
+    uint first = view*6u;
+    if ((oe_chonk_orthographic_views & (1u<<view)) != 0u)
+    {
+        vec3 distance = vec3(dot(oe_chonk_view_planes[first],center),
+            dot(oe_chonk_view_planes[first+2u],center),dot(oe_chonk_view_planes[first+4u],center));
+        vec3 extent = vec3(oe_chonk_view_planes[first+1u].w,
+            oe_chonk_view_planes[first+3u].w,oe_chonk_view_planes[first+5u].w);
+        return all(lessThanEqual(abs(distance),extent+vec3(radius)));
+    }
+    for (uint plane=0u; plane<6u; ++plane)
+        if (dot(oe_chonk_view_planes[first+plane],center) < -radius) return false;
+    return true;
+}
+#endif
 
 // Support a user-defined LOD scale uniform. When not present,
 // default to osgEarth's LOD scale value in oe_Camera.z.
@@ -111,31 +225,104 @@ uniform float OE_LOD_SCALE_UNIFORM;
 #define REASON_NEARCLIP 3.5
 
 
-// calcluates the clip-space minimum bounding box of a view-space bounding sphere
-void compute_clip_mbb(in vec4 p_view, in float r, in mat4 proj, out vec4 LL, out vec4 UR)
+#pragma include Chonk.ScreenSize.glsl
+
+// True when a view-space sphere lies wholly outside the left, right, bottom or top plane of a
+// perspective frustum. The planes pass through the eye, so this holds for spheres that reach the
+// eye plane, where projecting corners does not work (Gribb/Hartmann planes from the projection rows).
+bool outsideSidePlanes(in vec3 c, in float r, in mat4 proj)
 {
-    vec4 temp;
-    temp = proj * (p_view + vec4(-r, -r, -r, 0)); temp /= temp.w;
-    LL = temp; UR = temp;
-    temp = proj * (p_view + vec4(-r, -r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(-r, +r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(-r, +r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(+r, -r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(+r, -r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(+r, +r, -r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
-    temp = proj * (p_view + vec4(+r, +r, +r, 0)); temp /= temp.w;
-    LL = min(LL, temp); UR = max(UR, temp);
+    vec4 row0 = vec4(proj[0][0], proj[1][0], proj[2][0], proj[3][0]);
+    vec4 row1 = vec4(proj[0][1], proj[1][1], proj[2][1], proj[3][1]);
+    vec4 row3 = vec4(proj[0][3], proj[1][3], proj[2][3], proj[3][3]);
+    vec4 planes[4] = vec4[4](row3 + row0, row3 - row0, row3 + row1, row3 - row1);
+    for (int i = 0; i < 4; ++i)
+        if (dot(planes[i].xyz, c) + planes[i].w < -r * length(planes[i].xyz))
+            return true;
+    return false;
+}
+
+// Window-space depth of a point at view distance w (> 0), matching the depth buffer's mapping.
+// Vertex-only log depth rasterizes at or beyond this value at every pixel (log(1+1/u) is convex
+// in u = 1/w, which is what the rasterizer interpolates), so comparing it stays conservative.
+float windowDepth(float w, mat4 proj)
+{
+#if defined(OE_LOG_DEPTH_BUFFER)
+    float far = proj[3][2] / (proj[2][2] + 1.0);
+  #if OE_LOG_DEPTH_BUFFER == 2
+    return log(w*0.001 + 1.0) / log(far*0.001 + 1.0); // per-fragment log depth
+  #else
+    return log2(w + 1.0) / log2(far + 1.0); // per-vertex log depth
+  #endif
+#else
+    return 0.5*(proj[2][2]*(-w) + proj[3][2])/w + 0.5;
+#endif
+}
+
+// True when a view-space sphere lies behind this frame's depth pyramid at every pixel it can
+// cover. Samples the 2x2 texels spanning its screen box at the level where the box fits in two.
+bool occludedByHiZ(vec4 center_view, float r, mat4 proj, vec4 LL, vec4 UR)
+{
+    float w = -(center_view.z + r); // view distance to the sphere's nearest point
+    if (oe_chonk_hiz_params.w < 0.5 || proj[3][3] > 0.01 || w <= 0.0 || LL.x < -1e5)
+        return false;
+    vec2 lo = clamp(LL.xy*0.5 + 0.5, 0.0, 1.0) * oe_chonk_hiz_params.xy * 0.5; // level-0 texels
+    vec2 hi = clamp(UR.xy*0.5 + 0.5, 0.0, 1.0) * oe_chonk_hiz_params.xy * 0.5;
+    int level = min(int(ceil(log2(max(max(hi.x - lo.x, hi.y - lo.y), 1.0)))),
+        int(oe_chonk_hiz_params.z) - 1);
+    ivec2 size = textureSize(oe_chonk_hiz, level);
+    ivec2 a = clamp(ivec2(lo / exp2(float(level))), ivec2(0), size - 1);
+    ivec2 b = clamp(ivec2(hi / exp2(float(level))), ivec2(0), size - 1);
+    float farthest = max(
+        max(texelFetch(oe_chonk_hiz, a, level).r, texelFetch(oe_chonk_hiz, ivec2(b.x, a.y), level).r),
+        max(texelFetch(oe_chonk_hiz, ivec2(a.x, b.y), level).r, texelFetch(oe_chonk_hiz, b, level).r));
+    // The margin covers 24-bit depth quantization.
+    return windowDepth(w, proj) > farthest + 1e-6;
+}
+
+// Zeroes every list's instance count; command templates stay resident on the GPU.
+void resetCommands()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i < 4u*oe_chonk_list_stride)
+        commands[i].cmd.instanceCount = 0u;
 }
 
 
 
-void cull()
+// Rejects a whole grouped instance only when none of its members passes the ordinary screen-size policy.
+// Auxiliary records hold local member spheres; negative UV.x is count and UV.y is the first member index.
+bool hasVisibleMember(uint i, mat4 view, mat4 projection, vec2 viewport, float parentScale)
+{
+    uint stride = uint(oe_chonk_member_lod.x), sphereOffset = uint(oe_chonk_member_lod.y);
+    uint count = uint(round(-input_instances[i].local_uv.x));
+    uint first = uint(round(input_instances[i].local_uv.y));
+    uint recordCount = uint(oe_chonk_member_records.length());
+    if (stride == 0u || sphereOffset >= stride || first >= recordCount/stride || count > recordCount/stride-first)
+        return true; // Invalid/missing optional metadata must not hide otherwise valid geometry.
+    float pixelError = oe_sse, budget = oe_sse;
+#ifdef OE_CHONK_SSE_ADJUST
+    pixelError = max(1.0,pixelError+oe_chonk_sse_adjust.x);
+    budget = pixelError*oe_chonk_sse_adjust.y;
+#endif
+    float cutoff = oe_chonk_visibility_cutoff(budget,pixelError,
+        oe_chonk_member_lod.z,oe_lod_scale[uint(oe_chonk_member_lod.w)]);
+    mat4 matrix = input_instances[i].xform;
+    float scale = length(matrix[0].xyz)*parentScale;
+    for (uint member=0u; member<count; ++member)
+    {
+        vec4 sphere = oe_chonk_member_records[(first+member)*stride+sphereOffset];
+        vec4 center = view*matrix*vec4(sphere.xyz,1.0);
+        if (oe_chonk_member_fade(center,sphere.w*scale,projection,viewport,cutoff,
+            oe_chonk_lod_transition_factor,oe_chonk_member_range,OE_LOD_SCALE_UNIFORM) > 0.0) return true;
+    }
+    return false;
+}
+
+// Culls one instance/LOD pair and appends a survivor to its command's output
+// range. The CPU reserves room for every input instance in each range and
+// resets the command counts before dispatch; no inter-workgroup barrier is needed.
+void cullAndCompact()
 {
     const uint i = gl_GlobalInvocationID.x; // instance
     const uint lod = gl_GlobalInvocationID.y; // lod
@@ -144,13 +331,11 @@ void cull()
     if (input_instances[i].first_lod_cmd_index < 0)
         return;
 
-    // initialize by clearing the visibility for this LOD:
-    input_instances[i].visibility[lod] = 0.0;
-
     // bail if our chonk does not have this LOD
-    uint v = input_instances[i].first_lod_cmd_index + lod;
-    if (lod >= chonks[v].num_lods)
+    uint first = input_instances[i].first_lod_cmd_index;
+    if (lod >= chonks[first].num_lods)
         return;
+    uint v = first + lod;
 
     // intialize:
     float fade = 1.0;
@@ -160,66 +345,77 @@ void cull()
     vec4 center = xform * vec4(chonks[v].bs.xyz, 1);
     vec4 center_view = gl_ModelViewMatrix * center;
 
-    float max_scale = max(xform[0][0], max(xform[1][1], xform[2][2]));
-    float r = chonks[v].bs.w * max_scale;
-
-
-
+    // The CPU computes a conservative transformed radius once per instance.
+    float r = input_instances[i].radius;
     mat4 proj;
     vec2 viewport;
-
-
+    bool retainOutside;
+    mat4 memberView = gl_ModelViewMatrix;
+    float memberParentScale = 1.0;
 #ifdef OE_IS_SHADOW_CAMERA
     // For a shadow camera we want to cull instances based on their location
     // in the primary camera, not the shadow camera:
     center_view = oe_shadowToPrimaryMatrix * center_view;
+    memberView = oe_shadowToPrimaryMatrix * memberView;
     proj = oe_primaryProjectionMatrix;
     viewport = oe_primaryViewport;
+    retainOutside = true;
 #else
     proj = gl_ProjectionMatrix;
     viewport = oe_Camera.xy;
-
-    // Trivially reject low-LOD instances that intersect the near clip plane:
-    if ((lod > 0) && (proj[3][3] < 0.01)) // is perspective camera
+    retainOutside = false;
+#endif
+#ifdef OE_CHONK_MULTIVIEW
+    if (oe_chonk_views.x != 0u)
     {
-        float near = proj[2][3] / (proj[2][2] - 1.0);
-        if (-(center_view.z + r) <= near)
-        {
-            REJECT(REASON_NEARCLIP);
-        }
+        center_view = oe_chonk_lod_view * center;
+        memberView = oe_chonk_lod_view;
+        memberParentScale = oe_chonk_parent_scale;
+        r *= oe_chonk_parent_scale;
+        proj = oe_chonk_lod_projection;
+        viewport = oe_chonk_lod_viewport;
+        retainOutside = oe_chonk_retain_outside_lod_view;
     }
 #endif
-
-
+    // A conservative sphere touching the near plane does not make its coarse LOD invisible.
+    // Log depth can also render geometry entirely in front of the projection's conventional near plane.
+    // Keep all LODs eligible for the same pixel-size transition and let rasterization clip triangles;
+    // rejecting only coarse LODs here leaves a hole after the detailed representation fades out.
     // Clip-space frustum boundary (in each direction)
+#ifdef OE_GPUCULL_DEBUG
+    float frustumBoundary = 0.95 * oe_chonk_shadow_buffer_multiplier;
+#else
     float frustumBoundary = 1.0 * oe_chonk_shadow_buffer_multiplier;
+#endif
 
 
     // Compute the minimum bounding box in clip space for this instance:
     vec4 LL, UR;
-    compute_clip_mbb(center_view, r, proj, LL, UR);
+    bool outsideFrustum;
+    if (proj[3][3] < 0.01 && center_view.z + r >= 0.0)
+    {
+        // A bound reaching the eye plane cannot be bounded by projecting its corners (some
+        // homogeneous W values change sign). Reject it if it lies wholly behind the eye or outside
+        // a side plane; any other such bound surrounds the near frustum, so keep it at full size.
+        outsideFrustum = center_view.z - r >= 0.0 || outsideSidePlanes(center_view.xyz, r, proj);
+        LL = vec4(-1e6);
+        UR = vec4(1e6);
+    }
+    else
+    {
+        compute_clip_mbb(center_view, r, proj, LL, UR);
+        outsideFrustum =
+            LL.x > frustumBoundary || UR.x < -frustumBoundary ||
+            LL.y > frustumBoundary || UR.y < -frustumBoundary;
+    }
 
-    // Test against the view frustum:
-    bool outsideFrustum =
-        LL.x > frustumBoundary || UR.x < -frustumBoundary ||
-        LL.y > frustumBoundary || UR.y < -frustumBoundary;
 
-
-#ifdef OE_IS_SHADOW_CAMERA
-
-    // For a shadow camera, keep coarse-LOD instances even if they do not pass the frustum cull.
-    // This allows them to cast shadows into the visible frustum but only from a low LOD.
-    uint coarsestLod = chonks[v].num_lods - 1;
-
-    if (outsideFrustum && (lod != coarsestLod))
+    // A caller can retain off-reference-view instances at their coarsest LOD, for example shadow casters.
+    if (outsideFrustum && (!retainOutside || lod != chonks[v].num_lods - 1u))
         REJECT(REASON_FRUSTUM);
 
-#else // normal camera
-
-    if (outsideFrustum)
-        REJECT(REASON_FRUSTUM);
-
-#endif
+    bool members = oe_chonk_member_lod.x > 0.0 && input_instances[i].local_uv.x < 0.0;
+    if (members && !hasVisibleMember(i,memberView,proj,viewport,memberParentScale)) REJECT(REASON_SSE);
 
     // Check this, since we could have a instance outside the frustum (from the shadow pass or
     // from a oe_chonk_shadow_buffer_multiplier > 1.0)
@@ -231,7 +427,23 @@ void cull()
         float pixelSize = min(dims.x, dims.y);
         float pixelSizePad = pixelSize * oe_chonk_lod_transition_factor;
 
-        float minPixelSize = oe_sse * chonks[v].far_pixel_scale * oe_lod_scale[lod];
+        float pixelError = oe_sse, sse = oe_sse;
+#ifdef OE_CHONK_SSE_ADJUST
+        pixelError = max(1.0,pixelError+oe_chonk_sse_adjust.x);
+        sse = pixelError*oe_chonk_sse_adjust.y;
+#endif
+        float minPixelSize = sse * chonks[v].far_pixel_scale * oe_lod_scale[lod];
+#if defined(OE_CHONK_SSE_PIXEL_CUTOFF) || defined(OE_CHONK_SSE_LOD_ONLY)
+        // Keep representation thresholds, but give the final LOD its population visibility policy.
+        // LOD-only populations retain their last representation to the independent distance cap.
+        if (!members)
+        {
+            uint lastLOD = chonks[first].num_lods-1u;
+            float cutoff = oe_chonk_visibility_cutoff(sse,pixelError,
+                chonks[first+lastLOD].far_pixel_scale,oe_lod_scale[lastLOD]);
+            minPixelSize = lod == lastLOD ? cutoff : max(minPixelSize,cutoff);
+        }
+#endif
         if (pixelSize < (minPixelSize - pixelSizePad))
             REJECT(REASON_SSE);
 
@@ -239,7 +451,7 @@ void cull()
         if (lod > 0)
         {
             float near_scale = chonks[v].near_pixel_scale * oe_lod_scale[lod - 1];
-            maxPixelSize = oe_sse * near_scale;
+            maxPixelSize = sse * near_scale;
 
             if (pixelSize > (maxPixelSize + pixelSizePad))
                 REJECT(REASON_SSE);
@@ -252,7 +464,7 @@ void cull()
             if (pixelSize > maxPixelSize)
                 fade = 1.0 - (pixelSize - maxPixelSize) / pixelSizePad;
             else if (pixelSize < minPixelSize)
-                fade = 1.0 - (minPixelSize - pixelSize) / pixelSizePad;
+                fade = oe_chonk_size_fade(pixelSize,minPixelSize,oe_chonk_lod_transition_factor);
         }
 
         // Birthday fade-in:
@@ -261,9 +473,25 @@ void cull()
         fade *= birth;
     }
 
+    // Density LOD shares the primary-view distance for color and shadow cameras. Surviving placements never move.
+#ifdef OE_CHONK_DENSITY_LOD
+    if (oe_chonk_density_lod.z < 1.0 && oe_chonk_density_lod.y > oe_chonk_density_lod.x)
+    {
+        float rank = clamp(input_instances[i].local_uv.x, 0.0, 1.0);
+        if (rank >= oe_chonk_density_lod.z)
+        {
+            float width = (oe_chonk_density_lod.y - oe_chonk_density_lod.x) * 0.1;
+            float order = (1.0 - rank) / (1.0 - oe_chonk_density_lod.z);
+            float start = mix(oe_chonk_density_lod.x, oe_chonk_density_lod.y - width, order);
+            float distance = length(center_view.xyz) * OE_LOD_SCALE_UNIFORM;
+            fade *= 1.0 - smoothstep(start, start + width, distance);
+        }
+    }
+#endif
+
     // Distance-based fade:
     float fade_range = chonks[v].fade_far - chonks[v].fade_near;
-    if (fade_range > 0.0)
+    if (fade_range > 0.0 && !members)
     {
         float dist = length(center_view.xyz) * OE_LOD_SCALE_UNIFORM;
         fade *= clamp((chonks[v].fade_far - dist) / fade_range, 0.0, 1.0);
@@ -272,49 +500,90 @@ void cull()
     if (fade < 0.1)
         return;
 
-    // Pass! Set the visibility for this LOD:
-    input_instances[i].visibility[lod] = fade;
+    // Keep per-LOD results local; multiple visible LODs share the same immutable
+    // source placement. Preserve full precision, including debug fade values.
+    ChonkVisibleInstance result;
+    result.source_index = i;
+    result.lod = lod;
+    result.fade = fade;
+    result.alpha_cutoff = chonks[v].alpha_cutoff;
 
-    // Send along the other values:
-    input_instances[i].alpha_cutoff = chonks[v].alpha_cutoff;
-
-    // Send along the scaled radius of this instance
-    input_instances[i].radius = r;
-
-    // Bump all baseInstances following this one:
-    const uint cmd_count = chonks[v].total_num_commands;
-    for (uint i = v + 1; i < cmd_count; ++i)
+    // baseInstance is fixed before dispatch. The atomic reserves a unique
+    // slot within this batch/LOD's range, including during LOD cross-fades.
+#ifdef OE_CHONK_MULTIVIEW
+    if (oe_chonk_views.x != 0u)
     {
-        atomicAdd(commands[i].cmd.baseInstance, 1);
-    }
-}
-
-// Copies the visible instances to a compacted output buffer.
-void compact()
-{
-    const uint i = gl_GlobalInvocationID.x; // instance
-    const uint lod = gl_GlobalInvocationID.y; // lod
-
-    float fade = input_instances[i].visibility[lod];
-    if (fade < 0.1)
+        uint overlaps = 0u;
+        for (uint view=0u; view<oe_chonk_views.x; ++view)
+        {
+            if ((oe_chonk_views.y & (1u<<view)) == 0u ||
+                !inViewVolume(view,center,input_instances[i].radius)) continue;
+            overlaps |= 1u << view;
+            if (oe_chonk_view_output == 1) break;
+        }
+        if (overlaps == 0u) return;
+        if (oe_chonk_view_output == 2)
+        {
+            // Reserve every surviving view at once, avoiding per-view contention on the merged command counter.
+            uint index = commands[v].cmd.baseInstance + atomicAdd(commands[v].cmd.instanceCount,uint(bitCount(overlaps)));
+            while (overlaps != 0u)
+            {
+                uint view = uint(findLSB(overlaps));
+                overlaps &= overlaps-1u;
+                result.lod = lod | (view << 16u);
+                output_instances[index++] = result;
+            }
+            return;
+        }
+        while (overlaps != 0u)
+        {
+            uint view = uint(findLSB(overlaps));
+            overlaps &= overlaps-1u;
+            uint command = (oe_chonk_view_output == 0 ? view : 0u)*oe_chonk_views.z+v;
+            uint index = atomicAdd(commands[command].cmd.instanceCount,1u);
+            result.lod = lod | (oe_chonk_view_output == 1 ? 0u : view << 16u);
+            output_instances[commands[command].cmd.baseInstance+index] = result;
+        }
         return;
-
-    uint v = input_instances[i].first_lod_cmd_index + lod;
-    uint offset = commands[v].cmd.baseInstance;
-    uint index = atomicAdd(commands[v].cmd.instanceCount, 1);
-
-    // Lazy! Re-using the instance struct for render leaves..
-    output_instances[offset + index] = input_instances[i];
-    output_instances[offset + index].lod = lod;
+    }
+#endif
+    // Opaque, unfaded instances cannot fail the alpha test, so their list draws without discard.
+    bool covered = oe_chonk_coverage.x <= 0.0 && oe_chonk_coverage.y >= 1.0;
+    uint list = ((chonks[v].flags & CHONK_FLAG_ALPHA_TESTED) == 0u && fade == 1.0 && covered) ? 0u : 1u;
+    if (oe_chonk_pass >= CHONK_PASS_EARLY)
+    {
+        // Two-phase occlusion culling: the early pass redraws last frame's visible set; the late
+        // pass tests everything against the depth that produced, then draws only what it missed.
+        uint slot = i*oe_chonk_max_lods + lod;
+        bool wasVisible = visibility[slot] != 0u;
+        if (oe_chonk_pass == CHONK_PASS_EARLY)
+        {
+            if (!wasVisible) return;
+        }
+        else
+        {
+            bool visible = !occludedByHiZ(center_view, r, proj, LL, UR);
+            visibility[slot] = visible ? 1u : 0u;
+            if (!visible || wasVisible) return;
+            list += 2u;
+        }
+    }
+    uint command = list*oe_chonk_list_stride + v;
+    uint index = atomicAdd(commands[command].cmd.instanceCount, 1);
+    output_instances[commands[command].cmd.baseInstance + index] = result;
 }
 
-// Entry point.
-uniform int oe_pass;
-
+// Each invocation independently culls and emits one instance/LOD pair.
 void main()
 {
-    if (oe_pass == 0)
-        cull();
-    else // if (oe_pass == 1)
-        compact();
+#ifdef OE_CHONK_MULTIVIEW
+    if (oe_chonk_views.x != 0u)
+    {
+        if (oe_chonk_view_phase == 0) { resetViewCommands(); return; }
+        if (oe_chonk_view_phase == 2) { compactViewCommands(); return; }
+    }
+    else
+#endif
+    if (oe_chonk_pass == CHONK_PASS_RESET) { resetCommands(); return; }
+    cullAndCompact();
 }

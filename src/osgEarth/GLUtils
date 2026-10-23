@@ -28,6 +28,7 @@
 namespace osgUtil {
     class IncrementalCompileOperation;
     class StateToCompile;
+    class IncrementalCompileOperation;
 }
 
 #define OE_GL_ZONE osgEarth::ScopedGLDebugGroup __oe_glscope(typeid(*this).name())
@@ -40,6 +41,10 @@ namespace osgEarth
 {
     struct OSGEARTH_EXPORT GLUtils
     {
+        //! Creates an ICO that preserves the previously bound VAO's index buffer during compilation.
+        //! Install on a viewer before realizing it; the viewer takes ownership.
+        static osgUtil::IncrementalCompileOperation* createIncrementalCompileOperation();
+
         //! Sets any default uniforms required by the implementation
         static void setGlobalDefaults(osg::StateSet* stateSet);
 
@@ -112,7 +117,6 @@ namespace osgEarth
         virtual void operator()(osg::Object*);
         void setSyncToVBlank(bool);
         optional<bool> _vsync;
-        optional<bool> _gldebug;
         std::vector<osg::ref_ptr<osg::Operation>> _moreOperations;
         void add(osg::Operation* op) { _moreOperations.push_back(op); }
     };
@@ -502,8 +506,11 @@ namespace osgEarth
         //! Binds this texture to `target`
         void bind(osg::State& state);
 
-        //! Returns the GPU address of a bindless texture
+        //! Returns the GPU address of a bindless texture, or zero on failure.
         GLuint64 handle(osg::State& state);
+
+        //! Can suppress repeated diagnostics during a retry.
+        GLuint64 handle(osg::State& state, bool reportFailure);
 
         //! Toggles the bindless texture residency in the unique
         //! graphics context associated with `state`.
