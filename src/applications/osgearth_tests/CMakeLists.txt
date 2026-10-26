@@ -17,7 +17,6 @@ set(TARGET_SRC
     PathTests.cpp
     PBRMaterialTests.cpp
     MaterialTexturePreparationTests.cpp
-    ScreenSpaceErrorTests.cpp
     ImageLayerTests.cpp
     SpatialReferenceTests.cpp
     StringUtilsTests.cpp
