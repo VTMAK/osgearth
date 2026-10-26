@@ -6,6 +6,8 @@
 #include <osgEarth/Metrics>
 #include <osgEarth/Registry>
 #include <osgEarth/Progress>
+#include <osgEarth/GeoData>
+#include <osg/MatrixTransform>
 
 using namespace osgEarth;
 
@@ -24,6 +26,7 @@ void XYZModelLayer::Options::fromConfig(const Config& conf)
     conf.get("min_level", minLevel());
     conf.get("max_level", maxLevel());    
     conf.get("profile", profile());
+    conf.get("local_tile_frame", localTileFrame());
 }
 
 Config
@@ -34,6 +37,7 @@ XYZModelLayer::Options::getConfig() const
     conf.set("min_level", minLevel());
     conf.set("max_level", maxLevel());
     conf.set("profile", profile());
+    conf.set("local_tile_frame", localTileFrame());
 
     return conf;
 }
@@ -166,6 +170,20 @@ XYZModelLayer::createTileImplementation(const TileKey& key, ProgressCallback* pr
     URI myUri(location, options().url()->context());
 
     osg::ref_ptr<osg::Node> node = myUri.readNode(_readOptions.get()).getNode();
+
+    if (node.valid() && options().localTileFrame() == true)
+    {
+        // Model formats store single-precision coordinates (glTF matrices included), which cannot hold
+        // geocentric positions; place the tile's local frame here in doubles.
+        GeoPoint center = key.getExtent().getCentroid();
+        center = GeoPoint(center.getSRS()->getGeographicSRS(), center.x(), center.y(), 0.0, ALTMODE_ABSOLUTE);
+        osg::Matrixd localToWorld;
+        if (!center.createLocalToWorld(localToWorld))
+            return nullptr;
+        osg::ref_ptr<osg::MatrixTransform> placed = new osg::MatrixTransform(localToWorld);
+        placed->addChild(node.get());
+        node = placed;
+    }
 
     if (node.valid())
     {

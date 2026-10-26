@@ -211,6 +211,13 @@ struct ElevationPool::MapData
             DataExtentList extents;
             layer->getDataExtents(extents);
             const Profile* profile = layer->getProfile();
+            // A layer with tiles larger than the pool's reaches pool resolution at deeper pool keys: a 513-post
+            // tile at LOD 15 holds the detail of a pool tile at LOD 16, and TileKey::mapResolution maps that
+            // pool key back to LOD 15. Index the deeper level, or the pool caps its keys at the layer's own
+            // level and maps them below the layer's data.
+            unsigned deeper = 0u, poolSize = 1u;
+            while (poolSize < ELEVATION_TILE_SIZE) poolSize *= 2u;
+            for (; poolSize < layer->getTileSize(); poolSize *= 2u) ++deeper;
             if (extents.empty() && profile)
                 extents.emplace_back(profile->getExtent(), 0u, layer->getMaxDataLevel());
             for (const auto& dataExtent : extents)
@@ -221,7 +228,7 @@ struct ElevationPool::MapData
                 unsigned level = std::min(layer->getMaxDataLevel(), layer->getMaxLevel());
                 if (dataExtent.maxLevel().isSet())
                     level = std::min(level, dataExtent.maxLevel().get());
-                level = std::min(maxLOD, mapProfile->getEquivalentLOD(profile, std::min(level, 30u)));
+                level = std::min(maxLOD, mapProfile->getEquivalentLOD(profile, std::min(level, 30u)) + deeper);
                 // Insert each non-wrapping part so point searches work at the antimeridian.
                 auto insert = [&](const GeoExtent& part)
                 {

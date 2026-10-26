@@ -32,6 +32,9 @@ namespace osgEarth
             OE_OPTION(bool, invertY);
             OE_OPTION(int, minLevel);
             OE_OPTION(int, maxLevel);
+            //! Tile files hold east-north-up meters about their tile's center on the ellipsoid (height zero);
+            //! the layer supplies the double-precision placement. Default false: files are placed absolutely.
+            OE_OPTION(bool, localTileFrame, false);
 
             OE_OPTION(ProfileOptions, profile);
             Config getConfig() const override;

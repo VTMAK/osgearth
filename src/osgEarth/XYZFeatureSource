@@ -32,7 +32,7 @@ namespace osgEarth
         void setURL(const URI& value);
         const URI& getURL() const;
 
-        //! Format of the geometry data (GeoJSON, GML)
+        //! Format of the geometry data (pbf, json, gml, fgb)
         void setFormat(const std::string& value);
         const std::string& getFormat() const;
 
@@ -70,6 +70,8 @@ namespace osgEarth
         mutable std::atomic_int _rotate_iter;
         
         bool getFeatures(const std::string& buffer, const TileKey& key, const std::string& mimeType, FeatureList& features) const;
+        //! Decodes one FlatGeobuf tile from memory (through GDAL's /vsimem); false if it cannot be read.
+        bool getFlatGeobufFeatures(const std::string& buffer, FeatureList& features) const;
         std::string getExtensionForMimeType(const std::string& mime) const;
         bool isGML( const std::string& mime ) const;
         bool isJSON( const std::string& mime ) const;

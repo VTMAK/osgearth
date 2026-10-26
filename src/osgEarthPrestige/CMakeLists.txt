@@ -10,6 +10,7 @@ set(LIB_NAME osgEarthPrestige)
 set(OSGEARTH_HAVE_PRESTIGE_NODEKIT ON PARENT_SCOPE) # for BuildConfig
 
 set(TARGET_GLSL
+    SurfaceSplattingLayer.glsl
     GrimeLayer.glsl
     Sky.Common.glsl
     Sky.Lighting.glsl
@@ -28,8 +29,12 @@ set(TARGET_IN
     PrestigeShaders.cpp.in)
 
 set(TARGET_SRC
+    GradingLayer.cpp
+    OSMRoadWidthFilter.cpp
+    SelectFilter.cpp
     SkyNode.cpp
     CloudLayer.cpp
+    SurfaceSplattingLayer.cpp
     GrimeLayer.cpp
     PrestigeLayer.cpp
     AggregateCoverage.cpp
@@ -47,10 +52,14 @@ set(TARGET_SRC
     ${SHADERS_CPP})
 
 set(TARGET_H
+    GradingLayer
+    OSMRoadWidthFilter
+    SelectFilter
     SkyNode
     SkyAtmosphere.h
     CloudLayer
     Export
+    SurfaceSplattingLayer
     GrimeLayer
     PrestigeLayer
     PrestigeShaders
@@ -66,7 +75,7 @@ add_osgearth_library(
     TARGET ${LIB_NAME}
     SOURCES ${TARGET_SRC}
     HEADERS CloudLayerRenderer.h PlacementLimits.h TreeCards.h PlaceholderAssets.h
-        Grass.h AssetLighting.h CanopyTransition.h OverlayPager.h
+        Grass.h AssetLighting.h CanopyTransition.h OverlayPager.h Grading.h
     PUBLIC_HEADERS ${TARGET_H}
     SHADERS ${TARGET_GLSL}
     TEMPLATES ${TARGET_IN}

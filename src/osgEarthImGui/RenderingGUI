@@ -21,7 +21,7 @@ namespace {
 in vec3 vp_Normal;
 uniform float oe_render_blend = 1.0;
 void oeui_render_view_normals(inout vec4 color) {
-    color = mix(color, vec4((vp_Normal+1.0)*0.5, 1), oe_render_blend);
+    color = mix(color, vec4((vp_Normal+1.0)*0.5, color.a), oe_render_blend);
 }
 )";
 
@@ -39,7 +39,7 @@ void oeui_render_model_normals_vs(inout vec4 vertex) {
 in vec3 oeui_model_normal;
 uniform float oe_render_blend = 1.0;
 void oeui_render_view_normals_fs(inout vec4 color) {
-    color = mix(color, vec4((normalize(oeui_model_normal)+1.0)*0.5, 1), oe_render_blend);
+    color = mix(color, vec4((normalize(oeui_model_normal)+1.0)*0.5, color.a), oe_render_blend);
 }
 )";
 
@@ -87,7 +87,7 @@ void oeui_render_outlines(inout vec4 color) {
 struct OE_PBR { float displacement, roughness, ao, metal; } oe_pbr;
 uniform float oe_render_blend = 1.0;
 void oeui_render_ao(inout vec4 color) {
-    color = mix(color, vec4(oe_pbr.ao, oe_pbr.ao, oe_pbr.ao, 1), oe_render_blend);
+    color = mix(color, vec4(oe_pbr.ao, oe_pbr.ao, oe_pbr.ao, color.a), oe_render_blend);
 }
 )";
 
@@ -97,7 +97,7 @@ void oeui_render_ao(inout vec4 color) {
 struct OE_PBR { float displacement, roughness, ao, metal; } oe_pbr;
 uniform float oe_render_blend = 1.0;
 void oeui_render_roughness(inout vec4 color) {
-    color = mix(color, vec4(oe_pbr.roughness, oe_pbr.roughness, oe_pbr.roughness, 1), oe_render_blend);
+    color = mix(color, vec4(oe_pbr.roughness, oe_pbr.roughness, oe_pbr.roughness, color.a), oe_render_blend);
 }
 )";
 
@@ -107,17 +107,17 @@ void oeui_render_roughness(inout vec4 color) {
 struct OE_PBR { float displacement, roughness, ao, metal; } oe_pbr;
 uniform float oe_render_blend = 1.0;
 void oeui_render_metal(inout vec4 color) {
-    color = mix(color, vec4(oe_pbr.metal, oe_pbr.metal, oe_pbr.metal, 1), oe_render_blend);
+    color = mix(color, vec4(oe_pbr.metal, oe_pbr.metal, oe_pbr.metal, color.a), oe_render_blend);
 }
 )";
 
     const char* render_displacement = R"(
 #version 330
-#pragma vp_function oeui_render_metal, fragment_lighting, last
+#pragma vp_function oeui_render_displacement, fragment_lighting, last
 struct OE_PBR { float displacement, roughness, ao, metal; } oe_pbr;
 uniform float oe_render_blend = 1.0;
-void oeui_render_metal(inout vec4 color) {
-    color = mix(color, vec4(oe_pbr.displacement, oe_pbr.displacement, oe_pbr.displacement, 1), oe_render_blend);
+void oeui_render_displacement(inout vec4 color) {
+    color = mix(color, vec4(oe_pbr.displacement, oe_pbr.displacement, oe_pbr.displacement, color.a), oe_render_blend);
 }
 )";
 
