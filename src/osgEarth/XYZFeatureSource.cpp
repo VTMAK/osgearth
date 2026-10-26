@@ -9,6 +9,9 @@
 #include <osgEarth/MVT>
 #include <osgEarth/Metrics>
 #include <osgDB/FileUtils>
+#include <cpl_vsi.h>
+#include <gdal.h>
+#include <atomic>
 
 #define LC "[XYZFeatureSource] " << getName() << " : "
 
@@ -49,7 +52,7 @@ XYZFeatureSource::openImplementation()
 {
     if (!options().format().isSet())
     {
-        return Status(Status::ConfigurationError, "XYZ driver requires a format (pbf, json, gml)");
+        return Status(Status::ConfigurationError, "XYZ driver requires a format (pbf, json, gml, fgb)");
     }
 
     // if the user didn't expressly set a feature profile, create one from the options
@@ -147,6 +150,9 @@ XYZFeatureSource::createFeatureCursorImplementation(const Query& query, Progress
             else if (options().format().value().compare("pbf") == 0)
                 mimeType = "application/x-protobuf";
         }
+        // FlatGeobuf has no registered content type; servers report generic binary, which would select MVT.
+        if (options().format().value() == "fgb")
+            mimeType = "application/flatgeobuf";
         dataOK = getFeatures(data, *query.tileKey(), mimeType, features);
     }
 
@@ -163,6 +169,9 @@ XYZFeatureSource::createFeatureCursorImplementation(const Query& query, Progress
 bool
 XYZFeatureSource::getFeatures(const std::string& data, const TileKey& key, const std::string& mimeType, FeatureList& features) const
 {
+    if (mimeType == "application/flatgeobuf")
+        return getFlatGeobufFeatures(data, features);
+
     if (mimeType == "application/x-protobuf" || mimeType == "binary/octet-stream" || mimeType == "application/octet-stream")
     {
 #ifdef OSGEARTH_HAVE_MVT
@@ -254,6 +263,64 @@ XYZFeatureSource::getFeatures(const std::string& data, const TileKey& key, const
     return true;
 }
 
+
+bool
+XYZFeatureSource::getFlatGeobufFeatures(const std::string& data, FeatureList& features) const
+{
+    // OGR reads FlatGeobuf only from a (virtual) file. Each call gets its own name, so concurrent tile
+    // reads never share a buffer; the buffer is borrowed, not copied or freed by GDAL.
+    static std::atomic_uint serial{ 0u };
+    const std::string path = Stringify() << "/vsimem/osgearth_xyz_" << this << "_" << serial++ << ".fgb";
+    VSILFILE* file = VSIFileFromMemBuffer(path.c_str(),
+        reinterpret_cast<GByte*>(const_cast<char*>(data.data())), data.size(), FALSE);
+    if (!file)
+        return false;
+    VSIFCloseL(file);
+
+    bool ok = false;
+    GDALDatasetH ds = GDALOpenEx(path.c_str(), GDAL_OF_VECTOR | GDAL_OF_READONLY, nullptr, nullptr, nullptr);
+    if (ds)
+    {
+        OGRLayerH layer = GDALDatasetGetLayer(ds, 0);
+        if (layer)
+        {
+            OGRFeatureFactory factory;
+            // A FlatGeobuf carries its own CRS; without one, assume the tiling profile's SRS.
+            OGRSpatialReferenceH handle = OGR_L_GetSpatialRef(layer);
+            osg::ref_ptr<const SpatialReference> srs;
+            if (handle)
+                srs = SpatialReference::createFromHandle(handle);
+            factory.srs = srs.valid() ? srs.get() : getFeatureProfile()->getSRS();
+            factory.interp = getFeatureProfile()->geoInterp();
+            factory.rewindPolygons = _options->rewindPolygons().defaultValue();
+            // Schema columns exist on every feature; drop unset ones so attribute presence stays meaningful.
+            factory.keepNullValues = false;
+
+            const bool reproject = !factory.srs->isHorizEquivalentTo(getFeatureProfile()->getSRS());
+            OGR_L_ResetReading(layer);
+            OGRFeatureH next;
+            while ((next = OGR_L_GetNextFeature(layer)) != nullptr)
+            {
+                osg::ref_ptr<Feature> f = factory.createFeature(next);
+                if (f.valid())
+                {
+                    if (reproject)
+                        f->transform(getFeatureProfile()->getSRS());
+                    features.push_back(f.release());
+                }
+                OGR_F_Destroy(next);
+            }
+            ok = true;
+        }
+        GDALClose(ds);
+    }
+    else
+    {
+        OE_WARN << LC << "Error reading FlatGeobuf tile" << std::endl;
+    }
+    VSIUnlink(path.c_str());
+    return ok;
+}
 
 std::string
 XYZFeatureSource::getExtensionForMimeType(const std::string& mime) const

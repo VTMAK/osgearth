@@ -1,0 +1,142 @@
+/* osgEarth
+ * Copyright 2026 Pelican Mapping
+ * MIT License
+ */
+#pragma once
+
+#include <osgEarthPrestige/Export>
+#include <osgEarth/ElevationLayer>
+#include <osgEarth/FeatureSource>
+#include <osgEarth/LayerReference>
+
+namespace osgEarthPrestige
+{
+    using namespace osgEarth;
+
+    /**
+     * Terrain grading from GIS features: terrain-derived road networks, level polygon/point pads, inland water,
+     * and compiler-solved road profiles and water beds with inward bank transitions. Distances are meters.
+     *
+     * Road policy (line features): lines that share endpoints are chained into continuous profiles before
+     * smoothing, so way splits and exactly clipped vector tiles do not crease the road. Vertices shared by three
+     * or more arms become junctions with a fitted plane that member roads blend into, so intersections stay free
+     * of undulations; a junction's plane is fitted over its close neighbors too, so a road crossing both
+     * carriageways of a divided road gets one plane. Only shared vertices create junctions; roads that cross in
+     * plan (overpasses) are unaffected. Each road's cross-section is level: inside its half-width a road owns its
+     * height, and neighbors' shoulders cannot tilt it. Optional anchor points pin a road profile to an absolute
+     * height with a smooth ramp (bridge, ramp or overpass ends). Paired road footprints keep the compiler's own
+     * junctions; detection applies to plain line features only.
+     *
+     * Water policy: line features are channels whose bed cannot rise downstream (digitized direction) within a
+     * flow window, lowered by a depth. Polygon features are water bodies: their union is level at a low quantile of
+     * the terrain sampled on a global lattice inside the water within a level radius, lowered by a depth. Bodies
+     * narrower than the radius are exactly level; larger ones follow their surface gently; flowing bodies (river
+     * areas) follow their channel profile instead. Inside channels and bodies the water surface is set exactly
+     * (pits fill, so water lies level). Banks are slope limited within the buffer width (bank reach): high ground
+     * is cut and low ground raised to at most the bank slope from the water's edge, so water never floats above
+     * its shore. Source clipping into fragments does not change the result, and channel segments inside water
+     * bodies defer to the body. Place water grading before road grading.
+     *
+     * Configure before open; attach/detach and configuration changes belong on the map thread. Paging jobs own
+     * their geometry, indexes, and elevation working sets, and load every input that can affect their tile, so
+     * shared tile edges agree. Line fragments chain only where their ends coincide. Place after source elevation.
+     * Geometry Z is ignored unless profileElevation is explicitly absolute; then road centerline Z supplies
+     * heights in the feature SRS vertical datum (ellipsoid meters if absent). Footprints still supply only XY.
+     * This modifies terrain only; bridges and stacked roads need separate meshes.
+     */
+    class OSGEARTHPRESTIGE_EXPORT GradingLayer : public ElevationLayer
+    {
+    public:
+        struct OSGEARTHPRESTIGE_EXPORT Options : public ElevationLayer::Options
+        {
+            META_LayerOptions(osgEarthPrestige, Options, ElevationLayer::Options);
+            OE_OPTION_LAYER(FeatureSource, featureSource);
+            OE_OPTION(Expression<double>, lineWidth, 10.0);
+            OE_OPTION(Expression<double>, bufferWidth, 20.0);
+            OE_OPTION(double, maxLineWidth, 100.0);
+            OE_OPTION(double, maxBufferWidth, 100.0);
+            OE_OPTION(double, sampleSpacing, 10.0);
+            OE_OPTION(double, smoothingDistance, 30.0);
+            OE_OPTION(double, elevationResolution, 5.0);
+            OE_OPTION(bool, roadFootprints, false);
+            OE_OPTION(Expression<bool>, junction, false);
+            OE_OPTION(std::string, profileIdAttribute, "");
+            OE_OPTION(double, junctionTransition, 30.0);
+            //! Absolute mode consumes solved centerline Z without terrain sampling, smoothing, or junction refitting.
+            OE_OPTION(std::string, profileElevation, "terrain");
+            //! Fades absolute profiles into preceding elevation at both complete centerline endpoints, in meters.
+            OE_OPTION(double, profileTransition, 0.0);
+            //! Receiver-specific offset in meters after datum conversion; absolute profiles only.
+            OE_OPTION(Expression<double>, profileOffset, 0.0);
+            //! Paired footprints only: fade inward from all polygon boundaries, including holes; meters.
+            OE_OPTION(Expression<double>, footprintInset, 0.0);
+            //! Sample preceding elevation everywhere affected and never raise it; missing base stays no-data.
+            OE_OPTION(bool, cutOnly, false);
+            //! "road" (default) or "water": downhill channels and level water bodies with slope-limited banks.
+            OE_OPTION(std::string, policy, "road");
+            //! Repetitions of the profile smoothing filter; two passes give gentler vertical curves.
+            OE_OPTION(unsigned, smoothingPasses, 2u);
+            //! Line mode: detect junctions at vertices shared by three or more road arms and fit a plane to each,
+            //! over its close neighbors.
+            OE_OPTION(bool, junctionDetection, true);
+            //! Detected junction paving radius beyond the widest member half-width, meters.
+            OE_OPTION(double, junctionMargin, 1.5);
+            //! Water policy: depth of channels below their downhill profile and of water bodies below their level.
+            OE_OPTION(Expression<double>, depth, 1.0);
+            //! Point features with this expression set are anchors: absolute ellipsoid heights that road
+            //! profiles touching them (within 1 m) must reach, e.g. bridge or ramp ends.
+            OE_OPTION(Expression<double>, anchorHeight);
+            //! Length over which a road profile ramps from its own height to an anchor height, meters.
+            OE_OPTION(Expression<double>, anchorRamp, 60.0);
+            //! Upper bound of anchor ramps, used to size the paging query halo.
+            OE_OPTION(double, maxAnchorRamp, 200.0);
+            //! Water channels: upstream window over which the bed takes its minimum; longer windows remove longer
+            //! bumps (bridges, culverts, canopy) and enlarge the paging query halo by twice this length. Meters.
+            OE_OPTION(double, flowWindow, 200.0);
+            //! Water bodies: radius of the low-quantile level estimate; bodies narrower than this are exactly
+            //! level. Also sets the level lattice spacing (radius/20, at least sample spacing). Meters.
+            OE_OPTION(double, waterLevelRadius, 200.0);
+            //! Water banks: steepest rise per meter of distance from the water's edge (0.33 is about 18 degrees).
+            OE_OPTION(double, bankSlope, 0.33);
+            //! Water bodies: true for river or canal areas. Their surface follows the nearest channel line's profile
+            //! (level across, falling along) instead of a level; without a channel within the level radius they
+            //! are treated as still water.
+            OE_OPTION(Expression<bool>, flowing, false);
+            //! Water channels: deepest the channel surface may sit below the smoothed terrain along it, before the
+            //! bed depth. Bumps up to this height still vanish; a line that strays up a valley side (coarse
+            //! elevation, misregistration) cannot carve a canyon. Meters.
+            OE_OPTION(double, channelCutLimit, 4.0);
+
+            //! Serializes source and metric profile settings, including query bounds.
+            Config getConfig() const override;
+            //! Reads configuration; evaluated widths are clamped to the declared maxima.
+            void fromConfig(const Config&);
+        };
+
+        META_Layer(osgEarthPrestige, GradingLayer, Options, ElevationLayer, prestige:grading);
+
+        //! Retains a source; call before opening or adding the layer to a map.
+        void setFeatureSource(FeatureSource* source);
+        //! Returns the retained/resolved source, or null before resolution.
+        FeatureSource* getFeatureSource() const;
+        //! Resolves the source and retains a weak map reference for worker snapshots.
+        void addedToMap(const Map*) override;
+        //! Detaches the source and prevents new paging jobs from sampling this map.
+        void removedFromMap(const Map*) override;
+
+    protected:
+        //! Initializes sparse elevation output and disables dependency-unsafe persistent caching.
+        void init() override;
+        //! Validates bounded settings and opens the source; reports invalid configuration.
+        Status openImplementation() override;
+        //! Builds a sparse constraint tile; cancellation/failure never publishes a partial tile.
+        GeoHeightField createHeightFieldImplementation(const TileKey&, ProgressCallback*) const override;
+        //! Releases retained source state; active jobs own their temporary data.
+        ~GradingLayer() override = default;
+
+    private:
+        osg::observer_ptr<const Map> _map;
+    };
+}
+
+OSGEARTH_SPECIALIZE_CONFIG(osgEarthPrestige::GradingLayer::Options);

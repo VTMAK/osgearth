@@ -1,0 +1,35 @@
+/* osgEarth
+ * Copyright 2026 Pelican Mapping
+ * MIT License
+ */
+#pragma once
+
+#include <osgEarthPrestige/Export>
+#include <osgEarth/Filter>
+#include <string>
+#include <vector>
+
+namespace osgEarthPrestige
+{
+    //! Keeps only features whose attribute equals one of the configured values (exact string comparison), so
+    //! several layers can draw different classes from one shared feature source. Configure before initialize;
+    //! push may run concurrently on independently owned feature lists.
+    //!
+    //!   <filters><prestige_select attribute="material" values="asphalt"/></filters>
+    class OSGEARTHPRESTIGE_EXPORT SelectFilter : public osgEarth::FeatureFilter
+    {
+    public:
+        //! Reads the attribute name and the comma-separated accepted values.
+        explicit SelectFilter(const osgEarth::Config& conf = osgEarth::Config());
+        //! Rejects an empty attribute name or value list.
+        osgEarth::Status initialize(const osgDB::Options*) override;
+        //! Serializes the attribute and values for configuration round trips.
+        osgEarth::Config getConfig() const override;
+        //! Removes features without a matching value; features without the attribute never match.
+        osgEarth::FilterContext push(osgEarth::FeatureList&, osgEarth::FilterContext&) override;
+
+    private:
+        std::string _attribute;
+        std::vector<std::string> _values;
+    };
+}
