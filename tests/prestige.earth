@@ -143,22 +143,22 @@
       <seed>17</seed>
       <asset_budget_mb>64</asset_budget_mb>
       <assets>
-          <asset canopy_trees="5" name="broadleaf" near="../data/procedural2/pbr/broadleaf-near.osg"
-              coarse="../data/procedural2/pbr/broadleaf-coarse.osg"
-              canopy="../data/procedural2/pbr/broadleaf-canopy.osg"/>
-          <asset canopy_trees="5" name="conifer" near="../data/procedural2/pbr/conifer-near.osg"
-              coarse="../data/procedural2/pbr/conifer-coarse.osg"
-              canopy="../data/procedural2/pbr/conifer-canopy.osg"/>
-          <asset name="shrub" near="../data/procedural2/pbr/shrub-near.osg"
-              coarse="../data/procedural2/pbr/shrub-coarse.osg"/>
-          <asset name="grass-tuft" near="../data/procedural2/pbr/grass-tuft-near.osg"
-              coarse="../data/procedural2/pbr/grass-tuft-coarse.osg"/>
-          <asset name="fern" near="../data/procedural2/pbr/fern-near.osg"
-              coarse="../data/procedural2/pbr/fern-coarse.osg"/>
-          <asset name="boulder" near="../data/procedural2/pbr/boulder-near.osg"
-              coarse="../data/procedural2/pbr/boulder-coarse.osg"/>
-          <asset name="canopy-cluster" near="../data/procedural2/pbr/canopy-cluster-near.osg"
-              coarse="../data/procedural2/pbr/canopy-cluster-coarse.osg"/>
+          <asset canopy_trees="5" name="broadleaf" near="../data/prestige/vegetation/pbr/broadleaf-near.osg"
+              coarse="../data/prestige/vegetation/pbr/broadleaf-coarse.osg"
+              canopy="../data/prestige/vegetation/pbr/broadleaf-canopy.osg"/>
+          <asset canopy_trees="5" name="conifer" near="../data/prestige/vegetation/pbr/conifer-near.osg"
+              coarse="../data/prestige/vegetation/pbr/conifer-coarse.osg"
+              canopy="../data/prestige/vegetation/pbr/conifer-canopy.osg"/>
+          <asset name="shrub" near="../data/prestige/vegetation/pbr/shrub-near.osg"
+              coarse="../data/prestige/vegetation/pbr/shrub-coarse.osg"/>
+          <asset name="grass-tuft" near="../data/prestige/vegetation/pbr/grass-tuft-near.osg"
+              coarse="../data/prestige/vegetation/pbr/grass-tuft-coarse.osg"/>
+          <asset name="fern" near="../data/prestige/vegetation/pbr/fern-near.osg"
+              coarse="../data/prestige/vegetation/pbr/fern-coarse.osg"/>
+          <asset name="boulder" near="../data/prestige/vegetation/pbr/boulder-near.osg"
+              coarse="../data/prestige/vegetation/pbr/boulder-coarse.osg"/>
+          <asset name="canopy-cluster" near="../data/prestige/vegetation/pbr/canopy-cluster-near.osg"
+              coarse="../data/prestige/vegetation/pbr/canopy-cluster-coarse.osg"/>
       </assets>
       <profile>global-geodetic</profile>
       <elevation_resolution>10m</elevation_resolution>

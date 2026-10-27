@@ -18,7 +18,12 @@ if(NOT OSGEARTH_BUILD_PLATFORM_IPHONE)
         add_subdirectory(osgearth_3pv)
         add_subdirectory(osgearth_clamp)
         add_subdirectory(osgearth_server)
+        add_subdirectory(osgearth_capture)
 
+        if(OSGEARTH_BUILD_PRESTIGE_NODEKIT)
+            # placeholder
+        endif()
+        
         if(OSGEARTH_BUILD_IMGUI_NODEKIT)
             add_subdirectory(osgearth_imgui)
         endif()
