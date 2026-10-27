@@ -61,6 +61,24 @@ static_assert(offsetof(Chonk::VertexGPU, material_index) == 30, "Material ID occ
 
 namespace
 {
+    // C++14 compatible version of std::unordered_map::merge:
+    template<class A, class B>
+    void merge(A& src, B& dest)
+    {
+        for (auto it = src.begin(); it != src.end(); )
+        {
+            if (dest.find(it->first) == dest.end())
+            {
+                dest.emplace(it->first, std::move(it->second));
+                it = src.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+    
     // Read the diagnostic storage policy once, before the first subtree load.
     // Only an explicit zero restores the original merged-geometry Ripper path.
     bool useChonkGeometryPages()
@@ -1633,7 +1651,7 @@ ChonkFactory::load(osg::Node* node, ChonkDrawable* drawable, float far_pixel_sca
         std::lock_guard<std::mutex> lock(drawable->_m);
         if (!drawable->acceptsArena(textures->getMaterialArena())) return false;
         drawable->_batches.reserve(drawable->_batches.size() + staged.size());
-        drawable->_batches.merge(staged);
+        merge(staged, drawable->_batches); //.merge(staged);
         drawable->_materialArena = textures->getMaterialArena();
         drawable->_proxy_dirty = true;
         drawable->dirtyGLObjects();
@@ -1704,7 +1722,7 @@ ChonkFactory::load(osg::Node* node, ChonkDrawable* drawable, float far_pixel_sca
     std::lock_guard<std::mutex> lock(drawable->_m);
     if (!drawable->acceptsArena(textures->getMaterialArena())) return false;
     drawable->_pageBatches.reserve(drawable->_pageBatches.size() + staged.size());
-    drawable->_pageBatches.merge(staged);
+    merge(staged, drawable->_pageBatches);
     drawable->_materialArena = textures->getMaterialArena();
     drawable->_proxy_dirty = true;
     drawable->dirtyGLObjects();
