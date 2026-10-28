@@ -51,15 +51,15 @@ namespace
     struct StaticModel : osg::NodeVisitor
     {
         bool valid = true;
-        //! Traverses even masked children to validate the complete asset.
-        StaticModel() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) { setNodeMaskOverride(~0u); }
+        //! Validates what Chonk bakes: skips subtrees whose node mask is 0 and ignores every other mask.
+        StaticModel() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) { setTraversalMask(~0u); setNodeMaskOverride(0u); }
         //! Accepts groups, affine transforms, geodes, and geometry without callbacks or custom programs.
         void apply(osg::Node& node) override
         {
             const std::string type = node.className();
             auto state = node.getStateSet();
             if ((type != "Group" && type != "MatrixTransform" && type != "Geode" && type != "Geometry") ||
-                node.getNodeMask() != ~0u || node.getDataVariance() == osg::Object::DYNAMIC ||
+                node.getDataVariance() == osg::Object::DYNAMIC ||
                 node.getUpdateCallback() || node.getCullCallback() || node.getEventCallback() ||
                 (state && (state->getAttribute(osg::StateAttribute::PROGRAM) || VirtualProgram::get(state))))
                 valid = false;

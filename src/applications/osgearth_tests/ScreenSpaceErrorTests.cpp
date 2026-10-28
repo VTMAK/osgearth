@@ -23,6 +23,7 @@ namespace
     struct CullContext
     {
         osg::ref_ptr<osg::Camera> camera = new osg::Camera;
+        osg::ref_ptr<osg::FrameStamp> frameStamp = new osg::FrameStamp;
         osg::ref_ptr<osgUtil::CullVisitor> visitor = new osgUtil::CullVisitor;
         CullContext()
         {
@@ -30,7 +31,7 @@ namespace
             auto* stage = new osgUtil::RenderStage;
             stage->setCamera(camera);
             visitor->setRenderStage(stage);
-            visitor->setFrameStamp(new osg::FrameStamp);
+            visitor->setFrameStamp(frameStamp.get());
             visitor->setComputeNearFarMode(osg::CullSettings::DO_NOT_COMPUTE_NEAR_FAR);
             visitor->pushViewport(new osg::Viewport(0, 0, 800, 800));
             visitor->pushProjectionMatrix(new osg::RefMatrix(osg::Matrix::ortho(-10, 10, -10, 10, -100, 100)));
@@ -183,8 +184,8 @@ TEST_CASE("Terrain panel expires inactive views without retaining their cameras"
     osg::ref_ptr<TestEngine> engine = new TestEngine(10.0f);
     auto controls = ImGuiDetail::ScreenSpaceErrorControls::install(*engine);
     CullContext active, removed;
-    active.visitor->getFrameStamp()->setFrameNumber(10u);
-    removed.visitor->getFrameStamp()->setFrameNumber(10u);
+    active.frameStamp->setFrameNumber(10u);
+    removed.frameStamp->setFrameNumber(10u);
     engine->getScreenSpaceError(*active.visitor);
     engine->getScreenSpaceError(*removed.visitor);
     auto rows = controls->rows(active.visitor->getFrameStamp());
@@ -197,7 +198,7 @@ TEST_CASE("Terrain panel expires inactive views without retaining their cameras"
     osg::ref_ptr<osg::FrameStamp> drawFrame = new osg::FrameStamp;
     drawFrame->setFrameNumber(12u);
     CHECK(controls->rows(drawFrame).size() == 2u);
-    active.visitor->getFrameStamp()->setFrameNumber(13u);
+    active.frameStamp->setFrameNumber(13u);
     engine->getScreenSpaceError(*active.visitor);
     drawFrame->setFrameNumber(13u);
     rows = controls->rows(drawFrame);
@@ -205,7 +206,7 @@ TEST_CASE("Terrain panel expires inactive views without retaining their cameras"
     CHECK(rows[0].id == activeID);
 
     // Returning cameras are rediscovered without a stale override or widget ID.
-    removed.visitor->getFrameStamp()->setFrameNumber(13u);
+    removed.frameStamp->setFrameNumber(13u);
     CHECK(engine->getScreenSpaceError(*removed.visitor) == 10.0f);
     rows = controls->rows(drawFrame);
     REQUIRE(rows.size() == 2u);
@@ -216,7 +217,7 @@ TEST_CASE("Terrain panel expires inactive views without retaining their cameras"
     osg::observer_ptr<osg::Camera> closed;
     {
         CullContext temporary;
-        temporary.visitor->getFrameStamp()->setFrameNumber(13u);
+        temporary.frameStamp->setFrameNumber(13u);
         closed = temporary.camera;
         engine->getScreenSpaceError(*temporary.visitor);
         CHECK(controls->rows(drawFrame).size() == 3u);
@@ -334,14 +335,14 @@ TEST_CASE("Rendering and terrain panels independently control each view's cull S
     CHECK(engine->getOptions().getScreenSpaceError() == 10.0f);
 
     // A camera retained by the viewer still disappears when its culls stop.
-    a.visitor->getFrameStamp()->setFrameNumber(3u);
+    a.frameStamp->setFrameNumber(3u);
     cull(a, 25.0f, 10.0f);
     auto remaining = mapControls->rows(a.visitor->getFrameStamp());
     REQUIRE(remaining.size() == 1u);
     CHECK(remaining[0].id == mapRows[0].id);
     CHECK(terrainControls->rows(a.visitor->getFrameStamp()).size() == 1u);
 
-    b.visitor->getFrameStamp()->setFrameNumber(3u);
+    b.frameStamp->setFrameNumber(3u);
     cull(b, 75.0f, 30.0f);
     auto rediscovered = mapControls->rows(b.visitor->getFrameStamp());
     REQUIRE(rediscovered.size() == 2u);
