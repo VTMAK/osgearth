@@ -366,8 +366,8 @@ namespace osgEarth
                     }
                 }
 
-                ImGui::Separator();
-                drawICO(ri);
+                //ImGui::Separator();
+                //drawICO(ri);
 
                 ImGui::Separator();
                 static bool s_showPagingManagerStats = false;
