@@ -168,7 +168,9 @@ namespace
             // Use the "active chidren" mode to only bring in default switch
             // and osgSim::MultiSwitch children for now. -gw
             setTraversalMode(TRAVERSE_ACTIVE_CHILDREN);
-            setNodeMaskOverride(~0);
+            // Match Ripper: skip subtrees whose node mask is 0 and ignore every other mask.
+            setTraversalMask(~0u);
+            setNodeMaskOverride(0u);
         }
 
         void apply(osg::Geometry& node) override
@@ -274,7 +276,10 @@ namespace
             // Use the "active chidren" mode to only bring in default switch
             // and osgSim::MultiSwitch children for now. -gw
             setTraversalMode(TRAVERSE_ACTIVE_CHILDREN);
-            setNodeMaskOverride(~0);
+            // A Chonk has no per-part node mask: every baked part draws in every pass. A mask of 0
+            // marks a subtree as hidden, so leave it out; any other mask is ignored and its subtree baked.
+            setTraversalMask(~0u);
+            setNodeMaskOverride(0u);
 
             _transformStack.push(osg::Matrix());
         }
@@ -794,10 +799,11 @@ namespace
 
     // Optional restrictions to the static, opaque subset whose scene/state
     // semantics Chonk can preserve. Report the first rejection per conversion.
+    // Like Ripper, skips subtrees whose node mask is 0 and ignores other masks.
     struct ChonkEligibility : osg::NodeVisitor
     {
         bool valid = true;
-        ChonkEligibility() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) { }
+        ChonkEligibility() : osg::NodeVisitor(TRAVERSE_ALL_CHILDREN) { setTraversalMask(~0u); setNodeMaskOverride(0u); }
 
         void reject(const osg::Node& node, const std::string& reason)
         {
@@ -810,9 +816,7 @@ namespace
         void inspect(osg::Node& node)
         {
             if (!valid) return;
-            if (node.getNodeMask() != ~0u)
-                reject(node, "non-default node mask");
-            else if (node.getUpdateCallback() || node.getEventCallback() || node.getCullCallback())
+            if (node.getUpdateCallback() || node.getEventCallback() || node.getCullCallback())
                 reject(node, "node callbacks");
             else if (node.getDataVariance() == osg::Object::DYNAMIC)
                 reject(node, "dynamic node");
