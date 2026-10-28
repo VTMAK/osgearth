@@ -251,9 +251,21 @@ namespace osgEarth { namespace Aerodrome
     class BoundaryFeatureOptions : public AerodromeFeatureOptions
     {
     public:
-        /** ICAO code attribute name */
+        /** Boundary elevation attribute name (heights in meters). */
         optional<std::string>& elevationAttr() { return _elevationAttr; }
-        const optional<std::string>& elevationAttr() const { return _elevationAttr; }    
+        const optional<std::string>& elevationAttr() const { return _elevationAttr; }
+
+        /**
+         * Datum of supplied boundary heights, independent of the feature geometry SRS.
+         * Applies to elevation_attr and explicit BoundaryNode constructor heights when
+         * clamp_to_terrain is false; does not apply to sampled terrain elevations.
+         * A leading minus (e.g., "-egm96") inverts the datum correction, as in FeatureElevationLayer.
+         * Omitted or empty retains the legacy interpretation in the map SRS.
+         * Conversion uses the boundary geometry's bounding-box center as the airport anchor.
+         * To align with FeatureElevationLayer's flat tangent plane on geographic maps, use
+         * the same polygon, attribute height and vdatum, with no terrain-layer offset.
+         */
+        OE_OPTION(std::string, verticalDatum);
 
     public:
         BoundaryFeatureOptions( const ConfigOptions& opt =ConfigOptions() ) :
@@ -268,6 +280,7 @@ namespace osgEarth { namespace Aerodrome
         Config getConfig() const {
             Config conf = AerodromeFeatureOptions::getConfig();
             conf.set( "elevation_attr", _elevationAttr );
+            conf.set( "vdatum", verticalDatum() );
 
             return conf;
         }
@@ -282,6 +295,7 @@ namespace osgEarth { namespace Aerodrome
             AerodromeFeatureOptions::fromConfig(conf);
 
             conf.get( "elevation_attr", _elevationAttr );
+            conf.get( "vdatum", verticalDatum() );
         }
 
     private:

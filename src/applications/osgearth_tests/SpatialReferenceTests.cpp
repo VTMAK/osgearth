@@ -187,6 +187,22 @@ TEST_CASE("Vertical Datum Tests") {
 
     REQUIRE(wgs84->transform(osg::Vec3d(-90, 0, -4.29), wgs84_egm96, output));
     REQUIRE(osg::equivalent(output.z(), 0.0, eps));
+
+    SECTION("Inverted datums reverse the correction, not the supplied height")
+    {
+        const SpatialReference* inverted = SpatialReference::get("wgs84", "-egm96");
+        REQUIRE(inverted->getVerticalDatum() != nullptr);
+        REQUIRE(inverted->transform(osg::Vec3d(0, 0, 100.0), wgs84, output));
+        REQUIRE(osg::equivalent(output.z(), 82.84, eps));
+
+        osg::Vec3d roundTrip;
+        REQUIRE(wgs84->transform(output, inverted, roundTrip));
+        REQUIRE(osg::equivalent(roundTrip.z(), 100.0, 1e-6));
+
+        // Loading an inverted datum must not change the ordinary datum's geoid.
+        REQUIRE(wgs84_egm96->transform(osg::Vec3d(0, 0, 100.0), wgs84, output));
+        REQUIRE(osg::equivalent(output.z(), 117.16, eps));
+    }
 }
 
 TEST_CASE("getGeographicsSRS") {
