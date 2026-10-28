@@ -1131,50 +1131,74 @@ AerodromeRenderer::defaultFeatureRenderer(osgEarth::Feature* feature, const Styl
 void
 AerodromeRenderer::createLocalizations(const osgEarth::Bounds& bounds, BoundaryNode* boundary)
 {
-   osg::ref_ptr<const Map> refMap;
-   if (_map.lock(refMap))
-   {
-      // use the center of the bounds as an anchor for localization
-      GeoPoint anchor(boundary->getFeature()->getSRS(), bounds.center().x(), bounds.center().y());
-      anchor.transformInPlace(refMap->getSRS());
+    osg::ref_ptr<const Map> refMap;
+    if (_map.lock(refMap))
+    {
+        // use the center of the bounds as an anchor for localization
+        GeoPoint anchor(boundary->getFeature()->getSRS(), bounds.center().x(), bounds.center().y());
+        anchor.transformInPlace(refMap->getSRS());
 
-      _elevation = 0.0;
+        _elevation = 0.0;
 
-      if (!_clampToTerrain)
-      {
-          // get a common elevation for the aerodrome
-          if (boundary && boundary->hasElevation())
-          {
-              _elevation = boundary->elevation();
-          }
-          else
-          {
-              auto* pool = refMap->getElevationPool();
-              auto sample = pool->getSample(anchor, nullptr);
-              if (sample.hasData())
-              {
-                  _elevation = sample.elevation().as(Units::METERS);
-              }
-              else
-              {
-                  OE_WARN << LC << "No elevation data for aerodrome anchor; using 0.0" << std::endl;
-              }
-          }
-      }
+        if (!_clampToTerrain)
+        {
+            // get a common elevation for the aerodrome
+            if (boundary && boundary->hasElevation())
+            {
+                _elevation = boundary->elevation();
 
-      // create a w2l matrix for the aerodrome
-      GeoPoint p(anchor.getSRS(), anchor.x(), anchor.y(), _elevation, ALTMODE_ABSOLUTE);
-      p.createLocalToWorld(_local2world);
-      _world2local.invert(_local2world);
+                const auto& vdatum = boundary->getBoundaryOptions().verticalDatum();
+                if (vdatum.isSet() && !vdatum->empty())
+                {
+                    // Separate the supplied height datum from the geometry's vertical reference.
+                    // Use the same bounding-box center as FeatureElevationLayer's tangent plane.
+                    const SpatialReference* featureSRS = boundary->getFeature()->getSRS();
+                    const SpatialReference* elevationSRS =
+                        SpatialReference::create(featureSRS->getHorizInitString(), vdatum.get());
+                    GeoPoint elevationAnchor(elevationSRS, bounds.center().x(), bounds.center().y(),
+                        _elevation, ALTMODE_ABSOLUTE);
+                    if (elevationAnchor.transformInPlace(anchor.getSRS()))
+                    {
+                        // createLocalToWorld expects a height in the map SRS, not an HAE override.
+                        anchor = elevationAnchor;
+                        _elevation = anchor.z();
+                    }
+                    else
+                    {
+                        OE_WARN << LC << "Unable to transform aerodrome boundary elevation; using supplied height"
+                            << std::endl;
+                    }
+                }
+            }
+            else
+            {
+                auto* pool = refMap->getElevationPool();
+                auto sample = pool->getSample(anchor, nullptr);
+                if (sample.hasData())
+                {
+                    _elevation = sample.elevation().as(Units::METERS);
+                }
+                else
+                {
+                    OE_WARN << LC << "No elevation data for aerodrome anchor; using 0.0" << std::endl;
+                }
+            }
+        }
 
-      // find the local min point (lower-left), used for calculating site-wide texture coords
-      GeoPoint vert(boundary->getFeature()->getSRS(), osg::Vec3d(bounds.xMin(), bounds.yMin(), _elevation), osgEarth::ALTMODE_ABSOLUTE);
+        // create a w2l matrix for the aerodrome
+        GeoPoint p(anchor.getSRS(), anchor.x(), anchor.y(), _elevation, ALTMODE_ABSOLUTE);
+        p.createLocalToWorld(_local2world);
+        _world2local.invert(_local2world);
 
-      osg::Vec3d world;
-      vert.toWorld(world);
-      _localMin = world * _world2local;
-      _localMin.z() = 0.0;
-   }
+        // find the local min point (lower-left), used for calculating site-wide texture coords
+        GeoPoint vert(boundary->getFeature()->getSRS(),
+            osg::Vec3d(bounds.xMin(), bounds.yMin(), _elevation), osgEarth::ALTMODE_ABSOLUTE);
+
+        osg::Vec3d world;
+        vert.toWorld(world);
+        _localMin = world * _world2local;
+        _localMin.z() = 0.0;
+    }
 }
 
 void

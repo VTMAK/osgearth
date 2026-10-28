@@ -42,6 +42,9 @@ namespace osgEarth { namespace Aerodrome
         virtual ~BoundaryNode() { }
         
     public: // properties
+        /** Options describing supplied boundary heights, including their optional datum. */
+        const BoundaryFeatureOptions& getBoundaryOptions() const { return _boundaryOptions; }
+
         bool hasElevation()
         {
             if (_hasElevation || (_boundaryOptions.elevationAttr().isSet() && getFeature()->hasAttr(_boundaryOptions.elevationAttr().value())))
@@ -50,6 +53,10 @@ namespace osgEarth { namespace Aerodrome
             return false;
         }
 
+        /**
+         * Returns the raw supplied height in meters, with constructor heights taking precedence.
+         * The renderer applies the optional boundary vdatum at the airport anchor.
+         */
         double elevation()
         {
             return hasElevation() ? _hasElevation ? _elevation : getFeature()->getDouble(_boundaryOptions.elevationAttr().value(), 0.0) : 0.0;
