@@ -182,12 +182,17 @@ public:
         tinygltf::Options opt;
         opt.skip_imagery = readOptions && readOptions->getOptionString().find("gltfSkipImagery") != std::string::npos;        
 
-        loader.LoadBinaryFromMemory(&model, &err, &warn, reinterpret_cast<unsigned char*>(&gltfData[0]), sz, "", REQUIRE_VERSION, &opt);
+        bool loaded = loader.LoadBinaryFromMemory(
+            &model, &err, &warn, reinterpret_cast<const unsigned char*>(gltfData.data()),
+            static_cast<unsigned int>(gltfData.size()), "", REQUIRE_VERSION, &opt);
 
         if (!err.empty())
             OE_WARN << LC << "GLTF ERROR: " << err << std::endl;
         if (!warn.empty())
             OE_WARN << LC << "GLTF WARNING: " << warn << std::endl;
+
+        if (!loaded)
+            return NULL;
 
         GLTFReader gltfReader;
         gltfReader.setTextureCache(_texCache);

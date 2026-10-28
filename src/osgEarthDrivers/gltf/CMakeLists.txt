@@ -18,7 +18,8 @@ include_directories(
     ${OSGEARTH_EMBEDDED_THIRD_PARTY_DIR}/tinygltf 
     ${OSGEARTH_EMBEDDED_THIRD_PARTY_DIR}/rapidjson/include/rapidjson )
 
-if (draco_FOUND)
-    #include_directories(${draco_INCLUDE_DIRS})
+find_package(draco QUIET)
+if(TARGET draco::draco)
     target_link_libraries(osgdb_gltf PRIVATE draco::draco)
+    target_compile_definitions(osgdb_gltf PRIVATE OSGEARTH_HAVE_DRACO)
 endif()
