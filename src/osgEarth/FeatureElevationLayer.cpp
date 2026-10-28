@@ -18,8 +18,8 @@ REGISTER_OSGEARTH_LAYER(feature_elevation, FeatureElevationLayer);
 void
 FeatureElevationLayer::Options::fromConfig(const Config& conf)
 {
-    attr().setDefault("ELEVATION");
-    offset().setDefault(0.0f);
+    attr().init("ELEVATION");
+    offset().init(-1.0);
 
     conf.get("attr", attr());
     conf.get("offset", offset());
@@ -149,6 +149,13 @@ FeatureElevationLayer::createHeightFieldImplementation(const TileKey& key, Progr
 
     const SpatialReference* keySRS = key.getProfile()->getSRS();
 
+    // Attribute heights can use a different datum than the feature geometry. Reuse the
+    // inherited profile override, including support for inverted datums such as "-egm96".
+    const bool hasVerticalDatum = !options().verticalDatum().get().empty();
+    const SpatialReference* elevationSRS = hasVerticalDatum ?
+        SpatialReference::create(featureSRS->getHorizInitString(), getProfile()->getSRS()->getVertInitString()) :
+        featureSRS;
+
     // populate feature list
     // assemble a spatial query. It helps if your features have a spatial index.
     Query query;
@@ -193,61 +200,68 @@ FeatureElevationLayer::createHeightFieldImplementation(const TileKey& key, Progr
                 if (progress && progress->isCanceled())
                     return GeoHeightField::INVALID;
 
-                ConstGeometryIterator iter((*f)->getGeometry(), false);
-                while (iter.hasMore())
+                osgEarth::Polygon* boundary = dynamic_cast<osgEarth::Polygon*>((*f)->getGeometry());
+
+                if (!boundary)
                 {
-                    auto boundary = dynamic_cast<const osgEarth::Polygon*>(iter.next());
+                    h = (*f)->getDouble(options().attr().get());
+                    OE_WARN << LC << "NOT A POLYGON" << std::endl;
+                }
+                else
+                {
+                    GeoPoint geo(keySRS, geoX, geoY, 0.0, ALTMODE_ABSOLUTE);
 
-                    if (!boundary)
+                    if (transformRequired)
+                        geo = geo.transform(featureSRS);
+
+                    if (boundary->contains2D(geo.x(), geo.y()))
                     {
-                        OE_WARN << LC << "NOT A POLYGON" << std::endl;
-                    }
-                    else
-                    {
-                        GeoPoint geo(keySRS, geoX, geoY, 0.0, ALTMODE_ABSOLUTE);
+                        h = (*f)->getDouble(options().attr().get());
 
-                        if (transformRequired)
-                            geo = geo.transform(featureSRS);
-
-                        if (boundary->contains2D(geo.x(), geo.y()))
+                        if (keySRS->isGeographic())
                         {
-                            h = (*f)->getDouble(options().attr().get());
-
-                            if (keySRS->isGeographic())
+                            // for a round earth, must adjust the final elevation accounting for the
+                            // curvature of the earth; so we have to adjust it in the feature boundary's
+                            // local tangent plane.
+                            Bounds bounds = boundary->getBounds();
+                            GeoPoint anchor(elevationSRS, bounds.center().x(), bounds.center().y(), h, ALTMODE_ABSOLUTE);
+                            if (hasVerticalDatum)
                             {
-                                // for a round earth, must adjust the final elevation accounting for the
-                                // curvature of the earth; so we have to adjust it in the feature boundary's
-                                // local tangent plane.
-                                Bounds bounds = boundary->getBounds();
-                                GeoPoint anchor(featureSRS, bounds.center().x(), bounds.center().y(), h, ALTMODE_ABSOLUTE);
-                                if (transformRequired)
-                                    anchor = anchor.transform(keySRS);
-
-                                // For transforming between ECEF and local tangent plane:
-                                osg::Matrix localToWorld, worldToLocal;
-                                anchor.createLocalToWorld(localToWorld);
-                                worldToLocal.invert(localToWorld);
-
-                                // Get the ECEF location of the anchor point:
-                                osg::Vec3d ecef;
-                                geo.toWorld(ecef);
-
-                                // Move it into Local Tangent Plane coordinates:
-                                osg::Vec3d local = ecef * worldToLocal;
-
-                                // Reset the Z to zero, since the LTP is centered on the "h" elevation:
-                                local.z() = 0.0;
-
-                                // Back into ECEF:
-                                ecef = local * localToWorld;
-
-                                // And back into lat/long/alt:
-                                geo.fromWorld(geo.getSRS(), ecef);
-
-                                h = geo.z();
+                                // Work in the layer's geographic SRS so the tangent plane uses the attribute datum
+                                // and the resulting heights remain in that datum. ElevationLayer converts them to
+                                // the requested key's datum afterwards. Geometry coordinates are only used above
+                                // for the containment test; they may be projected even on a geographic map.
+                                const SpatialReference* layerSRS = getProfile()->getSRS();
+                                anchor = anchor.transform(layerSRS);
+                                geo = GeoPoint(layerSRS, geoX, geoY, 0.0, ALTMODE_ABSOLUTE);
                             }
-                            break;
+                            else if (transformRequired)
+                                anchor = anchor.transform(keySRS);
+
+                            // For transforming between ECEF and local tangent plane:
+                            osg::Matrix localToWorld, worldToLocal;
+                            anchor.createLocalToWorld(localToWorld);
+                            worldToLocal.invert(localToWorld);
+
+                            // Get the ECEF location of the anchor point:
+                            osg::Vec3d ecef;
+                            geo.toWorld(ecef);
+
+                            // Move it into Local Tangent Plane coordinates:
+                            osg::Vec3d local = ecef * worldToLocal;
+
+                            // Reset the Z to zero, since the LTP is centered on the "h" elevation:
+                            local.z() = 0.0;
+
+                            // Back into ECEF:
+                            ecef = local * localToWorld;
+
+                            // And back into lat/long/alt:
+                            geo.fromWorld(geo.getSRS(), ecef);
+
+                            h = geo.z();
                         }
+                        break;
                     }
                 }
             }
