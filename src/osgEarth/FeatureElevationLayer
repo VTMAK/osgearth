@@ -13,7 +13,11 @@
 namespace osgEarth
 {
     /**
-     * Elevation layer that sets elevation based on feature data
+     * Elevation layer that sets elevation based on feature data.
+     * The inherited vdatum option specifies the datum of attribute heights; a leading
+     * minus sign (e.g., "-egm96") inverts the datum correction. When omitted, heights
+     * retain their legacy interpretation. Geographic maps preserve a flat tangent
+     * plane anchored at each polygon center, with offset applied to the resulting heights.
      */
     class OSGEARTH_EXPORT FeatureElevationLayer : public ElevationLayer
     {

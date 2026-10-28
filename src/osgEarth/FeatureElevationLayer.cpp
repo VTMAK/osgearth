@@ -149,6 +149,13 @@ FeatureElevationLayer::createHeightFieldImplementation(const TileKey& key, Progr
 
     const SpatialReference* keySRS = key.getProfile()->getSRS();
 
+    // Attribute heights can use a different datum than the feature geometry. Reuse the
+    // inherited profile override, including support for inverted datums such as "-egm96".
+    const bool hasVerticalDatum = !options().verticalDatum().get().empty();
+    const SpatialReference* elevationSRS = hasVerticalDatum ?
+        SpatialReference::create(featureSRS->getHorizInitString(), getProfile()->getSRS()->getVertInitString()) :
+        featureSRS;
+
     // populate feature list
     // assemble a spatial query. It helps if your features have a spatial index.
     Query query;
@@ -216,8 +223,18 @@ FeatureElevationLayer::createHeightFieldImplementation(const TileKey& key, Progr
                             // curvature of the earth; so we have to adjust it in the feature boundary's
                             // local tangent plane.
                             Bounds bounds = boundary->getBounds();
-                            GeoPoint anchor(featureSRS, bounds.center().x(), bounds.center().y(), h, ALTMODE_ABSOLUTE);
-                            if (transformRequired)
+                            GeoPoint anchor(elevationSRS, bounds.center().x(), bounds.center().y(), h, ALTMODE_ABSOLUTE);
+                            if (hasVerticalDatum)
+                            {
+                                // Work in the layer's geographic SRS so the tangent plane uses the attribute datum
+                                // and the resulting heights remain in that datum. ElevationLayer converts them to
+                                // the requested key's datum afterwards. Geometry coordinates are only used above
+                                // for the containment test; they may be projected even on a geographic map.
+                                const SpatialReference* layerSRS = getProfile()->getSRS();
+                                anchor = anchor.transform(layerSRS);
+                                geo = GeoPoint(layerSRS, geoX, geoY, 0.0, ALTMODE_ABSOLUTE);
+                            }
+                            else if (transformRequired)
                                 anchor = anchor.transform(keySRS);
 
                             // For transforming between ECEF and local tangent plane:
