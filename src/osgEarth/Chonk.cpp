@@ -1182,8 +1182,10 @@ namespace
     {
     public:
         // Own the borrowed graph/factory until all converted geometry is retired.
-        ExternalChonkGroup(osg::Node* source, std::shared_ptr<ChonkFactory> factory, bool packUnique = false) :
-            _source(source), _factory(std::move(factory)), _packUnique(packUnique)
+        ExternalChonkGroup(osg::Node* source, std::shared_ptr<ChonkFactory> factory, bool packUnique = false,
+            int renderBin = 3, int twoSidedRenderBin = 4) :
+            _source(source), _factory(std::move(factory)), _packUnique(packUnique),
+            _renderBin(renderBin), _twoSidedRenderBin(twoSidedRenderBin)
         {
             setName(source->getName() + " Chonk geometry");
             setUpdateCallback(new LambdaCallback<>([this](osg::NodeVisitor&)
@@ -1201,6 +1203,7 @@ namespace
         std::vector<Dependency> _dependencies;
         std::vector<SceneBatchingCheck::Dependency> _ordinaryDependencies;
         bool _packUnique;
+        const int _renderBin, _twoSidedRenderBin;
 
         static bool positiveAffine(const osg::Matrixd& m)
         {
@@ -1332,7 +1335,7 @@ namespace
                     return;
                 }
             }
-            osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable();
+            osg::ref_ptr<ChonkDrawable> drawable = new ChonkDrawable(_renderBin);
             drawable->setName(getName());
             osg::ref_ptr<ChonkDrawable> doubleSided;
             std::unique_ptr<ScenePages> frontPages, bothPages;
@@ -1340,7 +1343,7 @@ namespace
             {
                 // ChonkBin applies one draw StateGraph to the entire bin. Keep
                 // the two raster policies in distinct bins so back faces survive.
-                doubleSided = new ChonkDrawable(drawable->getRenderBinNumber() + 1);
+                doubleSided = new ChonkDrawable(_twoSidedRenderBin);
                 doubleSided->setName(getName() + " two-sided pages");
                 frontPages.reset(new ScenePages(*_factory, drawable));
                 bothPages.reset(new ScenePages(*_factory, doubleSided));
@@ -1544,6 +1547,13 @@ ChonkFactory::convertExternalInstances(osg::Node* node, std::shared_ptr<ChonkFac
 osg::ref_ptr<osg::Node>
 ChonkFactory::convertScene(osg::Node* node, std::shared_ptr<ChonkFactory> factory)
 {
+    return convertScene(node, std::move(factory), 3, 4);
+}
+
+osg::ref_ptr<osg::Node>
+ChonkFactory::convertScene(osg::Node* node, std::shared_ptr<ChonkFactory> factory,
+    int renderBin, int twoSidedRenderBin)
+{
     if (!node || !factory || !factory->textures) return node;
     const bool packUnique = useChonkGeometryPages();
     if (packUnique)
@@ -1554,7 +1564,7 @@ ChonkFactory::convertScene(osg::Node* node, std::shared_ptr<ChonkFactory> factor
         // External assets retain the wrapper so reloads can change this decision.
         if (!check.canBatch() && check.dependencies.empty()) return node;
     }
-    return new ExternalChonkGroup(node, std::move(factory), packUnique);
+    return new ExternalChonkGroup(node, std::move(factory), packUnique, renderBin, twoSidedRenderBin);
 }
 
 bool

@@ -673,22 +673,30 @@ namespace
     // tileset is read in a job, and that job compiles the whole tileset node afterwards.
     osg::ref_ptr<osg::Node> readTileContentSync(
         const URI& uri,
-        osg::ref_ptr<const osgDB::Options> options)
+        osg::ref_ptr<const osgDB::Options> options,
+        const ThreeDTilesetNode::ContentProcessor& processContent)
     {
-        return uri.getNode(options.get(), nullptr);
+        osg::ref_ptr<osg::Node> node = uri.getNode(options.get(), nullptr);
+        return node.valid() && processContent ? processContent(node.get()) : node;
     }
 
+    // Reads and converts a model on a paging thread before collecting its GL compilation state.
+    // Copy the processor into the job so its resources survive the originating tileset.
     ReadTileResult readTileContentAsync(
         const URI& uri,
         osg::ref_ptr<const osgDB::Options> options,
         const std::string& requestLayer,
+        const ThreeDTilesetNode::ContentProcessor& processContent,
         osg::observer_ptr<ICO> ico,
         std::shared_ptr<void> slot)
     {
-        auto load = [uri, options, requestLayer](ProgressCallback* progress)
+        auto load = [uri, options, requestLayer, processContent](ProgressCallback* progress)
         {
             NetworkMonitor::ScopedRequestLayer layerRequest(requestLayer);
-            return osg::ref_ptr<osg::Node>(uri.getNode(options.get(), progress));
+            osg::ref_ptr<osg::Node> node = uri.getNode(options.get(), progress);
+            if (progress && progress->canceled())
+                return osg::ref_ptr<osg::Node>();
+            return node.valid() && processContent ? processContent(node.get()) : node;
         };
 
         return dispatchTileLoad(uri.full(), load, ico, slot);
@@ -748,7 +756,7 @@ ThreeDTileNode::ThreeDTileNode(ThreeDTilesetNode* tileset, Tile* tile, bool imme
         }
         else
         {
-            _content = readTileContentSync(uri, _options);
+            _content = readTileContentSync(uri, _options, _tileset->_processContent);
         }
 
         if (_content.valid())
@@ -1133,7 +1141,8 @@ bool ThreeDTileNode::requestContent(ICO* ico)
     else
     {
         // else, actual content:
-        _contentFuture = readTileContentAsync(uri, _options, _tileset->getOwnerName(), ico, slot);
+        _contentFuture = readTileContentAsync(
+            uri, _options, _tileset->getOwnerName(), _tileset->_processContent, ico, slot);
     }
 
     _requestedContent = true;
@@ -1496,7 +1505,9 @@ void ThreeDTileNode::traverse(osg::NodeVisitor& nv)
 
 }
 
-ThreeDTilesetNode::ThreeDTilesetNode(Tileset* tileset, const std::string& authorizationHeader, SceneGraphCallbacks* sceneGraphCallbacks, osgDB::Options* options) :
+ThreeDTilesetNode::ThreeDTilesetNode(Tileset* tileset, const std::string& authorizationHeader,
+    SceneGraphCallbacks* sceneGraphCallbacks, osgDB::Options* options, const ContentProcessor& processContent) :
+    _processContent(processContent),
     _tileset(tileset),
     _options(options),
     _maximumScreenSpaceError(15.0f),
