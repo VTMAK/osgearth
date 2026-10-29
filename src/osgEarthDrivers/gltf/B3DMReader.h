@@ -1,143 +1,213 @@
 /* osgEarth
-* Copyright 2026 Pelican Mapping
+* Copyright 2025 Pelican Mapping
 * MIT License
 */
 #pragma once
 
-/**
- * 3D Tiles 1.0 Batched 3D Model (b3dm) reader.
- *
- * A b3dm is a 28-byte header, a feature table, a batch table and an embedded
- * GLB. The GLB is handed to GLTFReader in place (nothing is copied). The
- * feature table's RTC_CENTER, when present, becomes a translation above the
- * glTF root, which already carries the Y-up to Z-up rotation. Batch tables
- * are skipped.
- *
- * The two legacy header layouts that Cesium still accepts (20 and 24 bytes,
- * written by early tilers) are recognized the same way Cesium detects them.
- */
-
+#include <osgEarth/JsonUtils>
+#include <osgDB/ObjectWrapper>
+#include <osgDB/Registry>
+#include <osgDB/FileNameUtils>
 #include "GLTFReader.h"
 
-#include <osgEarth/JsonUtils>
-
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <string>
+using namespace osgEarth;
 
 #undef LC
-#define LC "[gltf] "
+#define LC "[B3DMReader] "
+
+struct b3dmheader
+{
+    char magic[4];
+    unsigned int version;
+    unsigned int byteLength;
+    unsigned int featureTableJSONByteLength;
+    unsigned int featureTableBinaryByteLength;
+    unsigned int batchTableJSONByteLength;
+    unsigned int batchTableBinaryByteLength;
+};
 
 class B3DMReader
 {
 public:
-    //! True when the buffer starts with the b3dm magic.
-    static bool isB3DM(const void* bytes, std::size_t size)
+    mutable GLTFReader::TextureCache* _texCache;
+
+    B3DMReader() : _texCache(NULL)
     {
-        return size >= 4 && std::memcmp(bytes, "b3dm", 4) == 0;
     }
 
-    void setTextureCache(GLTFReader::TextureCache* cache) { _textureCache = cache; }
-
-    /**
-     * Reads a b3dm that is already in memory. "location" is the tile's own
-     * URI, used to resolve the embedded GLB's relative references. The memory
-     * must stay valid for the duration of the call.
-     */
-    osgDB::ReaderWriter::ReadResult read(
-        const std::string& location, const void* bytes, std::size_t size, const osgDB::Options* options) const
+    void setTextureCache(GLTFReader::TextureCache* cache) const
     {
-        const unsigned char* data = static_cast<const unsigned char*>(bytes);
-        if (!isB3DM(bytes, size) || size < 20)
-            return fail(location, "missing or truncated b3dm header");
+        _texCache = cache;
+    }
 
-        const std::uint32_t version = readU32(data + 4);
-        if (version != 1)
-            return fail(location, "unsupported b3dm version " + std::to_string(version));
+    static std::string ExpandFilePath(const std::string &filepath, void * userData)
+    {
+        const std::string& referrer = *(const std::string*)userData;
+        std::string path = osgDB::getRealPath(osgDB::isAbsolutePath(filepath) ? filepath : osgDB::concatPaths(osgDB::getFilePath(referrer), filepath));
+        //OSG_NOTICE << "ExpandFilePath: expanded " << filepath << " to " << path << std::endl;
+        return tinygltf::ExpandFilePath(path, userData);
+    }
 
-        // byteLength covers the whole tile; tolerate trailing bytes in the buffer.
-        const std::size_t byteLength = std::min<std::size_t>(readU32(data + 8), size);
+    //! Read a B3DM file and return a node
+    //osg::Node* read(const std::string& location, const osgDB::Options* readOptions) const
+    //{
+    //    // Load the whole thing into memory
+    //    URIStream inputStream(location, std::ifstream::binary);
+    //    return read(location, inputStream, readOptions);
+    //}
 
-        std::size_t headerLength = 28;
-        std::size_t featureTableJSONLength = 0, featureTableBinaryLength = 0;
-        std::size_t batchTableJSONLength = 0, batchTableBinaryLength = 0;
+    //! Read a B3DM data package and return a node.
+    osg::Node* read(const std::string& location, const std::string& inputStream, const osgDB::Options* readOptions) const
+    {
+        // Check the header's magic string. If it's not there, attempt
+        // to run a decompressor on it
 
-        // Cesium's legacy detection: a GLB magic ("glTF" read as a uint32 is
-        // at least 570425344) shows up where a modern header has its batch
-        // table lengths, because the legacy header is shorter.
-        const std::uint32_t legacyMarker = 570425344u;
-        if (size >= 24 && readU32(data + 20) >= legacyMarker)
+        std::string decompressedData;
+        const std::string* data = &inputStream;
+
+        std::string magic(*data, 0, 4);
+        if (magic != "b3dm")
         {
-            // magic, version, byteLength, batchLength, batchTableByteLength
-            headerLength = 20;
-            batchTableJSONLength = readU32(data + 16);
-        }
-        else if (size >= 28 && readU32(data + 24) >= legacyMarker)
-        {
-            // magic, version, byteLength, batchTableJsonByteLength,
-            // batchTableBinaryByteLength, batchLength
-            headerLength = 24;
-            batchTableJSONLength = readU32(data + 12);
-            batchTableBinaryLength = readU32(data + 16);
-        }
-        else if (size >= 28)
-        {
-            featureTableJSONLength = readU32(data + 12);
-            featureTableBinaryLength = readU32(data + 16);
-            batchTableJSONLength = readU32(data + 20);
-            batchTableBinaryLength = readU32(data + 24);
-        }
-        else return fail(location, "truncated b3dm header");
-
-        const std::size_t glbOffset = headerLength + featureTableJSONLength + featureTableBinaryLength +
-            batchTableJSONLength + batchTableBinaryLength;
-        if (glbOffset >= byteLength)
-            return fail(location, "b3dm contains no glTF payload");
-
-        osg::Vec3d rtcCenter;
-        bool hasRTC = false;
-        if (featureTableJSONLength > 0)
-        {
-            const std::string json(reinterpret_cast<const char*>(data + headerLength), featureTableJSONLength);
-            osgEarth::Json::Reader reader;
-            osgEarth::Json::Value doc;
-            if (reader.parse(json, doc))
+            osg::ref_ptr<osgDB::BaseCompressor> compressor = osgDB::Registry::instance()->getObjectWrapperManager()->findCompressor("zlib");
+            if (compressor.valid())
             {
-                const osgEarth::Json::Value& rtc = doc["RTC_CENTER"];
-                if (rtc.isArray() && rtc.size() == 3)
+                std::stringstream in_data(inputStream);
+                if (!compressor->decompress(in_data, decompressedData))
                 {
-                    rtcCenter.set(rtc[0u].asDouble(), rtc[1u].asDouble(), rtc[2u].asDouble());
-                    hasRTC = rtcCenter != osg::Vec3d();
+                    OE_WARN << LC << "Invalid b3dm" << std::endl;
+                    return NULL;
                 }
+                data = &decompressedData;
             }
         }
 
-        GLTFReader reader;
-        reader.setTextureCache(_textureCache);
-        osgDB::ReaderWriter::ReadResult rr = reader.read(location, data + glbOffset, byteLength - glbOffset, options);
-        if (!rr.validNode() || !hasRTC)
-            return rr;
+        b3dmheader header;
+        unsigned bytesRead = 0;
 
-        osg::ref_ptr<osg::MatrixTransform> xform = new osg::MatrixTransform(osg::Matrixd::translate(rtcCenter));
-        xform->setName(osgDB::getSimpleFileName(location));
-        xform->addChild(rr.getNode());
-        return osgDB::ReaderWriter::ReadResult(xform.release());
-    }
+        std::stringstream buf(*data);
+        buf.read(reinterpret_cast<char*>(&header), sizeof(b3dmheader));
+        bytesRead += sizeof(b3dmheader);
 
-private:
-    GLTFReader::TextureCache* _textureCache = nullptr;
+#ifdef OE_IS_BIG_ENDIAN
+        byteSwapInPlace(header.version);
+        byteSwapInPlace(header.byteLength);
+        byteSwapInPlace(header.featureTableJSONByteLength);
+        byteSwapInPlace(header.featureTableBinaryByteLength);
+        byteSwapInPlace(header.batchTableJSONByteLength);
+        byteSwapInPlace(header.batchTableBinaryByteLength);
+#endif
 
-    //! Reads a little-endian uint32 regardless of host byte order.
-    static std::uint32_t readU32(const unsigned char* p)
-    {
-        return std::uint32_t(p[0]) | (std::uint32_t(p[1]) << 8) | (std::uint32_t(p[2]) << 16) | (std::uint32_t(p[3]) << 24);
-    }
+        size_t sz = header.byteLength;
 
-    //! Logs the failure and returns a read error.
-    static osgDB::ReaderWriter::ReadResult fail(const std::string& location, const std::string& message)
-    {
-        OE_WARN << LC << "Error loading " << location << ": " << message << std::endl;
-        return osgDB::ReaderWriter::ReadResult::ERROR_IN_READING_FILE;
+        osg::Vec3d rtc_center;
+
+        if (header.featureTableJSONByteLength > 0)
+        {
+            std::string featureTableJson;
+            featureTableJson.resize(header.featureTableJSONByteLength);
+            buf.read(reinterpret_cast<char*>(&featureTableJson[0]), header.featureTableJSONByteLength);
+
+            osgEarth::Json::Reader reader;
+            osgEarth::Json::Value doc;
+            if (reader.parse(featureTableJson, doc))
+            {
+                Json::Value RTC_CENTER = doc["RTC_CENTER"];
+                if (!RTC_CENTER.empty())
+                {
+                    Json::Value::iterator i = RTC_CENTER.begin();
+                    rtc_center.x() = (*i++).asDouble();
+                    rtc_center.y() = (*i++).asDouble();
+                    rtc_center.z() = (*i++).asDouble();
+                }
+            }          
+
+            /*
+            json ftJson = json::parse(featureTableJson);
+            if (ftJson.find("RTC_CENTER") != ftJson.end()) {
+                json RTC_CENTER = ftJson["RTC_CENTER"];
+                rtc_center.x() = RTC_CENTER[0];
+                rtc_center.y() = RTC_CENTER[1];
+                rtc_center.z() = RTC_CENTER[2];
+            }
+            OE_DEBUG << LC << "Read rtc_center " << rtc_center.x() << ", " << rtc_center.y() << ", " << rtc_center.z() << std::endl;
+            */
+
+            bytesRead += header.featureTableJSONByteLength;
+        }
+
+        if (header.featureTableBinaryByteLength > 0)
+        {
+            std::string featureTableBinary;
+            featureTableBinary.resize(header.featureTableBinaryByteLength);
+            buf.read(reinterpret_cast<char*>(&featureTableBinary[0]), header.featureTableBinaryByteLength);
+            //OE_DEBUG << "Read featureTableJson " << featureTableBinary << std::endl;
+            bytesRead += header.featureTableBinaryByteLength;
+        }
+
+        if (header.batchTableJSONByteLength > 0)
+        {
+            std::string batchTableJSON;
+            batchTableJSON.resize(header.batchTableJSONByteLength);
+            buf.read(reinterpret_cast<char*>(&batchTableJSON[0]), header.batchTableJSONByteLength);
+            //OE_DEBUG << "Read batchTableJSON " << batchTableJSON << std::endl;
+            bytesRead += header.batchTableJSONByteLength;
+        }
+
+        if (header.batchTableBinaryByteLength > 0)
+        {
+            std::string batchTableBinary;
+            batchTableBinary.resize(header.batchTableBinaryByteLength);
+            buf.read(reinterpret_cast<char*>(&batchTableBinary[0]), header.batchTableBinaryByteLength);
+            //OE_DEBUG << "Read batchTableJSON " << batchTableBinary << std::endl;
+            bytesRead += header.batchTableBinaryByteLength;
+        }
+
+        std::string gltfData;
+        gltfData.resize(sz - bytesRead);
+        buf.read(reinterpret_cast<char *>(&gltfData[0]), static_cast<std::streamsize>(gltfData.size()));
+
+        tinygltf::Model model;
+        tinygltf::TinyGLTF loader;
+        std::string err;
+        std::string warn;
+
+        FsCallbacks fs;
+        fs.FileExists = &tinygltf::FileExists;
+        fs.ExpandFilePath = &B3DMReader::ExpandFilePath;
+        fs.ReadWholeFile = &tinygltf::ReadWholeFile;
+        fs.WriteWholeFile = &tinygltf::WriteWholeFile;
+        fs.user_data = (void*)&location;
+        loader.SetFsCallbacks(fs);
+
+        tinygltf::Options opt;
+        opt.skip_imagery = readOptions && readOptions->getOptionString().find("gltfSkipImagery") != std::string::npos;        
+
+        bool loaded = loader.LoadBinaryFromMemory(
+            &model, &err, &warn, reinterpret_cast<const unsigned char*>(gltfData.data()),
+            static_cast<unsigned int>(gltfData.size()), "", REQUIRE_VERSION, &opt);
+
+        if (!err.empty())
+            OE_WARN << LC << "GLTF ERROR: " << err << std::endl;
+        if (!warn.empty())
+            OE_WARN << LC << "GLTF WARNING: " << warn << std::endl;
+
+        if (!loaded)
+            return NULL;
+
+        GLTFReader gltfReader;
+        gltfReader.setTextureCache(_texCache);
+        GLTFReader::Env env(location, readOptions);
+        osg::Node* modelNode = gltfReader.makeNodeFromModel(model, env);
+        if (rtc_center.x() == 0.0 && rtc_center.y() == 0.0 && rtc_center.z() == 0.0)
+        {
+            return modelNode;
+        }
+        else
+        {
+            osg::MatrixTransform* mt = new osg::MatrixTransform;
+            mt->setMatrix(osg::Matrix::translate(rtc_center));
+            mt->addChild(modelNode);
+            return mt;
+        }
     }
 };
