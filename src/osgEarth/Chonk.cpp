@@ -2639,6 +2639,8 @@ ChonkDrawable::GLObjects::cull(osg::State& state, int pass, const OcclusionFrame
         if (valid) ext->glUniformHandleui64(location("oe_chonk_hiz"), frame->hiz);
         const osg::Vec4f params = valid ? frame->hizParams : osg::Vec4f();
         ext->glUniform4fv(location("oe_chonk_hiz_params"), 1, params.ptr());
+        const osg::Vec2f mapping = valid ? frame->hizDepthMapping : osg::Vec2f();
+        ext->glUniform2fv(location("oe_chonk_hiz_depth_mapping"), 1, mapping.ptr());
     }
 
     // _numInstances is already padded to the workgroup size.
@@ -3063,7 +3065,7 @@ namespace
         GLsizei _bytes;
     };
 
-    //! One camera's single-sample depth copy and max-depth pyramid in one graphics context.
+    //! One camera's single-sample depth copy and farthest-depth pyramid in one graphics context.
     //! Only that context's draw thread uses it.
     struct HiZTarget
     {
@@ -3194,7 +3196,8 @@ namespace
     struct HiZResult
     {
         GLuint64 handle = 0; // resident sampler handle of the pyramid
-        osg::Vec4f params; // viewport width and height in pixels, levels, 1
+        osg::Vec4f params; // viewport width and height, levels, +1 forward / -1 reverse
+        osg::Vec2f depthMapping; // clip Z/W to window depth, including glDepthRange
     };
 
     //! Copies the draw framebuffer's depth under the current viewport and reduces it into the camera's
@@ -3215,9 +3218,28 @@ namespace
         const GLint sourceSizeLoc = location("oe_hiz_source_size");
         const GLint targetSizeLoc = location("oe_hiz_target_size");
         const GLint fromDepthLoc = location("oe_hiz_from_depth");
+        const GLint reverseLoc = location("oe_hiz_reverse_z");
         if (depthLoc < 0 || sourceLoc < 0 || targetLoc < 0 || sourceSizeLoc < 0 || targetSizeLoc < 0 ||
-            fromDepthLoc < 0)
+            fromDepthLoc < 0 || reverseLoc < 0)
             return false;
+
+        // Read applied state, not camera settings: inherited overrides can supply the depth convention.
+        // GL 4.5 clip control is available wherever this pyramid's DSA entry points are supported.
+        GLint depthFunc = GL_LESS, clipDepth = 0, clipOrigin = 0;
+        GLdouble depthRange[2] = {0.0, 1.0};
+        glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+        glGetIntegerv(GL_CLIP_DEPTH_MODE, &clipDepth);
+        glGetIntegerv(GL_CLIP_ORIGIN, &clipOrigin);
+        glGetDoublev(GL_DEPTH_RANGE, depthRange);
+        const bool reverse = depthFunc == GL_GREATER || depthFunc == GL_GEQUAL;
+        // The screen bounds currently assume a lower-left origin. Unsupported tests or a collapsed
+        // depth range cannot prove occlusion; let the late pass retain every instance instead.
+        if (!glIsEnabled(GL_DEPTH_TEST) || clipOrigin != GL_LOWER_LEFT ||
+            (!reverse && depthFunc != GL_LESS && depthFunc != GL_LEQUAL) || depthRange[0] == depthRange[1])
+            return false;
+        const double span = depthRange[1] - depthRange[0];
+        const double scale = clipDepth == GL_ZERO_TO_ONE ? span : 0.5 * span;
+        const double bias = clipDepth == GL_ZERO_TO_ONE ? depthRange[0] : depthRange[0] + 0.5 * span;
 
         const GLint x = GLint(viewport->x()), y = GLint(viewport->y());
         const GLint width = GLint(viewport->width()), height = GLint(viewport->height());
@@ -3321,6 +3343,7 @@ namespace
         // Each dispatch halves the previous level, keeping the farthest depth.
         auto ext = state.get<osg::GLExtensions>();
         gl->uniformHandleui64(depthLoc, t.depthHandle);
+        ext->glUniform1i(reverseLoc, reverse ? 1 : 0);
         GLint sw = width, sh = height;
         GLint tw = std::max(1, sw/2), th = std::max(1, sh/2);
         for (GLint level = 0; level < t.levels; ++level)
@@ -3340,7 +3363,8 @@ namespace
         ext->glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
         result.handle = t.pyramidHandle;
-        result.params.set(float(width), float(height), float(t.levels), 1.0f);
+        result.params.set(float(width), float(height), float(t.levels), reverse ? -1.0f : 1.0f);
+        result.depthMapping.set(float(scale), float(bias));
         return true;
     }
 
@@ -3590,6 +3614,7 @@ ChonkRenderBin::HiZLeaf::draw(osg::State& state)
     _frame->hizValid = buildHiZ(state, _frame->camera, _frame->frameNumber, result);
     _frame->hiz = result.handle;
     _frame->hizParams = result.params;
+    _frame->hizDepthMapping = result.depthMapping;
 }
 
 void

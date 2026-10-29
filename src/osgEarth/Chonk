@@ -491,7 +491,8 @@ namespace osgEarth
             unsigned frameNumber = 0;
             bool hizValid = false; // the depth pyramid was built for the late pass
             GLuint64 hiz = 0; // bindless sampler handle of the pyramid
-            osg::Vec4f hizParams; // viewport width and height in pixels, levels, 1 when valid
+            osg::Vec4f hizParams; // viewport width and height, levels, +1 forward / -1 reverse / 0 invalid
+            osg::Vec2f hizDepthMapping; // scale and bias from clip-space Z/W to window depth
         };
 
         using Instances = std::vector<Instance>;
