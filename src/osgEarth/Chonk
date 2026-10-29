@@ -289,6 +289,11 @@ namespace osgEarth
         static osg::ref_ptr<osg::Node> convertScene(
             osg::Node* node, std::shared_ptr<ChonkFactory> factory);
 
+        //! Convert a scene using caller-reserved bins for front-face and two-sided draws, including after reloads.
+        //! Bins must be distinct and exclusive to the factory's texture arena; other semantics match convertScene.
+        static osg::ref_ptr<osg::Node> convertScene(osg::Node* node, std::shared_ptr<ChonkFactory> factory,
+            int renderBin, int twoSidedRenderBin);
+
         //! Append the node's geometry as another LOD in the provided Chonk.
         //! Use the drawable overload to preserve InstanceGeometry placements.
         //! Returns false if the node contained no geometry, the material arena

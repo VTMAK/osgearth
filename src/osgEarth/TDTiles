@@ -17,6 +17,7 @@
 #include <osgUtil/CullVisitor>
 #include <osgEarth/LoadableNode>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -332,7 +333,15 @@ namespace osgEarth { namespace Contrib { namespace ThreeDTiles
     class OSGEARTH_EXPORT ThreeDTilesetNode : public osg::Group
     {
     public:
-        ThreeDTilesetNode(Tileset* tileset, const std::string& authorizationHeader, SceneGraphCallbacks* sceneGraphCallbacks, osgDB::Options* options);
+        //! Optional model conversion, called before GL compilation for immediate and paged content, including
+        //! external tilesets' models. Must support concurrent calls and retain any resources it needs.
+        //! Returns the model to publish, or null to fail the load. Never receives a tileset hierarchy.
+        using ContentProcessor = std::function<osg::ref_ptr<osg::Node>(osg::Node*)>;
+
+        //! Constructs the tileset and loads its root, optionally converting models with processContent.
+        ThreeDTilesetNode(Tileset* tileset, const std::string& authorizationHeader,
+            SceneGraphCallbacks* sceneGraphCallbacks, osgDB::Options* options,
+            const ContentProcessor& processContent = ContentProcessor());
 
         float getMaximumScreenSpaceError() const;
         void setMaximumScreenSpaceError(float maximumScreenSpaceError);
@@ -417,6 +426,7 @@ namespace osgEarth { namespace Contrib { namespace ThreeDTiles
         void dispatchRequests(std::vector<std::pair<double, ThreeDTileNode*>>& requests,
             osgUtil::IncrementalCompileOperation* ico, double frameTime);
 
+        const ContentProcessor _processContent;
         osg::ref_ptr<Tileset> _tileset;
         osg::ref_ptr<osgDB::Options> _options;
         float _maximumScreenSpaceError;
