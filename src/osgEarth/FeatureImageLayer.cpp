@@ -9,6 +9,10 @@
 #include <osgEarth/Progress>
 #include <osgEarth/LandCover>
 #include <osgEarth/FeatureStyleSorter>
+#include <osgEarth/VirtualProgram>
+#include <osgEarth/Shaders>
+#include <osgEarth/Capabilities>
+#include <cmath>
 
 using namespace osgEarth;
 
@@ -28,6 +32,7 @@ FeatureImageLayer::Options::getConfig() const
     styleSheet().set(conf, "styles");
     conf.set("buffer_width", bufferWidth());
     conf.set("background_color", backgroundColor());
+    conf.set("mode", mode());
 
     if (filters().empty() == false)
     {
@@ -47,6 +52,7 @@ FeatureImageLayer::Options::fromConfig(const Config& conf)
     styleSheet().get(conf, "styles");
     conf.get("buffer_width", bufferWidth());
     conf.get("background_color", backgroundColor());
+    conf.get("mode", mode());
 
     const Config& filtersConf = conf.child("filters");
     for (ConfigSet::const_iterator i = filtersConf.children().begin(); i != filtersConf.children().end(); ++i)
@@ -65,6 +71,14 @@ void
 FeatureImageLayer::init()
 {
     ImageLayer::init();
+#ifdef OSGEARTH_HAVE_SLUGHORN
+    if (options().mode() == "vector")
+    {
+        setUseCreateTexture();
+        // Atlas inheritance remains raster-like; analytic vector coverage needs no imagery crossfade.
+        setMorphImagery(false);
+    }
+#endif
 
     // Do not set the profile here. We will try to deduce the profile
     // once we can open the underlying feature source.
@@ -76,6 +90,32 @@ FeatureImageLayer::openImplementation()
     Status parent = ImageLayer::openImplementation();
     if (parent.isError())
         return parent;
+
+    if (options().mode() != "raster" && options().mode() != "vector")
+        return Status(Status::ConfigurationError, "FeatureImage mode must be raster or vector");
+
+    if (options().mode() == "vector")
+    {
+#ifndef OSGEARTH_HAVE_SLUGHORN
+        OE_WARN << LC << "Vector mode requires OSGEARTH_ENABLE_SLUGHORN; falling back to raster" << std::endl;
+#else
+        if (!Registry::capabilities().supportsGLSL(330u))
+            return Status(Status::ServiceUnavailable, "Vector FeatureImage requires GLSL 3.30");
+        // Keep this render-only setting in the retained Config so the public Options layout does not change.
+        const Config conf = options().getConfig();
+        float cutoff = conf.value<float>("vector_fade_cutoff", conf.value<float>("vector_min_tile_pixels", 16.0f));
+        float start = conf.value<float>("vector_fade_start", 2.0f * cutoff);
+        if (!std::isfinite(cutoff) || cutoff < 16.0f)
+            return Status(Status::ConfigurationError, "Vector fade cutoff must be finite and at least 16 pixels");
+        if (!std::isfinite(start) || start < cutoff)
+            return Status(Status::ConfigurationError, "Vector fade start must be finite and at least the cutoff");
+        // Equal endpoints request a hard cutoff; otherwise fade before exceeding the coarse grid's AA margin.
+        getOrCreateStateSet()->getOrCreateUniform("oe_featureimage_vector_fade", osg::Uniform::FLOAT_VEC2)->set(
+            osg::Vec2f(1.0f / start, 1.0f / cutoff));
+        Util::Shaders shaders;
+        shaders.load(VirtualProgram::getOrCreate(getOrCreateStateSet()), "FeatureImageLayer.Slug.glsl");
+#endif
+    }
 
     // assert a feature source:
     Status fsStatus = options().featureSource().open(getReadOptions());
@@ -323,3 +363,12 @@ FeatureImageLayer::createImageImplementation(const TileKey& key, ProgressCallbac
 
     return result;
 }
+
+#ifndef OSGEARTH_HAVE_SLUGHORN
+// Builds without Slughorn use raster image requests; retain the public virtual entry point.
+TextureWindow
+FeatureImageLayer::createTexture(const TileKey&, ProgressCallback*) const
+{
+    return {};
+}
+#endif

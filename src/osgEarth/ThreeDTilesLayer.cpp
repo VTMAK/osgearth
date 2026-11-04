@@ -54,7 +54,9 @@ ThreeDTilesLayer::Options::getConfig() const
     Config conf = VisibleLayer::Options::getConfig();
     conf.set("url", _url);
     conf.set("max_sse", _maximumScreenSpaceError);
+    conf.set("ignore_unlit", ignoreUnlit());
     conf.set("nvgl", nvgl());
+    conf.set("backface_culling", backfaceCulling());
     return conf;
 }
 
@@ -64,7 +66,9 @@ ThreeDTilesLayer::Options::fromConfig( const Config& conf )
     _maximumScreenSpaceError.init(15.0f);
     conf.get("url", _url);
     conf.get("max_sse", _maximumScreenSpaceError);
+    conf.get("ignore_unlit", ignoreUnlit());
     conf.get("nvgl", nvgl());
+    conf.get("backface_culling", backfaceCulling());
 }
 
 //........................................................................
@@ -133,6 +137,11 @@ ThreeDTilesLayer::openTileset(const URI& url, const std::string& authorizationHe
         };
     }
 
+    if (*options().ignoreUnlit())
+    {
+        readOptions->setOptionString(readOptions->getOptionString() + " gltfIgnoreUnlit");
+    }
+
     _tilesetNode = new ThreeDTilesetNode(tileset, authorizationHeader, getSceneGraphCallbacks(), readOptions.get(), processContent);
     if (textures.valid())
     {
@@ -148,6 +157,12 @@ ThreeDTilesLayer::openTileset(const URI& url, const std::string& authorizationHe
             return true;
         }));
     }
+    // OVERRIDE is required because the glTF reader enables culling in the content state below this node.
+    if (!*options().backfaceCulling())
+    {
+        _tilesetNode->getOrCreateStateSet()->setMode(GL_CULL_FACE, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+    }
+
     _tilesetNode->setMaximumScreenSpaceError(*options().maximumScreenSpaceError());
     _tilesetNode->setOwnerName(getName());
 

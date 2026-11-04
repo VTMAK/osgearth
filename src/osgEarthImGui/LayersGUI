@@ -13,6 +13,8 @@
 #include <osgEarth/CoverageLayer>
 #include <osgEarth/MapboxGLImageLayer>
 #include <osgEarth/FeatureModelLayer>
+#include <osgEarth/FeatureImageLayer>
+#include <cmath>
 #include <osgEarth/TiledFeatureModelLayer>
 #include <osgEarth/ModelLayer>
 #include <osgEarth/TerrainConstraintLayer>
@@ -52,6 +54,7 @@
 
 #ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
 #include <osgEarthImGui/PrestigeGrimeLayerGUI>
+#include <osgEarthPrestige/SurfaceSplattingLayer>
 #endif
 
 #ifdef OSGEARTH_HAVE_PROCEDURAL_NODEKIT
@@ -115,6 +118,58 @@ namespace osgEarth
 
     namespace detail
     {
+        // Edits the open vector layer's live uniform on the GUI thread; no atlas rebuild or retained UI state.
+        // Pixel controls preserve fade-start >= cutoff >= 16, including keyboard-entered values.
+        inline void drawFeatureImageFadeControls(FeatureImageLayer* layer)
+        {
+            if (!layer || layer->options().mode() != "vector") return;
+            auto* stateSet = layer->getStateSet();
+            auto* uniform = stateSet ? stateSet->getUniform("oe_featureimage_vector_fade") : nullptr;
+            if (!uniform) return; // Raster fallback builds have no vector fade controls.
+
+            osg::Vec2f fade;
+            if (!uniform->get(fade)) return;
+            float start = fade.x() > 0.0f ? 1.0f / fade.x() : 32.0f;
+            float cutoff = fade.y() > 0.0f ? 1.0f / fade.y() : 16.0f;
+            if (!std::isfinite(start)) start = 32.0f;
+            if (!std::isfinite(cutoff)) cutoff = 16.0f;
+            cutoff = std::max(16.0f, cutoff);
+            start = std::max(cutoff, start);
+            const ImGuiSliderFlags flags = ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp;
+            bool changed = ImGuiLTable::SliderFloat("Vector fade start (px)", &start,
+                cutoff, std::max(4096.0f, start), "%.1f", flags);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Projected source-tile size where fading starts as you zoom out. "
+                    "Equal start and cutoff values make a hard cutoff. Ctrl-click to enter a value.");
+            changed |= ImGuiLTable::SliderFloat("Vector fade cutoff (px)", &cutoff,
+                16.0f, start, "%.1f", flags);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Projected source-tile size where details disappear. Minimum 16 pixels. "
+                    "Live adjustments last until the layer is reopened.");
+            if (changed)
+            {
+                cutoff = std::max(16.0f, cutoff);
+                start = std::max(cutoff, start);
+                uniform->set(osg::Vec2f(1.0f / start, 1.0f / cutoff));
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Vector fade");
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Reset fade"))
+            {
+                const Config conf = layer->options().getConfig();
+                float configuredCutoff = conf.value<float>("vector_fade_cutoff",
+                    conf.value<float>("vector_min_tile_pixels", 16.0f));
+                if (!std::isfinite(configuredCutoff) || configuredCutoff < 16.0f) configuredCutoff = 16.0f;
+                float configuredStart = conf.value<float>("vector_fade_start", 2.0f * configuredCutoff);
+                if (!std::isfinite(configuredStart) || configuredStart < configuredCutoff)
+                    configuredStart = configuredCutoff;
+                uniform->set(osg::Vec2f(1.0f / configuredStart, 1.0f / configuredCutoff));
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Restore this layer's configured fade settings.");
+        }
+
         struct AddWMSDialog
         {
             AddWMSDialog()
@@ -864,7 +919,21 @@ namespace osgEarth
                             }
                         }
 
+                        detail::drawFeatureImageFadeControls(dynamic_cast<FeatureImageLayer*>(layer));
+
 #ifdef OSGEARTH_HAVE_PRESTIGE_NODEKIT
+                        auto splattingLayer = dynamic_cast<osgEarthPrestige::SurfaceSplattingLayer*>(layer);
+                        if (splattingLayer)
+                        {
+                            float cutoff = splattingLayer->getMaxSlope();
+                            if (ImGuiLTable::SliderFloat("Splatting angle cutoff (deg)", &cutoff, 0.1f, 90.0f,
+                                "%.1f", ImGuiSliderFlags_AlwaysClamp))
+                                splattingLayer->setMaxSlope(cutoff);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("Terrain slope from level; fades over +/-5 degrees. "
+                                    "90 disables the cutoff. Earth file: max_slope. Updates without rebuilding tiles.");
+                        }
+
                         auto grimeLayer = dynamic_cast<osgEarthPrestige::GrimeLayer*>(layer);
                         if (grimeLayer)
                         {
