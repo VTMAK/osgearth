@@ -167,7 +167,7 @@ BuildingCatalog::cleanPolygon(Polygon* fp) const
     // TODO: remove colinear points? for skeleton?
 }
 
-osgEarth_std::optional<Building>
+std::optional<Building>
 BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
                                        const TagSet&   tags,
                                        float              height,
@@ -206,7 +206,7 @@ BuildingCatalog::cloneBuildingTemplate(Feature*           feature,
         }
     }
 
-    return osgEarth_std::nullopt;
+    return std::nullopt;
 }
 
 bool

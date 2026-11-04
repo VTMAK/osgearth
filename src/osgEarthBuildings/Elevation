@@ -26,6 +26,7 @@
 #include <osgEarth/Geometry>
 #include <vector>
 #include <list>
+#include <optional>
 
 
 // When INSERT_VERTS is defined walls will be broken nto discrete pieces with their own geometry for each wall skin and will not use repeating texture coordinates.
@@ -287,7 +288,7 @@ namespace osgEarth { namespace Buildings
         float               _xoffset;
         float               _yoffset;
         Color               _color;
-        osgEarth_std::optional<Roof> _roof;
+        std::optional<Roof> _roof;
         Vector              _elevations;
         osg::BoundingBox    _aabb;
         float               _cosR, _sinR;

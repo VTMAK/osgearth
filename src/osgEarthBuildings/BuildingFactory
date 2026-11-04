@@ -23,6 +23,7 @@
 #include "BuildingCatalog"
 #include <osgEarth/Progress>
 #include <osgEarth/Session>
+#include <optional>
 
 namespace osgEarth { namespace Buildings
 {
@@ -95,7 +96,7 @@ namespace osgEarth { namespace Buildings
          * Create a building object form a feature.
          * @param[in ] feature Feature from which to create a Building.
          */
-        virtual osgEarth_std::optional<Building> createBuilding(
+        virtual std::optional<Building> createBuilding(
             Feature*          feature,
             ProgressCallback* progress);
 
@@ -106,10 +107,10 @@ namespace osgEarth { namespace Buildings
         virtual void cleanPolygon(Polygon* polygon);
 
         /** Creates a building meant to load an external model */
-        virtual osgEarth_std::optional<Building> createExternalModelBuilding(Feature*, const URI& modelURI, BuildContext&);
+        virtual std::optional<Building> createExternalModelBuilding(Feature*, const URI& modelURI, BuildContext&);
 
         /** Add Elevation objects to a Building */
-        virtual osgEarth_std::optional<Building> createSampleBuilding(const Feature* feature);
+        virtual std::optional<Building> createSampleBuilding(const Feature* feature);
 
         /** True if the feature's centroid falls within the extent */
         virtual bool cropToCentroid(const Feature* feature, const GeoExtent& extent) const;

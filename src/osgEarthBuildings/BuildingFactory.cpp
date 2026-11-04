@@ -267,17 +267,17 @@ BuildingFactory::create(Feature*               feature,
     return true;
 }
 
-osgEarth_std::optional<Building>
+std::optional<Building>
 BuildingFactory::createExternalModelBuilding(Feature*      feature,
                                              const URI&    modelURI,
                                              BuildContext& context)
 {
     if ( !feature || modelURI.empty() )
-        return osgEarth_std::nullopt;
+        return std::nullopt;
 
     Geometry* geometry = feature->getGeometry();
     if ( !geometry || !geometry->isValid() )
-        return osgEarth_std::nullopt;
+        return std::nullopt;
 
     Building building;
     building.setExternalModelURI( modelURI );
@@ -293,13 +293,13 @@ BuildingFactory::createExternalModelBuilding(Feature*      feature,
     return building;
 }
 
-osgEarth_std::optional<Building>
+std::optional<Building>
 BuildingFactory::createBuilding(Feature* feature, ProgressCallback* progress)
 {
     if ( feature == nullptr )
-        return osgEarth_std::nullopt;
+        return std::nullopt;
 
-    osgEarth_std::optional<Building> building;
+    std::optional<Building> building;
 
     Geometry* geometry = feature->getGeometry();
 
@@ -375,7 +375,7 @@ BuildingFactory::cleanPolygon(Polygon* polygon)
     // TODO: remove colinear points? for skeleton?
 }
 
-osgEarth_std::optional<Building>
+std::optional<Building>
 BuildingFactory::createSampleBuilding(const Feature* feature)
 {
     Building building;

@@ -24,6 +24,7 @@
 #include <osgEarth/Progress>
 #include <osgEarth/Feature>
 #include <osgEarth/Session>
+#include <optional>
 
 namespace osgEarth { namespace Buildings 
 {
@@ -77,7 +78,7 @@ namespace osgEarth { namespace Buildings
 
     protected:
 
-        osgEarth_std::optional<Building> cloneBuildingTemplate(Feature*, const TagSet& tags, float height, float area) const;
+        std::optional<Building> cloneBuildingTemplate(Feature*, const TagSet& tags, float height, float area) const;
         
         bool parseElevations(const Config&, Building*, Elevation*, ElevationVector&, SkinSymbol*, ProgressCallback*);
 
